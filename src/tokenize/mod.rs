@@ -1,9 +1,11 @@
 use crate::dialect::{CommentStyle, DialectSpec};
 
 mod span;
+mod tape;
 mod token;
 
 pub use span::*;
+pub use tape::*;
 pub use token::*;
 
 pub struct Tokenizer<'txt, 'spec> {
@@ -60,6 +62,8 @@ impl<'txt, 'spec> Tokenizer<'txt, 'spec> {
             Some(',') => Some(self.make_token_single_char(TokenKind::Comma)),
             Some('(') => Some(self.make_token_single_char(TokenKind::LeftParen)),
             Some(')') => Some(self.make_token_single_char(TokenKind::RightParen)),
+            Some('[') => Some(self.make_token_single_char(TokenKind::LeftBracket)),
+            Some(']') => Some(self.make_token_single_char(TokenKind::RightBracket)),
             Some(';') => Some(self.make_token_single_char(TokenKind::Semicolon)),
             _ => None,
         }

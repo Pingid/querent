@@ -8,3 +8,9 @@ phf = { version = "0.13", features = ["macros"] }
 
 [dev-dependencies]
 proptest = "1.5"
+criterion = "0.5"
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
+
+[[bench]]
+name = "parse"
+harness = false

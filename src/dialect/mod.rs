@@ -1,11 +1,13 @@
 use crate::tokenize::{Keyword, Operator, QuoteStyle};
 
 pub mod ansi;
+pub mod postgres;
 
 pub trait Dialect {
     fn spec(&self) -> &DialectSpec;
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct DialectSpec {
     pub keywords: &'static phf::Map<&'static str, Keyword>,
     pub operators: &'static phf::Map<&'static str, Operator>,
