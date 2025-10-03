@@ -1,13 +1,13 @@
 use proptest::prelude::*;
-use querent::dialect::{Dialect, ansi::AnsiDialect};
-use querent::tokenize::{Keyword, Token, TokenKind, Tokenizer};
+use querent::dialect::{Ansi, Dialect};
+use querent::token::{Keyword, Token, TokenKind, lex};
 
 #[test]
 fn basic_select_line() {
-    let d = AnsiDialect::default();
-    let s = d.spec();
+    let d = Ansi;
+    let s = d.get_spec();
     let input = "SELECT name, * FROM users WHERE age > 18 AND name = 'John'";
-    let toks = Tokenizer::new(s, input).collect::<Vec<_>>();
+    let toks = lex(s, input);
     let expected = [
         TokenKind::Keyword(Keyword::Select),
         TokenKind::Identifier,
@@ -174,13 +174,16 @@ proptest! {
 }
 
 pub fn ansi_tokens<'a>(input: &'a str) -> Vec<Token<'a>> {
-    let d = AnsiDialect::default();
-    let s = d.spec();
-    Tokenizer::new(s, input).collect::<Vec<_>>()
+    let d = Ansi;
+    let s = d.get_spec();
+    lex(s, input)
 }
 
-pub fn ansi_token_kinds<'a>(input: &'a str) -> Vec<TokenKind> {
-    let d = AnsiDialect::default();
-    let s = d.spec();
-    Tokenizer::new(s, input).map(|t| t.kind).collect::<Vec<_>>()
+pub fn ansi_token_kinds(input: &str) -> Vec<TokenKind> {
+    let d = Ansi;
+    let s = d.get_spec();
+    lex(s, input)
+        .into_iter()
+        .map(|t| t.kind)
+        .collect::<Vec<_>>()
 }

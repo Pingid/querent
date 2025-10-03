@@ -2,9 +2,9 @@ use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, 
 use querent::dialect::Dialect;
 use std::time::Duration;
 
-use querent::dialect::postgres::PgDialect;
+use querent::dialect::Postgres;
 use querent::parse::Parser;
-use querent::tokenize::{TokenKind, TokenTape, Tokenizer};
+use querent::token::{TokenKind, lex};
 
 const DEFAULT_URL: &str =
     "https://raw.githubusercontent.com/memsql/benchmarks-tpc/refs/heads/master/tpcds/queries.sql";
@@ -21,13 +21,9 @@ fn fetch_queries_text() -> String {
 }
 
 fn split_statements_pg(input: &str) -> Vec<&str> {
-    let dialect = PgDialect::default();
-    let spec = dialect.spec();
-    let mut tok = Tokenizer::new(spec, input);
-    let mut tokens = Vec::new();
-    while let Some(t) = tok.next() {
-        tokens.push(t);
-    }
+    let dialect = Postgres;
+    let spec = dialect.get_spec();
+    let tokens = lex(spec, input);
 
     let mut stmts = Vec::new();
     let mut start = 0usize;
@@ -86,11 +82,10 @@ fn bench_tpcds(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(total_bytes as u64));
     group.bench_function(BenchmarkId::new("tokenize_all", "pg"), |b| {
         b.iter(|| {
-            let dialect = PgDialect::default();
-            let spec = dialect.spec();
+            let dialect = Postgres;
+            let spec = dialect.get_spec();
             for q in &stmts {
-                let t = Tokenizer::new(spec, q);
-                let _ = t.collect::<Vec<_>>();
+                let _ = lex(spec, q);
             }
         });
     });
@@ -99,12 +94,11 @@ fn bench_tpcds(c: &mut Criterion) {
     group.throughput(Throughput::Elements(total_queries));
     group.bench_function(BenchmarkId::new("parse_all", "pg"), |b| {
         b.iter(|| {
-            let dialect = PgDialect::default();
-            let spec = dialect.spec();
+            let dialect = Postgres;
+            let spec = dialect.get_spec();
             for q in &stmts {
-                let tokenizer = Tokenizer::new(spec, q);
-                let tokens = tokenizer.collect::<Vec<_>>();
-                let mut parser = Parser::new(TokenTape::new(tokens));
+                let tokens = lex(spec, q);
+                let mut parser = Parser::new(&tokens);
                 let _ = parser.parse_statement();
             }
         });
@@ -115,12 +109,11 @@ fn bench_tpcds(c: &mut Criterion) {
         b.iter_batched(
             || stmts.clone(),
             |cases| {
-                let dialect = PgDialect::default();
-                let spec = dialect.spec();
+                let dialect = Postgres;
+                let spec = dialect.get_spec();
                 for q in cases {
-                    let tokenizer = Tokenizer::new(spec, q);
-                    let tokens = tokenizer.collect::<Vec<_>>();
-                    let mut parser = Parser::new(TokenTape::new(tokens));
+                    let tokens = lex(spec, q);
+                    let mut parser = Parser::new(&tokens);
                     let _ = parser.parse_statement();
                 }
             },

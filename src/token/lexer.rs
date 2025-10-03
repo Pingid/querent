@@ -1,14 +1,10 @@
 use crate::dialect::{CommentStyle, DialectSpec};
+use crate::span::Span;
+use crate::token::QuoteStyle;
+use crate::token::Token;
+use crate::token::TokenKind;
 
-mod span;
-mod tape;
-mod token;
-
-pub use span::*;
-pub use tape::*;
-pub use token::*;
-
-pub struct Tokenizer<'txt, 'spec> {
+pub struct Lexer<'txt, 'spec> {
     spec: &'spec DialectSpec,
     input: &'txt str,
     cursor: usize,
@@ -18,7 +14,7 @@ pub struct Tokenizer<'txt, 'spec> {
     max_op_len: usize,
 }
 
-impl<'txt, 'spec> Tokenizer<'txt, 'spec> {
+impl<'txt, 'spec> Lexer<'txt, 'spec> {
     pub fn new(spec: &'spec DialectSpec, input: &'txt str) -> Self {
         Self {
             spec,
@@ -161,12 +157,11 @@ impl<'txt, 'spec> Tokenizer<'txt, 'spec> {
             if remaining.len() < len {
                 continue;
             }
-            if let Some(slice) = remaining.get(..len) {
-                if let Some(op) = self.spec.match_operator(slice) {
+            if let Some(slice) = remaining.get(..len)
+                && let Some(op) = self.spec.match_operator(slice) {
                     self.cursor += len;
                     return Some(self.make_token(start, TokenKind::Operator(op)));
                 }
-            }
         }
         None
     }
@@ -217,13 +212,13 @@ impl<'txt, 'spec> Tokenizer<'txt, 'spec> {
         loop {
             let before = self.cursor;
             self.skip_ws();
-            if self.spec.supports_comment_style(CommentStyle::Line) {
+            if self.spec.supports_comment_style(CommentStyle::DoubleDash) {
                 self.skip_line_comment();
             }
             if self.spec.supports_comment_style(CommentStyle::Hash) {
                 self.skip_hash_comment();
             }
-            if self.spec.supports_comment_style(CommentStyle::Block) {
+            if self.spec.supports_comment_style(CommentStyle::SlashStar) {
                 self.skip_block_comment();
             }
             if self.cursor == before {
@@ -332,7 +327,7 @@ impl<'txt, 'spec> Tokenizer<'txt, 'spec> {
     }
 }
 
-impl<'txt, 'spec> Iterator for Tokenizer<'txt, 'spec> {
+impl<'txt, 'spec> Iterator for Lexer<'txt, 'spec> {
     type Item = Token<'txt>;
     fn next(&mut self) -> Option<Self::Item> {
         self.read_next()

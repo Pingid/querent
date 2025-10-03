@@ -5,6 +5,8 @@ pub struct Schema {
     pub name: String,
     pub tables_by_name: HashMap<String, usize>,
     pub tables: Vec<Table>, // keep insertion order for nice listing
+    pub functions: Vec<Function>,
+    pub table_function_columns: HashMap<String, Vec<Column>>,
 }
 
 impl Schema {
@@ -13,6 +15,8 @@ impl Schema {
             name,
             tables_by_name: HashMap::new(),
             tables: Vec::new(),
+            functions: Vec::new(),
+            table_function_columns: HashMap::new(),
         }
     }
 }
@@ -50,7 +54,7 @@ pub enum TableKind {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Column {
-    pub name: String,
+    pub column_name: String,
     pub data_type: Option<SimpleType>,
     pub nullable: bool,
     pub default: Option<String>,
@@ -64,7 +68,7 @@ pub struct Column {
 impl Column {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
-            name: name.into(),
+            column_name: name.into(),
             data_type: None,
             nullable: true,
             default: None,
@@ -94,6 +98,7 @@ pub enum SimpleType {
     Bytes,
     Uuid,
     Other(String),
+    Unknown,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -112,4 +117,20 @@ pub struct ColumnRef {
 pub struct ForeignKey {
     pub from: ColumnRef,
     pub to: ColumnRef,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Function {
+    pub name: String,
+    pub parameter_types: Vec<SimpleType>,
+    pub function_type: FunctionType,
+    pub description: Option<String>,
+    pub return_type: Option<SimpleType>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FunctionType {
+    Table,
+    Scalar,
+    Aggregate,
 }

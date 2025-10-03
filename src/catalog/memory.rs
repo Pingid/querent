@@ -12,9 +12,11 @@ impl InMemoryCatalog {
             schemas: HashMap::new(),
         }
     }
+
     pub fn add_schema(&mut self, schema: schema::Schema) {
         self.schemas.insert(schema.name.clone(), schema);
     }
+
     pub fn add_table(&mut self, schema: impl Into<String>, table: schema::Table) {
         let schema = schema.into();
         self.schemas
@@ -23,6 +25,7 @@ impl InMemoryCatalog {
             .tables
             .push(table);
     }
+
     pub fn add_column(
         &mut self,
         schema: impl Into<String>,
@@ -46,6 +49,32 @@ impl InMemoryCatalog {
                 description: None,
             });
         }
+    }
+
+    pub fn add_function(&mut self, schema: impl Into<String>, function: schema::Function) {
+        let schema = schema.into();
+        self.schemas
+            .entry(schema.clone())
+            .or_insert(schema::Schema::new(schema))
+            .functions
+            .push(function);
+    }
+
+    pub fn add_table_function_columns(
+        &mut self,
+        schema: impl Into<String>,
+        function_name: impl Into<String>,
+        columns: Vec<schema::Column>,
+    ) {
+        let schema = schema.into();
+        let function_name = function_name.into();
+        self.schemas
+            .entry(schema.clone())
+            .or_insert(schema::Schema::new(schema))
+            .table_function_columns
+            .entry(function_name)
+            .or_insert(Vec::new())
+            .extend(columns);
     }
 }
 
@@ -91,7 +120,53 @@ impl CatalogReadSync for InMemoryCatalog {
         }
         Vec::new()
     }
-    fn get_schema(&self, schema: &str) -> Option<&schema::Schema> {
-        self.schemas.get(schema)
+
+    fn get_table(&self, table: &str, schema: Option<&str>) -> Option<schema::Table> {
+        if let Some(s) = schema {
+            return self
+                .schemas
+                .get(s)
+                .and_then(|sch| sch.tables.iter().find(|t| t.name == table))
+                .cloned();
+        }
+        for sch in self.schemas.values() {
+            if let Some(t) = sch.tables.iter().find(|t| t.name == table) {
+                return Some(t.clone());
+            }
+        }
+        None
+    }
+
+    fn list_functions(&self, schema: Option<&str>) -> Vec<schema::Function> {
+        if let Some(s) = schema {
+            return self
+                .schemas
+                .get(s)
+                .map(|sch| sch.functions.clone())
+                .unwrap_or_default();
+        }
+        for sch in self.schemas.values() {
+            return sch.functions.clone();
+        }
+        Vec::new()
+    }
+
+    fn describe_table_function(&self, name: &str, schema: Option<&str>) -> Vec<schema::Column> {
+        if let Some(s) = schema {
+            return self
+                .schemas
+                .get(s)
+                .map(|sch| {
+                    sch.table_function_columns
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default();
+        }
+        self.schemas
+            .values()
+            .find_map(|sch| sch.table_function_columns.get(name).cloned())
+            .unwrap_or_default()
     }
 }

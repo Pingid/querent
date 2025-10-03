@@ -1,7 +1,6 @@
 mod memory;
-mod schema;
+pub mod schema;
 mod traits;
 
 pub use memory::*;
-pub use schema::*;
 pub use traits::*;

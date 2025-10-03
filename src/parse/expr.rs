@@ -1,9 +1,10 @@
-use crate::parse::ast::{Literal, Node};
-use crate::parse::{Parser, ast::Expr};
-use crate::tokenize::{Keyword, OpTag, Operator, TokenKind};
+use crate::ast::*;
+use crate::parse::Parser;
+use crate::span::Loc;
+use crate::token::{Assoc, Keyword, OpTag, Operator, TokenKind};
 
 /// Pratt parser for expressions.
-impl<'txt> Parser<'txt> {
+impl<'txt, 'tok> Parser<'txt, 'tok> {
     pub(crate) fn parse_expr(&mut self) -> Option<Expr> {
         self.parse_expr_prec(0)
     }
@@ -22,54 +23,59 @@ impl<'txt> Parser<'txt> {
     }
 
     fn parse_prefix(&mut self) -> Option<Expr> {
+        let span = self.tokens.current().map(|t| t.span).unwrap_or(0.into());
         match self.tokens.current_kind()? {
             // Literals
             TokenKind::Number => {
                 let tok = self.tokens.advance()?;
                 let val = tok.text.parse::<i64>().ok()?;
-                Some(Expr::Literal(Literal::Number(val)))
+                Some(Expr::Literal(Loc::new(span, Literal::Number(val))))
             }
             TokenKind::Float => {
                 let tok = self.tokens.advance()?;
                 let val = tok.text.parse::<f64>().ok()?;
-                Some(Expr::Literal(Literal::Float(val)))
+                Some(Expr::Literal(Loc::new(span, Literal::Float(val))))
             }
             TokenKind::Str => {
                 let tok = self.tokens.advance()?;
-                Some(Expr::Literal(Literal::String(tok.span)))
+                Some(Expr::Literal(Loc::new(tok.span, Literal::String(tok.span))))
             }
             TokenKind::Keyword(Keyword::Null) => {
                 self.tokens.advance()?;
-                Some(Expr::Literal(Literal::Null))
+                Some(Expr::Literal(Loc::new(span, Literal::Null)))
             }
             TokenKind::Keyword(kw @ (Keyword::True | Keyword::False | Keyword::Unknown)) => {
                 self.tokens.advance()?;
                 let b = match kw {
-                    Keyword::True => super::ast::Boolean::True,
-                    Keyword::False => super::ast::Boolean::False,
-                    Keyword::Unknown => super::ast::Boolean::Unknown,
+                    Keyword::True => Boolean::True,
+                    Keyword::False => Boolean::False,
+                    Keyword::Unknown => Boolean::Unknown,
                     _ => unreachable!(),
                 };
-                Some(Expr::Literal(Literal::Boolean(b)))
+                Some(Expr::Literal(Loc::new(span, Literal::Boolean(b))))
             }
 
             // Typed literals: DATE 'string', TIME 'string', TIMESTAMP 'string'
             TokenKind::Keyword(kw @ (Keyword::Date | Keyword::Time | Keyword::Timestamp)) => {
+                let start = self.tokens.current().map(|t| t.span.start).unwrap_or(0);
                 let data_type = match kw {
-                    Keyword::Date => super::ast::TypedLiteralKind::Date,
-                    Keyword::Time => super::ast::TypedLiteralKind::Time,
-                    Keyword::Timestamp => super::ast::TypedLiteralKind::Timestamp,
+                    Keyword::Date => TypedLiteralKind::Date,
+                    Keyword::Time => TypedLiteralKind::Time,
+                    Keyword::Timestamp => TypedLiteralKind::Timestamp,
                     _ => unreachable!(),
                 };
                 self.tokens.advance()?;
-
+                let end = self.tokens.prev().map(|t| t.span.end).unwrap_or(start);
                 // Expect a string literal
                 if let TokenKind::Str = self.tokens.current_kind()? {
                     let tok = self.tokens.advance()?;
-                    Some(Expr::Literal(Literal::TypedString {
-                        data_type,
-                        value: tok.span,
-                    }))
+                    Some(Expr::Literal(Loc::new(
+                        (start, end),
+                        Literal::TypedString {
+                            data_type,
+                            value: tok.span,
+                        },
+                    )))
                 } else {
                     None
                 }
@@ -87,7 +93,7 @@ impl<'txt> Parser<'txt> {
                 // Expect [ ... ]
                 self.eat(TokenKind::LeftBracket)?;
                 let items = if self.tokens.current_kind() == Some(TokenKind::RightBracket) {
-                    crate::parse::ast::DelimitedList::default()
+                    DelimitedList::default()
                 } else {
                     self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?
                 };
@@ -97,20 +103,34 @@ impl<'txt> Parser<'txt> {
 
             // Quantified expressions: ANY(...), SOME(...), ALL(...)
             TokenKind::Keyword(kw @ (Keyword::Any | Keyword::Some | Keyword::All)) => {
+                let start = self.tokens.current()?.span.start;
                 self.tokens.advance()?;
                 self.eat(TokenKind::LeftParen)?;
                 let inner = Box::new(self.node(|s| s.parse_expr())?);
                 self.eat(TokenKind::RightParen);
+                let end = self.tokens.prev().map(|t| t.span.end).unwrap_or(start);
                 let quantifier = match kw {
-                    Keyword::Any => super::ast::Quantifier::Any,
-                    Keyword::Some => super::ast::Quantifier::Some,
-                    Keyword::All => super::ast::Quantifier::All,
+                    Keyword::Any => Quantifier::Any,
+                    Keyword::Some => Quantifier::Some,
+                    Keyword::All => Quantifier::All,
                     _ => unreachable!(),
                 };
-                Some(Expr::Quantified {
-                    quantifier,
-                    expr: inner,
-                })
+                Some(Expr::Quantified(Loc::new(
+                    (start, end),
+                    QuantifiedExpr {
+                        quantifier,
+                        expr: inner,
+                    },
+                )))
+            }
+
+            // EXISTS(subquery) - now an operator
+            TokenKind::Operator(op) if op.semantic_tag == OpTag::Exists => {
+                self.tokens.advance()?;
+                self.eat(TokenKind::LeftParen)?;
+                let query = Box::new(self.node(|s| s.parse_query())?);
+                self.eat(TokenKind::RightParen);
+                Some(Expr::Exists(query))
             }
 
             // Identifiers/columns or function calls
@@ -120,71 +140,7 @@ impl<'txt> Parser<'txt> {
                 semantic_tag: OpTag::Mul,
                 ..
             }) => {
-                let mut qname = self.node(|s| s.parse_qname())?;
-
-                // If parse_qname stopped after a trailing dot, try to capture the next part
-                if qname.item.parts.seps.len() >= qname.item.parts.items.len() {
-                    match self.tokens.current_kind() {
-                        Some(TokenKind::Identifier) | Some(TokenKind::IdentifierQuoted(_)) => {
-                            if let Some(tok) = self.tokens.advance() {
-                                let span = tok.span;
-                                qname.item.parts.items.push(crate::parse::ast::Node::new(
-                                    span,
-                                    super::ast::NamePart::Ident(span),
-                                ));
-                            }
-                        }
-                        Some(TokenKind::Keyword(_)) => {
-                            if let Some(tok) = self.tokens.advance() {
-                                let span = tok.span;
-                                qname.item.parts.items.push(crate::parse::ast::Node::new(
-                                    span,
-                                    super::ast::NamePart::Ident(span),
-                                ));
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-
-                // Extend qualified name with keyword parts after subsequent dots (e.g., j.key.more)
-                while self.eat(TokenKind::Dot).is_some() {
-                    // Record the dot separator
-                    if let Some(prev) = self.tokens.prev() {
-                        qname
-                            .item
-                            .parts
-                            .seps
-                            .push(crate::parse::ast::Node::new(prev.span, TokenKind::Dot));
-                    }
-                    // Accept identifiers, quoted identifiers, or keywords as name parts
-                    match self.tokens.current_kind() {
-                        Some(TokenKind::Identifier) | Some(TokenKind::IdentifierQuoted(_)) => {
-                            if let Some(tok) = self.tokens.advance() {
-                                let span = tok.span;
-                                qname.item.parts.items.push(crate::parse::ast::Node::new(
-                                    span,
-                                    super::ast::NamePart::Ident(span),
-                                ));
-                            } else {
-                                break;
-                            }
-                        }
-                        Some(TokenKind::Keyword(_)) => {
-                            // Treat keyword as identifier part
-                            if let Some(tok) = self.tokens.advance() {
-                                let span = tok.span;
-                                qname.item.parts.items.push(crate::parse::ast::Node::new(
-                                    span,
-                                    super::ast::NamePart::Ident(span),
-                                ));
-                            } else {
-                                break;
-                            }
-                        }
-                        _ => break,
-                    }
-                }
+                let qname = self.node(|s| s.parse_qname())?;
 
                 // Check if it's a function call
                 if self.tokens.current_kind() == Some(TokenKind::LeftParen) {
@@ -195,7 +151,7 @@ impl<'txt> Parser<'txt> {
 
                     // Parse arguments
                     let args = if self.tokens.current_kind() == Some(TokenKind::RightParen) {
-                        crate::parse::ast::DelimitedList::default()
+                        DelimitedList::default()
                     } else {
                         self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?
                     };
@@ -223,7 +179,7 @@ impl<'txt> Parser<'txt> {
                         let over = if self.eat(TokenKind::LeftParen).is_some() {
                             let spec = Box::new(self.node(|s| s.parse_window_spec())?);
                             self.eat(TokenKind::RightParen);
-                            super::ast::WindowOver::Spec(spec)
+                            WindowRef::Spec(spec)
                         } else {
                             // Window name identifier
                             let name_ident = match self.tokens.current_kind()? {
@@ -236,24 +192,40 @@ impl<'txt> Parser<'txt> {
                                 }
                                 _ => return None,
                             };
-                            super::ast::WindowOver::Name(Node::new(name_ident, name_ident))
+                            WindowRef::Name(Loc::new(name_ident, name_ident))
                         };
-                        Some(Expr::WindowFunction {
-                            name: qname,
-                            args,
-                            over,
-                            filter,
-                        })
+                        let end_pos = self
+                            .tokens
+                            .prev()
+                            .map(|t| t.span.end)
+                            .unwrap_or(qname.span.end);
+                        Some(Expr::Over(Loc::new(
+                            (qname.span.start, end_pos),
+                            OverExpr {
+                                name: qname,
+                                args,
+                                over,
+                                filter,
+                            },
+                        )))
                     } else {
-                        Some(Expr::FunctionCall {
-                            name: qname,
-                            distinct,
-                            args,
-                            filter,
-                        })
+                        let end_pos = self
+                            .tokens
+                            .prev()
+                            .map(|t| t.span.end)
+                            .unwrap_or(qname.span.end);
+                        Some(Expr::FunctionCall(Loc::new(
+                            (qname.span.start, end_pos),
+                            FunctionCallExpr {
+                                name: qname,
+                                distinct,
+                                args,
+                                filter,
+                            },
+                        )))
                     }
                 } else {
-                    Some(Expr::Column(qname))
+                    Some(Expr::Name(qname))
                 }
             }
 
@@ -277,37 +249,34 @@ impl<'txt> Parser<'txt> {
                     } else {
                         None
                     };
-                    Some(Expr::Paren {
-                        open: open_span,
-                        expr,
-                        close: close_span,
-                    })
+                    let end_pos = close_span.map(|s| s.end).unwrap_or(expr.span.end);
+                    Some(Expr::Paren(Loc::new(
+                        (open_span.start, end_pos),
+                        ParenExpr {
+                            open: open_span,
+                            expr,
+                            close: close_span,
+                        },
+                    )))
                 }
             }
 
-            // Unary operators
+            // Unary operators (including NOT)
             TokenKind::Operator(op) if self.is_prefix_op(op.semantic_tag) => {
+                let start_pos = self.tokens.current()?.span.start;
                 let op_tag = op.semantic_tag;
                 self.tokens.advance()?;
                 let op_node = self.node(|_| Some(op_tag))?;
                 let prec = self.prefix_binding_power(op_tag);
                 let expr = Box::new(self.node(|s| s.parse_expr_prec(prec))?);
-                Some(Expr::Unary {
-                    op_tok: op_node,
-                    expr,
-                })
-            }
-
-            // NOT as prefix
-            TokenKind::Keyword(Keyword::Not) => {
-                self.tokens.advance()?;
-                let op_node = self.node(|_| Some(OpTag::Not))?;
-                let prec = self.prefix_binding_power(OpTag::Not);
-                let expr = Box::new(self.node(|s| s.parse_expr_prec(prec))?);
-                Some(Expr::Unary {
-                    op_tok: op_node,
-                    expr,
-                })
+                let end_pos = expr.span.end;
+                Some(Expr::Unary(Loc::new(
+                    (start_pos, end_pos),
+                    UnaryExpr {
+                        op_tok: op_node,
+                        expr,
+                    },
+                )))
             }
 
             _ => None,
@@ -315,188 +284,192 @@ impl<'txt> Parser<'txt> {
     }
 
     fn parse_infix(&mut self, left: Expr, start_pos: usize, _prec: u8) -> Option<Expr> {
-        use super::ast::node;
+        let TokenKind::Operator(op) = self.tokens.current_kind()? else {
+            return None;
+        };
 
-        match self.tokens.current_kind()? {
-            // Binary operators
-            TokenKind::Operator(op) => {
-                let op_tag = op.semantic_tag;
-                let op_prec = op.precedence;
-                self.tokens.advance()?;
-
-                let right_prec = match op.assoc {
-                    crate::tokenize::Assoc::Left => op_prec + 1,
-                    crate::tokenize::Assoc::Right => op_prec,
-                    crate::tokenize::Assoc::None => op_prec + 1,
-                };
-
-                let right = self.node(|s| s.parse_expr_prec(right_prec)).map(Box::new);
-                let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
-                Some(Expr::Binary {
-                    left: Box::new(node((start_pos, end_pos), left)),
-                    op: Some(op_tag),
-                    right,
-                })
-            }
-
-            // IS [NOT] NULL
-            TokenKind::Keyword(Keyword::Is) => {
-                self.tokens.advance()?;
-                let not = self.eat_kw(Keyword::Not).is_some();
-                self.eat_kw(Keyword::Null)?;
-                let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
-                Some(Expr::IsNull {
-                    expr: Box::new(node((start_pos, end_pos), left)),
-                    not,
-                })
-            }
-
-            // [NOT] BETWEEN ... AND ...
-            TokenKind::Keyword(Keyword::Between) => {
-                // Consume BETWEEN keyword
-                self.tokens.advance()?;
-
-                // Try to parse the low and high bounds, but tolerate partial input
-                let low_opt = self.node(|s| s.parse_expr_prec(10));
-
-                // Skip AND operator between low and high if present
-                if let Some(OpTag::And) = self.tokens.current_operator_tag() {
-                    self.tokens.advance();
-                }
-
-                let high_opt = self.node(|s| s.parse_expr_prec(10));
-
-                let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
-
-                match (low_opt, high_opt) {
-                    (Some(low), Some(high)) => Some(Expr::Between {
-                        expr: Box::new(node((start_pos, end_pos), left)),
-                        low: Box::new(low),
-                        high: Box::new(high),
-                        not: false,
-                    }),
-                    // On partial input like "a BETWEEN" or "a BETWEEN x AND",
-                    // fall back to a Binary node with BETWEEN tag and no RHS so
-                    // pretty-printing can preserve the partial text ("a BETWEEN ").
-                    _ => Some(Expr::Binary {
-                        left: Box::new(node((start_pos, end_pos), left)),
-                        op: Some(OpTag::Between),
-                        right: None,
-                    }),
-                }
-            }
-
-            // [NOT] LIKE
-            TokenKind::Keyword(Keyword::Like) => {
-                self.tokens.advance()?;
-                let pattern = Box::new(self.node(|s| s.parse_expr_prec(10))?);
-                let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
-                Some(Expr::Like {
-                    expr: Box::new(node((start_pos, end_pos), left)),
-                    pattern,
-                    not: false,
-                })
-            }
-            // ILIKE (Postgres)
-            TokenKind::Keyword(Keyword::ILike) => {
-                self.tokens.advance()?;
-                let pattern = Box::new(self.node(|s| s.parse_expr_prec(10))?);
-                let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
-                Some(Expr::ILike {
-                    expr: Box::new(node((start_pos, end_pos), left)),
-                    pattern,
-                    not: false,
-                })
-            }
-            // SIMILAR TO [ESCAPE]
-            TokenKind::Keyword(Keyword::Similar) => {
-                self.tokens.advance()?;
-                self.eat_kw(Keyword::To)?;
-                let pattern = Box::new(self.node(|s| s.parse_expr_prec(10))?);
-                // Optional ESCAPE clause
-                let escape = if self.eat_kw(Keyword::Escape).is_some() {
-                    Some(Box::new(self.node(|s| s.parse_expr_prec(10))?))
-                } else {
-                    None
-                };
-                let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
-                Some(Expr::Similar {
-                    expr: Box::new(node((start_pos, end_pos), left)),
-                    pattern,
-                    escape,
-                })
-            }
-
-            // [NOT] IN
-            TokenKind::Keyword(Keyword::In) => {
-                self.tokens.advance()?;
-                self.eat(TokenKind::LeftParen)?;
-
-                // Check if it's a subquery or expression list
-                let list = if matches!(
-                    self.tokens.current_kind(),
-                    Some(TokenKind::Keyword(Keyword::Select | Keyword::With))
-                ) {
-                    // Subquery
-                    let query = Box::new(self.node(|s| s.parse_query())?);
-                    super::ast::InList::Subquery(query)
-                } else {
-                    // Expression list
-                    let exprs = if self.tokens.current_kind() == Some(TokenKind::RightParen) {
-                        vec![]
-                    } else {
-                        let list = self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?;
-                        list.items
-                    };
-                    super::ast::InList::Exprs(exprs)
-                };
-
-                self.eat(TokenKind::RightParen);
-                let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
-                Some(Expr::In {
-                    expr: Box::new(node((start_pos, end_pos), left)),
-                    list,
-                    not: false,
-                })
-            }
-
-            _ => None,
+        // Dispatch to specialized handlers for operators with custom syntax
+        match op.semantic_tag {
+            OpTag::Between => self.parse_between_op(left, start_pos),
+            OpTag::Like | OpTag::Ilike => self.parse_like_op(left, start_pos, op.semantic_tag),
+            OpTag::Similar => self.parse_similar_op(left, start_pos),
+            OpTag::In => self.parse_in_op(left, start_pos),
+            OpTag::Is => self.parse_is_op(left, start_pos),
+            _ => self.parse_binary_op(left, start_pos, op),
         }
     }
 
-    /// Get the binding power for infix/postfix operators
-    fn infix_binding_power(&mut self) -> Option<u8> {
-        match self.tokens.current_kind()? {
-            TokenKind::Operator(op) => Some(op.precedence),
-            TokenKind::Keyword(Keyword::Is) => Some(15),
-            TokenKind::Keyword(Keyword::Between) => Some(10),
-            TokenKind::Keyword(Keyword::Like) => Some(10),
-            TokenKind::Keyword(Keyword::ILike) => Some(10),
-            TokenKind::Keyword(Keyword::Similar) => Some(10),
-            TokenKind::Keyword(Keyword::In) => Some(10),
-            _ => None,
+    fn parse_binary_op(&mut self, left: Expr, start_pos: usize, op: Operator) -> Option<Expr> {
+        let op_tag = op.semantic_tag;
+        let op_prec = op.precedence;
+        self.eat_op_tag(op_tag)?;
+
+        let right_prec = match op.assoc {
+            Assoc::Left => op_prec + 1,
+            Assoc::Right => op_prec,
+            Assoc::None => op_prec + 1,
+        };
+
+        let right = self.node(|s| s.parse_expr_prec(right_prec)).map(Box::new);
+        let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
+
+        Some(Expr::Binary(Loc::new(
+            (start_pos, end_pos),
+            BinaryExpr {
+                left: Box::new(Loc::new((start_pos, end_pos), left)),
+                op: Some(op_tag),
+                right,
+            },
+        )))
+    }
+
+    fn parse_between_op(&mut self, left: Expr, start_pos: usize) -> Option<Expr> {
+        self.eat_op_tag(OpTag::Between)?;
+
+        let low_opt = self.node(|s| s.parse_expr_prec(10));
+
+        // Consume AND between low and high bounds
+        if self.tokens.current_operator_tag() == Some(OpTag::And) {
+            self.tokens.advance();
+        }
+
+        let high_opt = self.node(|s| s.parse_expr_prec(10));
+        let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
+
+        match (low_opt, high_opt) {
+            (Some(low), Some(high)) => Some(Expr::Between(Loc::new(
+                (start_pos, end_pos),
+                BetweenExpr {
+                    expr: Box::new(Loc::new((start_pos, end_pos), left)),
+                    low: Box::new(low),
+                    high: Box::new(high),
+                    not: false,
+                },
+            ))),
+            // Partial input fallback
+            _ => Some(Expr::Binary(Loc::new(
+                (start_pos, end_pos),
+                BinaryExpr {
+                    left: Box::new(Loc::new((start_pos, end_pos), left)),
+                    op: Some(OpTag::Between),
+                    right: None,
+                },
+            ))),
         }
     }
 
-    /// Get the binding power for prefix operators
-    fn prefix_binding_power(&self, op: OpTag) -> u8 {
-        match op {
-            OpTag::Not => 20,
-            OpTag::Sub | OpTag::Add => 50,
-            _ => 50,
+    fn parse_like_op(&mut self, left: Expr, start_pos: usize, op_tag: OpTag) -> Option<Expr> {
+        self.eat_op_tag(op_tag)?;
+
+        let pattern = Box::new(self.node(|s| s.parse_expr_prec(10))?);
+        let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
+        let expr = Box::new(Loc::new((start_pos, end_pos), left));
+
+        match op_tag {
+            OpTag::Like => Some(Expr::Like(Loc::new(
+                (start_pos, end_pos),
+                LikeExpr {
+                    expr,
+                    pattern,
+                    not: false,
+                },
+            ))),
+            OpTag::Ilike => Some(Expr::ILike(Loc::new(
+                (start_pos, end_pos),
+                ILikeExpr {
+                    expr,
+                    pattern,
+                    not: false,
+                },
+            ))),
+            _ => unreachable!(),
         }
     }
 
-    /// Check if an operator can be used as prefix (unary)
-    fn is_prefix_op(&self, op: OpTag) -> bool {
-        matches!(
-            op,
-            OpTag::Not | OpTag::Sub | OpTag::Add | OpTag::BitAnd | OpTag::BitOr | OpTag::BitXor
-        )
+    fn parse_similar_op(&mut self, left: Expr, start_pos: usize) -> Option<Expr> {
+        self.eat_op_tag(OpTag::Similar)?;
+        self.eat_kw(Keyword::To)?;
+
+        let pattern = Box::new(self.node(|s| s.parse_expr_prec(10))?);
+        let escape = if self.eat_kw(Keyword::Escape).is_some() {
+            Some(Box::new(self.node(|s| s.parse_expr_prec(10))?))
+        } else {
+            None
+        };
+
+        let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
+
+        Some(Expr::Similar(Loc::new(
+            (start_pos, end_pos),
+            SimilarExpr {
+                expr: Box::new(Loc::new((start_pos, end_pos), left)),
+                pattern,
+                escape,
+            },
+        )))
+    }
+
+    fn parse_in_op(&mut self, left: Expr, start_pos: usize) -> Option<Expr> {
+        self.eat_op_tag(OpTag::In)?;
+        self.eat(TokenKind::LeftParen)?;
+
+        let list = if matches!(
+            self.tokens.current_kind(),
+            Some(TokenKind::Keyword(Keyword::Select | Keyword::With))
+        ) {
+            let query = Box::new(self.node(|s| s.parse_query())?);
+            ExprList::Subquery(query)
+        } else {
+            let exprs = if self.tokens.current_kind() == Some(TokenKind::RightParen) {
+                vec![]
+            } else {
+                self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?
+                    .items
+            };
+            ExprList::Exprs(exprs)
+        };
+
+        self.eat(TokenKind::RightParen);
+        let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
+
+        Some(Expr::In(Loc::new(
+            (start_pos, end_pos),
+            InExpr {
+                expr: Box::new(Loc::new((start_pos, end_pos), left)),
+                list,
+                not: false,
+            },
+        )))
+    }
+
+    fn parse_is_op(&mut self, left: Expr, start_pos: usize) -> Option<Expr> {
+        self.eat_op_tag(OpTag::Is)?;
+
+        let not = if let Some(TokenKind::Operator(op)) = self.tokens.current_kind() {
+            if op.semantic_tag == OpTag::Not {
+                self.tokens.advance();
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        self.eat_kw(Keyword::Null)?;
+        let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
+
+        Some(Expr::IsNull(Loc::new(
+            (start_pos, end_pos),
+            IsNullExpr {
+                expr: Box::new(Loc::new((start_pos, end_pos), left)),
+                not,
+            },
+        )))
     }
 
     fn parse_case_expr(&mut self) -> Option<Expr> {
-        use super::ast::WhenClause;
+        let start_pos = self.tokens.prev().map(|t| t.span.start).unwrap_or(0);
 
         // Check for operand (CASE <expr> WHEN ...)
         let operand = if self.tokens.current_kind() != Some(TokenKind::Keyword(Keyword::When)) {
@@ -523,11 +496,42 @@ impl<'txt> Parser<'txt> {
 
         // Expect END keyword
         self.eat_kw(Keyword::End)?;
+        let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
 
-        Some(Expr::Case {
-            operand,
-            when_clauses,
-            else_clause,
-        })
+        Some(Expr::Case(Loc::new(
+            (start_pos, end_pos),
+            CaseExpr {
+                operand,
+                when_clauses,
+                else_clause,
+            },
+        )))
+    }
+
+    // ================ Helper Methods ================
+
+    /// Get the binding power for infix/postfix operators
+    fn infix_binding_power(&mut self) -> Option<u8> {
+        match self.tokens.current_kind()? {
+            TokenKind::Operator(op) => Some(op.precedence),
+            _ => None,
+        }
+    }
+
+    /// Get the binding power for prefix operators
+    fn prefix_binding_power(&self, op: OpTag) -> u8 {
+        match op {
+            OpTag::Not => 20,
+            OpTag::Sub | OpTag::Add => 50,
+            _ => 50,
+        }
+    }
+
+    /// Check if an operator can be used as prefix (unary)
+    fn is_prefix_op(&self, op: OpTag) -> bool {
+        matches!(
+            op,
+            OpTag::Not | OpTag::Sub | OpTag::Add | OpTag::BitAnd | OpTag::BitOr | OpTag::BitXor
+        )
     }
 }

@@ -1,4 +1,4 @@
-use crate::tokenize::Span;
+use crate::span::Span;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Token<'a> {
@@ -9,42 +9,63 @@ pub struct Token<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenKind {
+    // Keywords & identifiers
     Keyword(Keyword),
     Identifier,
     IdentifierQuoted(QuoteStyle),
+
+    // Literals
     Float,
     Number,
     Str,
+
+    // Operators
+    Operator(Operator),
+
+    // Punctuation / delimiters
     Dot,
     Comma,
+    Semicolon,
     LeftParen,
     RightParen,
     LeftBracket,
     RightBracket,
-    Semicolon,
+
+    // Control / misc
     Eof,
-    Operator(Operator),
     Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Keyword {
+    // ================ ANSI Core Keywords ================
+
+    // Query structure
     Select,
     Distinct,
     From,
     Where,
     With,
-    Limit,
-    Recursive,
-    As,
     Union,
     Intersect,
     Except,
-    Minus,
+    Minus, // SQL:1999 optional (Oracle)
+
+    // Set quantifiers
     All,
+    Any,
+    Some,
+
+    // DML
     Insert,
     Update,
     Delete,
+    Values,
+    Into,
+    Merge,
+    Matched,
+
+    // Joins
     Join,
     Left,
     Right,
@@ -56,6 +77,8 @@ pub enum Keyword {
     Lateral,
     On,
     Using,
+
+    // Grouping / aggregation
     Group,
     Having,
     Order,
@@ -65,57 +88,61 @@ pub enum Keyword {
     Nulls,
     First,
     Last,
-    Not,
-    Is,
-    Between,
-    Like,
-    Null,
     Rollup,
     Cube,
     Grouping,
-    Sets,
+    Set,
+
+    // Predicates & logic
+    Overlaps,
+
+    // Null / boolean literals
+    Null,
+    True,
+    False,
+    Unknown,
+
+    // Case expressions
     Case,
     When,
     Then,
     Else,
     End,
-    In,
+
+    // Windowing & analytic
+    Over,
+    Partition,
+    Window,
+    Filter,
+
+    // Window frame
+    Preceding,
+    Following,
+    Current,
+    Row,
+    Rows,
+    Range,
+    Unbounded,
+
+    // Fetch / offset / pagination
+    Offset,
+    Fetch,
+    Only,
+    Next,
+    Limit,
+
+    // Temporal
     Date,
     Time,
     Timestamp,
-    Offset,
-    Rows,
-    Fetch,
-    Only,
-    Over,
-    Partition,
-    Preceding,
-    Current,
-    Row,
-    Following,
-    Unbounded,
-    Range,
-    And,
-    Or,
-    True,
-    False,
-    Unknown,
-    Escape,
-    Similar,
-    To,
-    Array,
-    Exists,
-    Any,
-    Some,
-    Overlaps,
-    Window,
-    Filter,
-    Next,
-    Into,
-    Values,
-    Set,
-    Merge,
-    Matched,
+    Interval,
+
+    // Functions / casts
+    Cast,
+    Coalesce,
+    Nullif,
+
+    // DDL
     Create,
     Alter,
     Drop,
@@ -133,27 +160,41 @@ pub enum Keyword {
     Check,
     Default,
     Collate,
-    Cast,
-    Coalesce,
-    NullIf,
-    Interval,
+
+    // Misc
+    Recursive,
+    As,
+    Escape,
+    To,
+    Array,
     Without,
     Zone,
-    ILike,
+
+    // ================ Postgres-Specific Keywords ================
+
+    // Predicates
+    Ilike,
+
+    // DML extensions
     Returning,
     Conflict,
     Do,
     Nothing,
+
+    // Schema / object management
     Materialized,
     Index,
     Concurrently,
+
+    // Constraints / transactions
     Deferrable,
     Initially,
     Deferred,
     Immediate,
+
+    // JSON / JSONB types
     Jsonb,
     Json,
-    Custom(&'static str),
 }
 
 /// Quoted identifier styles supported by dialects.
@@ -166,10 +207,16 @@ pub enum QuoteStyle {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Operator {
-    pub symbol: &'static str, // textual token, e.g. "+", "->>", "<=>"
     pub precedence: u8,
     pub assoc: Assoc,
     pub semantic_tag: OpTag,
+    pub fixity: Fixity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fixity {
+    Prefix,
+    Infix,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,67 +228,87 @@ pub enum Assoc {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpTag {
+    // ================ ANSI Core Operators ================
+
+    // String concatenation
     Concat,
+
+    // Arithmetic
     Add,
+    UnaryPlus,
+    UnaryMinus,
     Sub,
     Mul,
     Div,
     Mod,
+    Exp,
+
+    // Logical
     And,
     Or,
     Not,
+    Exists,
+
+    // Comparisons & predicates
     Eq,
     Neq,
     Lt,
     Lte,
     Gt,
     Gte,
-    Like,
-    ILike,
-    Similar,
+    Is,
     In,
     Between,
+    Like,
+    Similar,
     Overlaps,
+
+    // ================ Postgres-Specific Operators ================
+
+    // Case-insensitive LIKE
+    Ilike,
+
+    // Regex match ops
     Regex,
     RegexI,
     NotRegex,
     NotRegexI,
-    JsonArrow,
-    JsonArrowText,
-    JsonPath,
-    JsonPathText,
-    JsonGet,
+
+    // JSON / JSONB
+    JsonArrow,     // ->   (alias: JsonGet)
+    JsonArrowText, // ->>  (alias: JsonGetText)
+    JsonPath,      // #>
+    JsonPathText,  // #>>
+    JsonGet,       // redundant tag if you want to distinguish
     JsonGetText,
-    JsonKeyExists,
-    JsonAnyKey,
-    JsonAllKeys,
-    JsonPathMatch,
-    JsonPathBool,
-    Spaceship,
+    JsonKeyExists, // ?
+    JsonAnyKey,    // ?|
+    JsonAllKeys,   // ?&
+    JsonPathMatch, // @?
+    JsonPathBool,  // @@
+
+    // Bitwise & shifts
     BitAnd,
     BitOr,
     BitXor,
     Shl,
     Shr,
-    Exp,
-    Contains,
-    ContainedBy,
-    Overlap,
-    Custom(&'static str),
+
+    // Range / array containment & overlap
+    Contains,    // @>
+    ContainedBy, // <@
+    Overlap,     // &&
 }
 
 // ---------------- Helper functions ----------------
-pub const fn op(
-    symbol: &'static str,
-    precedence: u8,
-    semantic_tag: OpTag,
-    assoc: Assoc,
-) -> Operator {
-    Operator {
-        symbol,
-        precedence,
-        assoc,
-        semantic_tag,
+impl Operator {
+    pub const fn new(precedence: u8, semantic_tag: OpTag, assoc: Assoc, fixity: Fixity) -> Self {
+        Self {
+            precedence,
+            assoc,
+            semantic_tag,
+            fixity,
+        }
     }
 }
 
@@ -268,6 +335,14 @@ impl QuoteStyle {
             QuoteStyle::Double => '"',
             QuoteStyle::Backtick => '`',
             QuoteStyle::Bracket => ']',
+        }
+    }
+
+    pub fn strip_quotes<'txt>(&self, text: &'txt str) -> &'txt str {
+        match self {
+            QuoteStyle::Double => text.trim_matches('"'),
+            QuoteStyle::Backtick => text.trim_matches('`'),
+            QuoteStyle::Bracket => text.trim_matches('[').trim_matches(']'),
         }
     }
 }

@@ -1,4 +1,25 @@
-use std::ops::Range;
+use std::ops::{Deref, Range};
+
+/// A span and an item
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Loc<T> {
+    pub span: Span,
+    pub item: T,
+}
+
+impl<T> Loc<T> {
+    pub fn new(span: impl Into<Span>, kind: T) -> Self {
+        let span = span.into();
+        Loc { span, item: kind }
+    }
+}
+
+impl<T> Deref for Loc<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.item
+    }
+}
 
 /// Span of a token
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

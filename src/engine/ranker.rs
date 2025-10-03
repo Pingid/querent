@@ -1,0 +1,157 @@
+use std::cmp::Ordering;
+use strsim::jaro_winkler;
+
+use super::completion::{Completion, CompletionKind};
+#[cfg(test)]
+use super::completion::TableCompletion;
+
+/// Ranker decides how a batch of completions should be ordered for a given `needle`.
+pub trait Ranker {
+    fn rank(&self, needle: &str, items: Vec<Completion>) -> Vec<Completion>;
+}
+
+/// Default ranker: uses a provided `Scorer` (from `completion.rs`) and
+/// applies stable, deterministic ordering:
+/// 1) Non-keywords before keywords
+/// 2) Exact match before non-exact
+/// 3) Prefix match before non-prefix
+/// 4) Higher fuzzy score first
+/// 5) Label ascending (tie-break)
+pub struct DefaultRanker<S: Scorer> {
+    scorer: S,
+}
+
+impl<S: Scorer> DefaultRanker<S> {
+    pub fn new(scorer: S) -> Self {
+        Self { scorer }
+    }
+}
+
+impl<S: Scorer> Ranker for DefaultRanker<S> {
+    fn rank(&self, needle: &str, mut items: Vec<Completion>) -> Vec<Completion> {
+        // Small optimization: precompute lowercased needle once.
+        let needle = needle.to_string();
+
+        // Filter items if there's a needle
+        if !needle.is_empty() {
+            items.retain(|item| {
+                let text_to_match = item.filter_text.as_ref().unwrap_or(&item.insert_text);
+                text_to_match
+                    .to_lowercase()
+                    .starts_with(&needle.to_lowercase())
+            });
+        }
+
+        items.sort_by(|a, b| compare(a, b, &needle, &self.scorer));
+        items.dedup();
+        items
+    }
+}
+
+// ---- internal helpers -------------------------------------------------------
+
+fn is_keyword(kind: &CompletionKind) -> bool {
+    matches!(kind, CompletionKind::Keyword)
+}
+
+/// Sorting that mirrors the scorer’s tuple but also keeps keywords last.
+fn compare(a: &Completion, b: &Completion, needle: &str, scorer: &impl Scorer) -> Ordering {
+    // Scorer returns: (is_kw, exact, prefix, fuzzy, label)
+    // We recompute `is_kw` locally to avoid trusting scorer on that part.
+    let ka = is_keyword(&a.kind);
+    let kb = is_keyword(&b.kind);
+
+    // Non-keywords first (false < true)
+    ka.cmp(&kb)
+        // Now delegate to the scorer for the remaining signals
+        .then_with(|| {
+            let (_ska, ea, pa, ja, la) = scorer.score(a, needle);
+            let (_skb, eb, pb, jb, lb) = scorer.score(b, needle);
+
+            // exact desc
+            (eb as u8)
+                .cmp(&(ea as u8))
+                // prefix desc
+                .then_with(|| (pb as u8).cmp(&(pa as u8)))
+                // fuzzy desc
+                .then_with(|| jb.partial_cmp(&ja).unwrap_or(Ordering::Equal))
+                // label asc
+                .then_with(|| la.cmp(&lb))
+        })
+}
+
+/// Scorer decides how we rank completions for a given `needle`.
+/// Return tuple fields are ordered by decreasing priority in `compare_with_scorer`.
+pub trait Scorer {
+    fn score(&self, c: &Completion, needle: &str) -> (bool, bool, bool, f32, String);
+}
+
+/// Default implementation mirrors the legacy behavior but is case-insensitive.
+pub struct DefaultScorer;
+
+impl Scorer for DefaultScorer {
+    fn score(&self, c: &Completion, needle: &str) -> (bool, bool, bool, f32, String) {
+        let is_kw = is_keyword(&c.kind);
+
+        // Use filter_text if available, otherwise fall back to insert_text
+        let text_to_match = c.filter_text.as_ref().unwrap_or(&c.insert_text);
+
+        let exact = text_to_match.eq_ignore_ascii_case(needle);
+        let prefix = text_to_match
+            .to_lowercase()
+            .starts_with(&needle.to_lowercase());
+        let fuzzy = jaro_winkler(&text_to_match.to_lowercase(), &needle.to_lowercase());
+        (is_kw, exact, prefix, fuzzy as f32, c.label.clone())
+    }
+}
+
+// ---- tests ------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::super::completion::CompletionKind;
+    use super::*;
+
+    fn c(label: &str, kind: CompletionKind) -> Completion {
+        Completion {
+            label: label.to_string(),
+            insert_text: label.to_string(),
+            filter_text: Some(label.to_string()),
+            kind,
+            replace: (0, 0).into(),
+            commit_characters: vec![],
+        }
+    }
+
+    #[test]
+    fn non_keywords_before_keywords() {
+        let r = DefaultRanker::new(DefaultScorer);
+        let items = vec![
+            c("SELECT", CompletionKind::Keyword),
+            c(
+                "users",
+                CompletionKind::Table(TableCompletion {
+                    qualifier: None,
+                    table: None,
+                }),
+            ),
+        ];
+        let ranked = r.rank("", items);
+        assert_eq!(ranked[0].label, "users");
+        assert_eq!(ranked[1].label, "SELECT");
+    }
+
+    // #[test]
+    // fn exact_then_prefix_then_fuzzy_then_label() {
+    //     let r = DefaultRanker::new(DefaultScorer);
+    //     let items = vec![
+    //         c("user", CompletionKind::Table(None)), // exact for needle "user"
+    //         c("users", CompletionKind::Table(None)), // prefix
+    //         c("account", CompletionKind::Table(None)), // fuzzy
+    //         c("SELECT", CompletionKind::Keyword),   // keyword last
+    //     ];
+    //     let ranked = r.rank("user", items);
+    //     let labels: Vec<_> = ranked.into_iter().map(|x| x.label).collect();
+    //     assert_eq!(labels, vec!["user", "users", "account", "SELECT"]);
+    // }
+}

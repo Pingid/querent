@@ -14,78 +14,34 @@ pub trait CatalogRead {
         table: &str,
         schema: Option<&str>,
     ) -> BoxedFuture<'_, Vec<schema::Column>>;
-    fn get_schema(&self, schema: &str) -> BoxedFuture<'_, Option<&schema::Schema>>;
-}
-
-/// Iterator-based utilities to avoid materializing large Vecs
-pub trait CatalogExt: CatalogRead + Send + Sync {
-    fn columns_of(
+    fn get_table(
         &self,
-        schema: impl Into<String>,
-        table: impl Into<String>,
+        table: &str,
+        schema: Option<&str>,
+    ) -> BoxedFuture<'_, Option<schema::Table>>;
+    fn list_functions(&self, _schema: Option<&str>) -> BoxedFuture<'_, Vec<schema::Function>> {
+        Box::pin(ready(vec![]))
+    }
+    fn describe_table_function(
+        &self,
+        _name: &str,
+        _schema: Option<&str>,
     ) -> BoxedFuture<'_, Vec<schema::Column>> {
-        let schema = schema.into();
-        let table = table.into();
-        Box::pin(async move { self.list_columns(&table, Some(&schema)).await })
-    }
-
-    fn all_tables_iter(&self) -> BoxedFuture<'_, std::vec::IntoIter<(String, String)>> {
-        Box::pin(async move {
-            let schemas = self.list_schemas().await;
-            let mut pairs = Vec::new();
-
-            for sch in schemas {
-                let tables = self.list_tables(Some(&sch)).await;
-                pairs.extend(tables.into_iter().map(|tbl| (sch.clone(), tbl)));
-            }
-
-            pairs.into_iter()
-        })
-    }
-
-    fn columns_of_iter(
-        &self,
-        schema: impl Into<String>,
-        table: impl Into<String>,
-    ) -> BoxedFuture<'_, std::vec::IntoIter<schema::Column>> {
-        let schema = schema.into();
-        let table = table.into();
-        Box::pin(async move {
-            let cols = self.list_columns(&table, Some(&schema)).await;
-            cols.into_iter()
-        })
-    }
-
-    fn all_columns_iter(
-        &self,
-    ) -> BoxedFuture<'_, std::vec::IntoIter<(String, String, schema::Column)>> {
-        Box::pin(async move {
-            let mut rows = Vec::new();
-
-            let schemas = self.list_schemas().await;
-            for sch in schemas {
-                let tables = self.list_tables(Some(&sch)).await;
-                for tbl in tables {
-                    let cols = self.list_columns(&tbl, Some(&sch)).await;
-                    rows.extend(cols.into_iter().map({
-                        let sch = sch.clone();
-                        let tbl = tbl.clone();
-                        move |col| (sch.clone(), tbl.clone(), col)
-                    }));
-                }
-            }
-
-            rows.into_iter()
-        })
+        Box::pin(ready(vec![]))
     }
 }
-impl<T: CatalogRead + Send + Sync + ?Sized> CatalogExt for T {}
 
 pub trait CatalogReadSync {
     fn list_schemas(&self) -> Vec<String>;
     fn list_tables(&self, schema: Option<&str>) -> Vec<String>;
     fn list_columns(&self, table: &str, schema: Option<&str>) -> Vec<schema::Column>;
-    fn get_schema(&self, schema: &str) -> Option<&schema::Schema>;
+    fn get_table(&self, table: &str, schema: Option<&str>) -> Option<schema::Table>;
+    fn list_functions(&self, _schema: Option<&str>) -> Vec<schema::Function> {
+        vec![]
+    }
+    fn describe_table_function(&self, _name: &str, _schema: Option<&str>) -> Vec<schema::Column> {
+        vec![]
+    }
 }
 
 impl<T> CatalogRead for T
@@ -111,10 +67,26 @@ where
         Box::pin(ready(self.list_columns(table, schema)))
     }
 
-    fn get_schema(
+    fn get_table(
         &self,
-        schema: &str,
-    ) -> Pin<Box<dyn Future<Output = Option<&schema::Schema>> + Send + '_>> {
-        Box::pin(ready(self.get_schema(schema)))
+        table: &str,
+        schema: Option<&str>,
+    ) -> Pin<Box<dyn Future<Output = Option<schema::Table>> + Send + '_>> {
+        Box::pin(ready(self.get_table(table, schema)))
+    }
+
+    fn list_functions(
+        &self,
+        schema: Option<&str>,
+    ) -> Pin<Box<dyn Future<Output = Vec<schema::Function>> + Send + '_>> {
+        Box::pin(ready(self.list_functions(schema)))
+    }
+
+    fn describe_table_function(
+        &self,
+        name: &str,
+        schema: Option<&str>,
+    ) -> Pin<Box<dyn Future<Output = Vec<schema::Column>> + Send + '_>> {
+        Box::pin(ready(self.describe_table_function(name, schema)))
     }
 }

@@ -1,13 +1,25 @@
-use crate::tokenize::{OpTag, Token, TokenKind};
+use crate::token::{OpTag, Token, TokenKind};
 
 #[derive(Debug)]
-pub struct TokenTape<'txt> {
-    tokens: Vec<Token<'txt>>,
+pub struct TokenTape<'txt, 'tok> {
+    pub tokens: &'tok [Token<'txt>],
     pub pos: usize,
 }
 
-impl<'txt> TokenTape<'txt> {
-    pub fn new(tokens: Vec<Token<'txt>>) -> Self {
+impl<'txt, 'tok> From<&'tok [Token<'txt>]> for TokenTape<'txt, 'tok> {
+    fn from(tokens: &'tok [Token<'txt>]) -> Self {
+        Self::new(tokens)
+    }
+}
+
+impl<'txt, 'tok> From<&'tok Vec<Token<'txt>>> for TokenTape<'txt, 'tok> {
+    fn from(tokens: &'tok Vec<Token<'txt>>) -> Self {
+        Self::new(tokens)
+    }
+}
+
+impl<'txt, 'tok> TokenTape<'txt, 'tok> {
+    pub fn new(tokens: &'tok [Token<'txt>]) -> Self {
         Self { tokens, pos: 0 }
     }
 
