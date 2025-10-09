@@ -1,7 +1,7 @@
-use querent::{
+use querent_core::{
     catalog::{InMemoryCatalog, schema},
     dialect::{Ansi, Dialect},
-    doc::Doc,
+    doc::Content,
     engine::{Completion, CompletionKind, Engine},
 };
 
@@ -708,7 +708,7 @@ impl<D: Dialect> CompletionTester<D> {
         self
     }
     fn run(self) -> TestCase {
-        let mut doc = Doc::default();
+        let mut doc = Content::default();
         doc.set_content(&self.input);
         doc.set_cursor(self.cursor);
         let engine = Engine::new(self.catalog, self.dialect);

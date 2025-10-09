@@ -170,3 +170,29 @@ impl CatalogReadSync for InMemoryCatalog {
             .unwrap_or_default()
     }
 }
+
+impl<'a> CatalogReadSync for &'a InMemoryCatalog {
+    fn list_schemas(&self) -> Vec<String> {
+        (*self).list_schemas()
+    }
+
+    fn list_tables(&self, schema: Option<&str>) -> Vec<String> {
+        (*self).list_tables(schema)
+    }
+
+    fn list_columns(&self, table: &str, schema: Option<&str>) -> Vec<schema::Column> {
+        (*self).list_columns(table, schema)
+    }
+
+    fn get_table(&self, table: &str, schema: Option<&str>) -> Option<schema::Table> {
+        (*self).get_table(table, schema)
+    }
+
+    fn list_functions(&self, schema: Option<&str>) -> Vec<schema::Function> {
+        (*self).list_functions(schema)
+    }
+
+    fn describe_table_function(&self, name: &str, schema: Option<&str>) -> Vec<schema::Column> {
+        (*self).describe_table_function(name, schema)
+    }
+}

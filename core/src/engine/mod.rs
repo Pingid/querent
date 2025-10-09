@@ -1,4 +1,6 @@
-use crate::{catalog::CatalogRead, dialect::Dialect, doc::Doc, parse::parse_statement, token::lex};
+use crate::{
+    catalog::CatalogRead, dialect::Dialect, doc::Content, parse::parse_statement, token::lex,
+};
 
 mod completion;
 mod context;
@@ -13,7 +15,7 @@ use ranker::{DefaultRanker, DefaultScorer, Ranker};
 pub struct Engine<C, D> {
     pub catalog: C,
     pub dialect: D,
-    pub ranker: Box<dyn Ranker>,
+    pub ranker: Box<dyn Ranker + Send + Sync>,
     pub providers: ProviderRegistry,
 }
 
@@ -31,7 +33,7 @@ where
         }
     }
 
-    pub async fn complete(&self, doc: &Doc) -> Vec<Completion> {
+    pub async fn complete(&self, doc: &Content) -> Vec<Completion> {
         let txt = doc.current_statement();
         let spec = self.dialect.get_spec();
         let tokens = lex(spec, &txt);

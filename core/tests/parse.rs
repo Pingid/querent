@@ -1,4 +1,4 @@
-use querent::{
+use querent_core::{
     ast,
     dialect::{Ansi, Dialect, DialectSpec, Postgres},
     parse::Parser,

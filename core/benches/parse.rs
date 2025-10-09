@@ -1,10 +1,10 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use querent::dialect::Dialect;
+use querent_core::dialect::Dialect;
 use std::time::Duration;
 
-use querent::dialect::Postgres;
-use querent::parse::Parser;
-use querent::token::{TokenKind, lex};
+use querent_core::dialect::Postgres;
+use querent_core::parse::Parser;
+use querent_core::token::{TokenKind, lex};
 
 const DEFAULT_URL: &str =
     "https://raw.githubusercontent.com/memsql/benchmarks-tpc/refs/heads/master/tpcds/queries.sql";
