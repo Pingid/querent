@@ -1,7 +1,10 @@
 /target
+node_modules
+.DS_Store
 *.md
 !README.md
 
 # Auto-generated keyword files
 src/dialect/*/keyword.rs
 src/dialect/*/operator.rs
+

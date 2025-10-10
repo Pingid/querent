@@ -161,16 +161,7 @@ async fn complete_qualified_columns(
                 return Some(vec![]);
             };
 
-            let cols = catalog
-                .list_columns(
-                    &table,
-                    if schema.is_empty() {
-                        None
-                    } else {
-                        Some(&schema)
-                    },
-                )
-                .await;
+            let cols = catalog.list_columns(&table, &schema).await;
 
             let source = format_source(&schema, &table);
             Some(
@@ -257,16 +248,7 @@ async fn collect_columns_from_tables(
     let mut columns = Vec::new();
 
     for (schema, table) in eligible_tables {
-        let cols = catalog
-            .list_columns(
-                table,
-                if schema.is_empty() {
-                    None
-                } else {
-                    Some(schema)
-                },
-            )
-            .await;
+        let cols = catalog.list_columns(table, &schema).await;
 
         let source = format_source(schema, table);
         // Always get qualifier for duplicate detection, even if not used for display yet
@@ -322,7 +304,8 @@ fn columns_to_completions(
     ctx: &Context,
 ) -> Vec<Completion> {
     // Count occurrences of each column name to detect duplicates
-    let mut name_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut name_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for (name, _, _, _) in &columns {
         *name_counts.entry(name.clone()).or_insert(0) += 1;
     }
@@ -406,9 +389,9 @@ async fn find_tables_with_columns(
     let mut eligible = Vec::new();
 
     for schema in schemas {
-        let tables = catalog.list_tables(Some(&schema)).await;
+        let tables = catalog.list_tables(&schema).await;
         for table in tables {
-            let cols = catalog.list_columns(&table, Some(&schema)).await;
+            let cols = catalog.list_columns(&table, &schema).await;
             let col_names: std::collections::HashSet<_> =
                 cols.iter().map(|c| c.column_name.as_str()).collect();
 
@@ -427,7 +410,7 @@ async fn fetch_all_tables(catalog: &(dyn CatalogRead + Send + Sync)) -> Vec<(Str
     let mut all_tables = Vec::new();
 
     for schema in schemas {
-        let tables = catalog.list_tables(Some(&schema)).await;
+        let tables = catalog.list_tables(&schema).await;
         for table in tables {
             all_tables.push((schema.clone(), table));
         }
@@ -633,7 +616,7 @@ async fn resolve_source_from_parts(
             let schemas = catalog.list_schemas().await;
             let mut found_schema = String::new();
             for s in &schemas {
-                let tables = catalog.list_tables(Some(s)).await;
+                let tables = catalog.list_tables(s).await;
                 if tables.contains(&parts[0]) {
                     found_schema = s.clone();
                     break;
@@ -668,9 +651,9 @@ async fn completions_from_projection(
                         // Try to fetch the actual column from the catalog
                         let parts = &path.0;
                         let (schema, table) = match parts.len() {
-                            1 => (None, &parts[0]),
-                            2 => (Some(parts[0].as_str()), &parts[1]),
-                            _ => (None, &parts[0]),
+                            1 => ("", &parts[0]),
+                            2 => (parts[0].as_str(), &parts[1]),
+                            _ => ("", &parts[0]),
                         };
 
                         let cols = catalog.list_columns(table, schema).await;

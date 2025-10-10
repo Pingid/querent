@@ -1,0 +1,22 @@
+[package]
+name = "querent-lsp-wasm"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Querent
+querent-lsp = { path = "../lsp" }
+querent-core = { path = "../core" }
+
+wasm-bindgen = { version = "0.2.104", features = ["serde_json"] }
+getrandom = { version = "0.3.3", features = ["wasm_js"] }
+
+# Serialization
+serde = { workspace = true }
+serde-wasm-bindgen = "0.6.5"
+wasm-bindgen-futures = "0.4.54"
+js-sys = "0.3.81"
+web-sys = { version = "0.3.81", features = ["console"] }

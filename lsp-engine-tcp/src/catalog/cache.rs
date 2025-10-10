@@ -205,8 +205,8 @@ where
         })
     }
 
-    fn list_tables(&self, schema: Option<&str>) -> BoxedFuture<'_, Vec<String>> {
-        let key = schema.unwrap_or("public").to_string();
+    fn list_tables(&self, schema: &str) -> BoxedFuture<'_, Vec<String>> {
+        let key = schema.to_string();
         let tables_cache = self.tables_cache.clone();
         let inner = self.inner.clone();
         let ttl = self.ttl.clone();
@@ -229,7 +229,7 @@ where
                         let inner_clone = inner.clone();
                         let cache_clone = tables_cache.clone();
                         tokio::spawn(async move {
-                            let fresh = inner_clone.list_tables(Some(&key_clone)).await;
+                            let fresh = inner_clone.list_tables(&key_clone).await;
                             if let Ok(mut cache) = cache_clone.lock() {
                                 cache.put(key_clone, CacheEntry::new(fresh));
                             }
@@ -241,7 +241,7 @@ where
             }
 
             // Cache miss - fetch from underlying catalog (blocking)
-            let tables = inner.list_tables(Some(&key)).await;
+            let tables = inner.list_tables(&key).await;
 
             // Update cache
             if let Ok(mut cache) = tables_cache.lock() {
@@ -255,9 +255,9 @@ where
     fn list_columns(
         &self,
         table: &str,
-        schema: Option<&str>,
+        schema: &str,
     ) -> BoxedFuture<'_, Vec<schema::Column>> {
-        let schema_str = schema.unwrap_or("public").to_string();
+        let schema_str = if schema.is_empty() { "public" } else { schema }.to_string();
         let table_str = table.to_string();
         let key = (schema_str.clone(), table_str.clone());
         let columns_cache = self.columns_cache.clone();
@@ -285,7 +285,7 @@ where
                         let cache_clone = columns_cache.clone();
                         tokio::spawn(async move {
                             let fresh = inner_clone
-                                .list_columns(&table_clone, Some(&schema_clone))
+                                .list_columns(&table_clone, &schema_clone)
                                 .await;
                             if let Ok(mut cache) = cache_clone.lock() {
                                 cache.put(key_clone, CacheEntry::new(fresh));
@@ -298,7 +298,7 @@ where
             }
 
             // Cache miss - fetch from underlying catalog (blocking)
-            let columns = inner.list_columns(&table_str, Some(&schema_str)).await;
+            let columns = inner.list_columns(&table_str, &schema_str).await;
 
             // Update cache
             if let Ok(mut cache) = columns_cache.lock() {
@@ -312,9 +312,9 @@ where
     fn get_table(
         &self,
         table: &str,
-        schema: Option<&str>,
+        schema: &str,
     ) -> BoxedFuture<'_, Option<schema::Table>> {
-        let schema_str = schema.unwrap_or("public").to_string();
+        let schema_str = if schema.is_empty() { "public" } else { schema }.to_string();
         let table_str = table.to_string();
         let key = (schema_str.clone(), table_str.clone());
         let table_cache = self.table_cache.clone();
@@ -342,7 +342,7 @@ where
                         let cache_clone = table_cache.clone();
                         tokio::spawn(async move {
                             let fresh = inner_clone
-                                .get_table(&table_clone, Some(&schema_clone))
+                                .get_table(&table_clone, &schema_clone)
                                 .await;
                             if let Ok(mut cache) = cache_clone.lock() {
                                 cache.put(key_clone, CacheEntry::new(fresh));
@@ -355,7 +355,7 @@ where
             }
 
             // Cache miss - fetch from underlying catalog (blocking)
-            let table_info = inner.get_table(&table_str, Some(&schema_str)).await;
+            let table_info = inner.get_table(&table_str, &schema_str).await;
 
             // Update cache
             if let Ok(mut cache) = table_cache.lock() {
@@ -366,8 +366,8 @@ where
         })
     }
 
-    fn list_functions(&self, schema: Option<&str>) -> BoxedFuture<'_, Vec<schema::Function>> {
-        let key = schema.unwrap_or("public").to_string();
+    fn list_functions(&self) -> BoxedFuture<'_, Vec<schema::Function>> {
+        let key = "all".to_string();
         let functions_cache = self.functions_cache.clone();
         let inner = self.inner.clone();
         let ttl = self.ttl.clone();
@@ -390,7 +390,7 @@ where
                         let inner_clone = inner.clone();
                         let cache_clone = functions_cache.clone();
                         tokio::spawn(async move {
-                            let fresh = inner_clone.list_functions(Some(&key_clone)).await;
+                            let fresh = inner_clone.list_functions().await;
                             if let Ok(mut cache) = cache_clone.lock() {
                                 cache.put(key_clone, CacheEntry::new(fresh));
                             }
@@ -402,7 +402,7 @@ where
             }
 
             // Cache miss - fetch from underlying catalog (blocking)
-            let functions = inner.list_functions(Some(&key)).await;
+            let functions = inner.list_functions().await;
 
             // Update cache
             if let Ok(mut cache) = functions_cache.lock() {

@@ -1,10 +1,10 @@
-use std::net::TcpStream;
-use tungstenite::{Message, WebSocket};
+use tokio::net::TcpStream;
+use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
 
-use crate::codec::LspJsonCodec;
+use querent_lsp::LspJsonCodec;
 
 pub struct WsJsonRpc<Req, Res> {
-    socket: WebSocket<TcpStream>,
+    socket: WebSocketStream<TcpStream>,
     encoder: LspJsonCodec<Req, Res>,
 }
 
@@ -13,20 +13,27 @@ where
     Req: serde::de::DeserializeOwned,
     Res: serde::Serialize,
 {
-    pub fn new(websocket: WebSocket<TcpStream>, lsp_headers: bool) -> Self {
+    pub fn new(websocket: WebSocketStream<TcpStream>, lsp_headers: bool) -> Self {
         Self {
             socket: websocket,
             encoder: LspJsonCodec::new(lsp_headers),
         }
     }
 
-    pub fn read(&mut self) -> Result<Req, String> {
+    pub async fn read(&mut self) -> Result<Req, String> {
+        use futures_util::StreamExt;
+
         loop {
             if let Some(res) = self.encoder.decode()? {
                 return Ok(res);
             }
 
-            let msg = self.socket.read().map_err(|e| e.to_string())?;
+            let msg = self
+                .socket
+                .next()
+                .await
+                .ok_or_else(|| "WebSocket stream ended".to_string())?
+                .map_err(|e| e.to_string())?;
             match msg {
                 Message::Text(txt) => self.encoder.buffer(&txt),
                 Message::Binary(bin) => {
@@ -37,7 +44,8 @@ where
                     }
                 }
                 Message::Ping(p) => {
-                    let _ = self.socket.write(Message::Pong(p));
+                    use futures_util::SinkExt;
+                    let _ = self.socket.send(Message::Pong(p)).await;
                 }
                 Message::Pong(_) => {}
                 Message::Close(_) => return Err("Connection closed".into()),
@@ -46,15 +54,16 @@ where
         }
     }
 
-    pub fn write(&mut self, response: Res) -> Result<(), String> {
+    pub async fn write(&mut self, response: Res) -> Result<(), String> {
+        use futures_util::SinkExt;
+
         let msg = self.encoder.encode(response)?;
 
         self.socket
-            .write(Message::Text(msg.into()))
+            .send(Message::Text(msg.into()))
+            .await
             .map_err(|e| e.to_string())?;
 
-        // Flush to ensure the message is sent
-        self.socket.flush().map_err(|e| e.to_string())?;
         Ok(())
     }
 }

@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
-use crate::lsp_protocol::RequestEnvelope;
+use querent_lsp::LspRequestEnvelope;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "method")]
 pub enum EngineRequest {
     #[serde(rename = "engine/set")]
-    Set(RequestEnvelope<SetEngine>),
+    Set(LspRequestEnvelope<SetEngine>),
     #[serde(rename = "engine/remove")]
-    Remove(RequestEnvelope<RemoveEngine>),
+    Remove(LspRequestEnvelope<RemoveEngine>),
 }
 
 #[derive(Debug, Serialize, Deserialize)]

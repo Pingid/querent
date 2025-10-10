@@ -5,7 +5,9 @@ use std::pin::Pin;
 type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub struct PostgresConnectedCatalog {
-    pool: bb8::Pool<bb8_postgres::PostgresConnectionManager<tokio_postgres_rustls::MakeRustlsConnect>>,
+    pool: bb8::Pool<
+        bb8_postgres::PostgresConnectionManager<tokio_postgres_rustls::MakeRustlsConnect>,
+    >,
 }
 
 impl PostgresConnectedCatalog {
@@ -38,13 +40,13 @@ impl PostgresConnectedCatalog {
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::ConnectionRefused,
                     format!("Failed to connect to database: {}", e),
-                )))
+                )));
             }
             Err(_) => {
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::TimedOut,
                     "Connection timeout",
-                )))
+                )));
             }
         }
 
@@ -90,8 +92,8 @@ impl CatalogRead for PostgresConnectedCatalog {
         })
     }
 
-    fn list_tables(&self, schema: Option<&str>) -> BoxedFuture<'_, Vec<String>> {
-        let schema = schema.unwrap_or("public").to_string();
+    fn list_tables(&self, schema: &str) -> BoxedFuture<'_, Vec<String>> {
+        let schema = schema.to_string();
         Box::pin(async move {
             let conn = match self.pool.get().await {
                 Ok(c) => c,
@@ -117,10 +119,10 @@ impl CatalogRead for PostgresConnectedCatalog {
     fn list_columns(
         &self,
         table: &str,
-        schema: Option<&str>,
+        schema: &str,
     ) -> BoxedFuture<'_, Vec<schema::Column>> {
         let table = table.to_string();
-        let schema = schema.unwrap_or("public").to_string();
+        let schema = if schema.is_empty() { "public" } else { schema }.to_string();
         Box::pin(async move {
             let conn = match self.pool.get().await {
                 Ok(c) => c,
@@ -195,10 +197,10 @@ impl CatalogRead for PostgresConnectedCatalog {
     fn get_table(
         &self,
         table: &str,
-        schema: Option<&str>,
+        schema: &str,
     ) -> BoxedFuture<'_, Option<schema::Table>> {
         let table = table.to_string();
-        let schema_str = schema.unwrap_or("public").to_string();
+        let schema_str = if schema.is_empty() { "public" } else { schema }.to_string();
         Box::pin(async move {
             let conn = match self.pool.get().await {
                 Ok(c) => c,
@@ -232,7 +234,7 @@ impl CatalogRead for PostgresConnectedCatalog {
             };
 
             // Get columns
-            let columns = self.list_columns(&table, Some(&schema_str)).await;
+            let columns = self.list_columns(&table, &schema_str).await;
 
             // Get foreign keys
             let fk_rows = conn
@@ -294,8 +296,7 @@ impl CatalogRead for PostgresConnectedCatalog {
         })
     }
 
-    fn list_functions(&self, schema: Option<&str>) -> BoxedFuture<'_, Vec<schema::Function>> {
-        let schema_str = schema.unwrap_or("public").to_string();
+    fn list_functions(&self) -> BoxedFuture<'_, Vec<schema::Function>> {
         Box::pin(async move {
             let conn = match self.pool.get().await {
                 Ok(c) => c,
@@ -316,9 +317,9 @@ impl CatalogRead for PostgresConnectedCatalog {
                         pg_catalog.format_type(p.prorettype, NULL) as return_type
                      FROM pg_catalog.pg_proc p
                      LEFT JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-                     WHERE n.nspname = $1
+                     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
                      ORDER BY p.proname",
-                    &[&schema_str],
+                    &[],
                 )
                 .await
                 .unwrap_or_default();

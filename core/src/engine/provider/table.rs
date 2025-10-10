@@ -39,11 +39,11 @@ impl CompletionProvider for TableProvider {
         Box::pin(async move {
             // If we have a qualifier (e.g., "public.^"), only suggest tables from that schema
             if let Some(qualifier) = &ctx.cursor.qualifier {
-                let schema_tables = catalog.list_tables(Some(qualifier)).await;
+                let schema_tables = catalog.list_tables(qualifier).await;
                 let mut completions = Vec::new();
 
                 for name in schema_tables {
-                    let table = catalog.get_table(&name, Some(qualifier)).await;
+                    let table = catalog.get_table(&name, qualifier).await;
 
                     completions.push(Completion {
                         label: name.clone(),
@@ -66,14 +66,15 @@ impl CompletionProvider for TableProvider {
             let mut tables: Vec<(String, String)> = Vec::new(); // (table_name, schema)
 
             for schema in &schemas {
-                let schema_tables = catalog.list_tables(Some(schema)).await;
+                let schema_tables = catalog.list_tables(schema).await;
                 for table in schema_tables {
                     tables.push((table, schema.clone()));
                 }
             }
 
             // If after a comma, filter out tables already in FROM
-            let tables = if matches!(&ctx.cursor.location, Location::Space(inner) if matches!(**inner, Location::Comma)) {
+            let tables = if matches!(&ctx.cursor.location, Location::Space(inner) if matches!(**inner, Location::Comma))
+            {
                 let existing_tables: Vec<String> = ctx
                     .scope
                     .relations
@@ -97,9 +98,7 @@ impl CompletionProvider for TableProvider {
             // Convert to completions
             let mut completions = Vec::new();
             for (name, schema) in tables {
-                let table = catalog
-                    .get_table(&name, if schema.is_empty() { None } else { Some(&schema) })
-                    .await;
+                let table = catalog.get_table(&name, &schema).await;
 
                 let qualifier = if schema.is_empty() {
                     None

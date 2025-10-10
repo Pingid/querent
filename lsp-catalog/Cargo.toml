@@ -1,15 +1,13 @@
 [package]
-name = "querent-lsp"
+name = "lsp-catalog"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-querent-core = { path = "../core" }
+querent-lsp = { path = "../lsp" }
+querent-core = { path = "../core", features = ["serde"] }
+
 
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
-lsp-types = "0.97.0"
-
-# Runtime
-futures = { version = "0.3" }

@@ -62,7 +62,6 @@ export const activate = (context: vscode.ExtensionContext) => {
     }),
   )
 }
-
 const setEngineForDocument = async (context: vscode.ExtensionContext, document: vscode.TextDocument) => {
   const connection = getConnectionForFile(context, document.uri.toString())
   if (!connection) {

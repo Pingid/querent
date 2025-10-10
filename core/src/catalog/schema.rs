@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Schema {
     pub name: String,
@@ -21,6 +22,7 @@ impl Schema {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Table {
     pub name: String,
@@ -42,6 +44,7 @@ impl Table {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum TableKind {
     #[default]
@@ -52,6 +55,7 @@ pub enum TableKind {
     External,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Column {
     pub column_name: String,
@@ -81,6 +85,7 @@ impl Column {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SimpleType {
     Boolean,
@@ -101,24 +106,28 @@ pub enum SimpleType {
     Unknown,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct QualifiedName {
     pub schema: String,
     pub name: String,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ColumnRef {
     pub table: QualifiedName,
     pub column: String,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ForeignKey {
     pub from: ColumnRef,
     pub to: ColumnRef,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Function {
     pub name: String,
@@ -128,6 +137,7 @@ pub struct Function {
     pub return_type: Option<SimpleType>,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FunctionType {
     Table,

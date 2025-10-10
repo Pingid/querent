@@ -90,84 +90,67 @@ impl CatalogReadSync for InMemoryCatalog {
         v.sort_unstable();
         v
     }
-    fn list_tables(&self, schema: Option<&str>) -> Vec<String> {
-        match schema {
-            Some(s) => self
-                .schemas
-                .get(s)
-                .map(|sch| sch.tables.iter().map(|t| t.name.clone()).collect())
-                .unwrap_or_default(),
-            None => self
-                .schemas
-                .values()
-                .flat_map(|sch| sch.tables.iter().map(|t| t.name.clone()))
-                .collect(),
-        }
+    fn list_tables(&self, schema: &str) -> Vec<String> {
+        self.schemas
+            .get(schema)
+            .map(|sch| sch.tables.iter().map(|t| t.name.clone()).collect())
+            .unwrap_or_default()
     }
-    fn list_columns(&self, table: &str, schema: Option<&str>) -> Vec<schema::Column> {
-        if let Some(s) = schema {
-            return self
-                .schemas
-                .get(s)
+    fn list_columns(&self, table: &str, schema: &str) -> Vec<schema::Column> {
+        if schema.is_empty() {
+            // Search all schemas for the table
+            for sch in self.schemas.values() {
+                if let Some(t) = sch.tables.iter().find(|t| t.name == table) {
+                    return t.columns.clone();
+                }
+            }
+            Vec::new()
+        } else {
+            self.schemas
+                .get(schema)
                 .and_then(|sch| sch.tables.iter().find(|t| t.name == table))
                 .map(|t| t.columns.clone())
-                .unwrap_or_default();
+                .unwrap_or_default()
         }
-        for sch in self.schemas.values() {
-            if let Some(t) = sch.tables.iter().find(|t| t.name == table) {
-                return t.columns.clone();
-            }
-        }
-        Vec::new()
     }
 
-    fn get_table(&self, table: &str, schema: Option<&str>) -> Option<schema::Table> {
-        if let Some(s) = schema {
-            return self
-                .schemas
-                .get(s)
+    fn get_table(&self, table: &str, schema: &str) -> Option<schema::Table> {
+        if schema.is_empty() {
+            // Search all schemas for the table
+            for sch in self.schemas.values() {
+                if let Some(t) = sch.tables.iter().find(|t| t.name == table) {
+                    return Some(t.clone());
+                }
+            }
+            None
+        } else {
+            self.schemas
+                .get(schema)
                 .and_then(|sch| sch.tables.iter().find(|t| t.name == table))
-                .cloned();
+                .cloned()
         }
-        for sch in self.schemas.values() {
-            if let Some(t) = sch.tables.iter().find(|t| t.name == table) {
-                return Some(t.clone());
-            }
-        }
-        None
     }
 
-    fn list_functions(&self, schema: Option<&str>) -> Vec<schema::Function> {
-        if let Some(s) = schema {
-            return self
-                .schemas
-                .get(s)
-                .map(|sch| sch.functions.clone())
-                .unwrap_or_default();
-        }
-        for sch in self.schemas.values() {
-            return sch.functions.clone();
-        }
-        Vec::new()
-    }
-
-    fn describe_table_function(&self, name: &str, schema: Option<&str>) -> Vec<schema::Column> {
-        if let Some(s) = schema {
-            return self
-                .schemas
-                .get(s)
-                .map(|sch| {
-                    sch.table_function_columns
-                        .get(name)
-                        .cloned()
-                        .unwrap_or_default()
-                })
-                .unwrap_or_default();
-        }
+    fn list_functions(&self) -> Vec<schema::Function> {
         self.schemas
             .values()
-            .find_map(|sch| sch.table_function_columns.get(name).cloned())
-            .unwrap_or_default()
+            .flat_map(|sch| sch.functions.clone())
+            .collect()
+    }
+
+    fn describe_table_function(&self, name: &str, schema: &str) -> Vec<schema::Column> {
+        if schema.is_empty() {
+            // Search all schemas for the function
+            self.schemas
+                .values()
+                .find_map(|sch| sch.table_function_columns.get(name).cloned())
+                .unwrap_or_default()
+        } else {
+            self.schemas
+                .get(schema)
+                .and_then(|sch| sch.table_function_columns.get(name).cloned())
+                .unwrap_or_default()
+        }
     }
 }
 
@@ -176,23 +159,23 @@ impl<'a> CatalogReadSync for &'a InMemoryCatalog {
         (*self).list_schemas()
     }
 
-    fn list_tables(&self, schema: Option<&str>) -> Vec<String> {
+    fn list_tables(&self, schema: &str) -> Vec<String> {
         (*self).list_tables(schema)
     }
 
-    fn list_columns(&self, table: &str, schema: Option<&str>) -> Vec<schema::Column> {
+    fn list_columns(&self, table: &str, schema: &str) -> Vec<schema::Column> {
         (*self).list_columns(table, schema)
     }
 
-    fn get_table(&self, table: &str, schema: Option<&str>) -> Option<schema::Table> {
+    fn get_table(&self, table: &str, schema: &str) -> Option<schema::Table> {
         (*self).get_table(table, schema)
     }
 
-    fn list_functions(&self, schema: Option<&str>) -> Vec<schema::Function> {
-        (*self).list_functions(schema)
+    fn list_functions(&self) -> Vec<schema::Function> {
+        (*self).list_functions()
     }
 
-    fn describe_table_function(&self, name: &str, schema: Option<&str>) -> Vec<schema::Column> {
+    fn describe_table_function(&self, name: &str, schema: &str) -> Vec<schema::Column> {
         (*self).describe_table_function(name, schema)
     }
 }

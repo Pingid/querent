@@ -2,47 +2,57 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "method")]
-pub enum LspJsonRequest {
+pub enum LspRequest {
     // Lifecycle
     #[serde(rename = "initialize")]
-    Initialize(RequestEnvelope<InitializeParams>),
+    Initialize(LspRequestEnvelope<InitializeParams>),
     #[serde(rename = "initialized")]
-    Initialized(RequestEnvelope<serde_json::Value>),
+    Initialized(LspRequestEnvelope<serde_json::Value>),
     #[serde(rename = "shutdown")]
-    Shutdown(RequestEnvelope<serde_json::Value>),
+    Shutdown(LspRequestEnvelope<serde_json::Value>),
 
     // Text Document
     #[serde(rename = "textDocument/didOpen")]
-    DidOpen(RequestEnvelope<TextDocumentDidOpenParams>),
+    DidOpen(LspRequestEnvelope<TextDocumentDidOpenParams>),
     #[serde(rename = "textDocument/didClose")]
-    DidClose(RequestEnvelope<TextDocumentDidCloseParams>),
+    DidClose(LspRequestEnvelope<TextDocumentDidCloseParams>),
     #[serde(rename = "textDocument/didChange")]
-    DidChange(RequestEnvelope<TextDocumentDidChangeParams>),
+    DidChange(LspRequestEnvelope<TextDocumentDidChangeParams>),
 
     // Completion
     #[serde(rename = "textDocument/completion")]
-    Completion(RequestEnvelope<CompletionParams>),
+    Completion(LspRequestEnvelope<CompletionParams>),
 
     // Other
     #[serde(rename = "$/setTrace")]
-    SetTrace(RequestEnvelope<serde_json::Value>),
+    SetTrace(LspRequestEnvelope<serde_json::Value>),
 
     #[serde(rename = "$/cancelRequest")]
-    CancelRequest(RequestEnvelope<CancelRequestParams>),
+    CancelRequest(LspRequestEnvelope<CancelRequestParams>),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RequestEnvelope<T> {
+pub struct LspRequestEnvelope<T> {
     pub jsonrpc: String,
-    pub params: Option<T>,
+    pub params: T,
     pub id: Option<u64>,
+}
+
+impl<T> LspRequestEnvelope<T> {
+    pub fn new(id: Option<u64>, params: T) -> Self {
+        Self {
+            jsonrpc: "2.0".to_string(),
+            params,
+            id,
+        }
+    }
 }
 
 // ---------------- INITIALIZE ----------------
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InitializeParams {
     #[serde(rename = "processId")]
-    pub process_id: i32,
+    pub process_id: Option<i32>,
     #[serde(rename = "rootUri")]
     pub root_uri: Option<String>,
     pub capabilities: serde_json::Value,
@@ -77,7 +87,7 @@ pub struct CompletionParams {
     #[serde(rename = "textDocument")]
     pub text_document: lsp_types::TextDocumentIdentifier,
     pub position: lsp_types::Position,
-    pub context: lsp_types::CompletionContext,
+    pub context: Option<lsp_types::CompletionContext>,
 }
 
 // ---------------- CANCEL REQUEST ----------------

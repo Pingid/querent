@@ -1,3 +1,14 @@
 [workspace]
-members = [ "catalogs","core", "lsp"]
+members = [
+    "core",
+    "lsp",
+    "lsp-catalog",
+    "lsp-engine-tcp",
+    "lsp-server",
+    "lsp-wasm",
+]
 resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

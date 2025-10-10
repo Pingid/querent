@@ -6,7 +6,7 @@ settings:
 
 importers:
 
-  .:
+  vscode:
     dependencies:
       reconnecting-websocket:
         specifier: ^4.4.0
