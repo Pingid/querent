@@ -29,6 +29,9 @@ pub trait CatalogRead {
     ) -> BoxedFuture<'_, Vec<schema::Column>> {
         Box::pin(ready(vec![]))
     }
+    fn close(&self) -> BoxedFuture<'_, ()> {
+        Box::pin(ready(()))
+    }
 }
 
 pub trait CatalogReadSync {

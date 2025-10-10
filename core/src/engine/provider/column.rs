@@ -247,7 +247,7 @@ async fn collect_columns_from_tables(
     catalog: &(dyn CatalogRead + Send + Sync),
     eligible_tables: &[(String, String)],
     base_relations: &[(&crate::engine::context::RelationBinding, &Vec<String>)],
-    use_qualified: bool,
+    _use_qualified: bool,
 ) -> Vec<(
     String,
     String,
@@ -269,11 +269,8 @@ async fn collect_columns_from_tables(
             .await;
 
         let source = format_source(schema, table);
-        let qualifier = if use_qualified {
-            find_table_qualifier(base_relations, schema, table).unwrap_or(table)
-        } else {
-            ""
-        };
+        // Always get qualifier for duplicate detection, even if not used for display yet
+        let qualifier = find_table_qualifier(base_relations, schema, table).unwrap_or(table);
 
         columns.reserve(cols.len());
         for c in cols {
@@ -324,17 +321,31 @@ fn columns_to_completions(
     use_qualified: bool,
     ctx: &Context,
 ) -> Vec<Completion> {
+    // Count occurrences of each column name to detect duplicates
+    let mut name_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (name, _, _, _) in &columns {
+        *name_counts.entry(name.clone()).or_insert(0) += 1;
+    }
+
     columns
         .into_iter()
         .map(|(name, source, qualifier, column)| {
-            let (insert_text, filter_text) = if use_qualified && !qualifier.is_empty() {
-                (format!("{}.{}", qualifier, name), Some(name.clone()))
+            // Use qualified name in label if there are duplicate column names
+            let has_duplicates = name_counts.get(&name).copied().unwrap_or(0) > 1;
+
+            let (label, insert_text, filter_text) = if use_qualified && !qualifier.is_empty() {
+                let qualified = format!("{}.{}", qualifier, name);
+                (qualified.clone(), qualified, Some(name.clone()))
+            } else if has_duplicates && !qualifier.is_empty() {
+                // Show qualified name in label for duplicates
+                let qualified = format!("{}.{}", qualifier, name);
+                (qualified.clone(), qualified, Some(name.clone()))
             } else {
-                (name.clone(), Some(name.clone()))
+                (name.clone(), name.clone(), Some(name.clone()))
             };
 
             Completion {
-                label: name,
+                label,
                 insert_text,
                 filter_text,
                 kind: CompletionKind::Column(crate::engine::ColumnCompletion {

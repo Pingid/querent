@@ -29,8 +29,8 @@ impl TryFrom<&str> for DialectKind {
     type Error = String;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "postgres" | "pg" => Ok(DialectKind::Postgres(postgres::Postgres)),
-            "ansi" => Ok(DialectKind::Ansi(ansi::Ansi)),
+            "postgres" | "pg" => Ok(DialectKind::Postgres(postgres::Postgres::default())),
+            "ansi" => Ok(DialectKind::Ansi(ansi::Ansi::default())),
             _ => Err(format!("Unsupported dialect: {}", value)),
         }
     }
@@ -38,6 +38,7 @@ impl TryFrom<&str> for DialectKind {
 
 #[derive(Debug, Clone)]
 pub struct DialectSpec {
+    pub name: &'static str,
     pub keywords: &'static phf::Map<&'static str, Keyword>,
     /// Follow keywords are used to suggest keywords or operators after a given keyword or operator.
     pub follow_keywords: &'static [(&'static [FollowWord], &'static [&'static [FollowWord]])],

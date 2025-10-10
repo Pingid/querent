@@ -13,6 +13,6 @@ pub fn with_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {
 }
 
 pub fn ansi_tokens<'a>(sql: &'a str) -> Vec<Token<'a>> {
-    let dialect = Ansi;
+    let dialect = Ansi::default();
     lex(dialect.get_spec(), sql)
 }

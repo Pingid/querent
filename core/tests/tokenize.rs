@@ -4,7 +4,7 @@ use querent_core::token::{Keyword, Token, TokenKind, lex};
 
 #[test]
 fn basic_select_line() {
-    let d = Ansi;
+    let d = Ansi::default();
     let s = d.get_spec();
     let input = "SELECT name, * FROM users WHERE age > 18 AND name = 'John'";
     let toks = lex(s, input);
@@ -174,13 +174,13 @@ proptest! {
 }
 
 pub fn ansi_tokens<'a>(input: &'a str) -> Vec<Token<'a>> {
-    let d = Ansi;
+    let d = Ansi::default();
     let s = d.get_spec();
     lex(s, input)
 }
 
 pub fn ansi_token_kinds(input: &str) -> Vec<TokenKind> {
-    let d = Ansi;
+    let d = Ansi::default();
     let s = d.get_spec();
     lex(s, input)
         .into_iter()

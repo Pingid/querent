@@ -10,12 +10,20 @@ use keyword::KEYWORDS;
 mod operator;
 use operator::OP_TABLE;
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Ansi;
+#[derive(Debug, Clone, Copy)]
+pub struct Ansi {
+    pub spec: &'static DialectSpec,
+}
+
+impl Default for Ansi {
+    fn default() -> Self {
+        Self { spec: &SPEC }
+    }
+}
 
 impl Dialect for Ansi {
-    fn get_spec(&self) -> &DialectSpec {
-        &SPEC
+    fn get_spec(&self) -> &'static DialectSpec {
+        self.spec
     }
 }
 
@@ -24,6 +32,7 @@ use FollowWord::Keyword as K;
 
 /// The global ANSI dialect spec — no runtime alloc, no cloning.
 pub static SPEC: DialectSpec = DialectSpec {
+    name: "ansi",
     keywords: &KEYWORDS,
     operators: &OP_TABLE,
     quote_styles: &[QuoteStyle::Double],
@@ -209,9 +218,15 @@ pub static SPEC: DialectSpec = DialectSpec {
         (&[K(Keyword::Case)], &[&[K(Keyword::When)]]),
         (&[K(Keyword::When)], &[&[K(Keyword::Then)]]),
         // More specific rule for CASE expressions: WHEN THEN suggests WHEN, ELSE, END
-        (&[K(Keyword::When), K(Keyword::Then)], &[&[K(Keyword::When)], &[K(Keyword::Else)], &[K(Keyword::End)]]),
+        (
+            &[K(Keyword::When), K(Keyword::Then)],
+            &[&[K(Keyword::When)], &[K(Keyword::Else)], &[K(Keyword::End)]],
+        ),
         // Fallback rule for THEN in CASE context
-        (&[K(Keyword::Then)], &[&[K(Keyword::When)], &[K(Keyword::Else)], &[K(Keyword::End)]]),
+        (
+            &[K(Keyword::Then)],
+            &[&[K(Keyword::When)], &[K(Keyword::Else)], &[K(Keyword::End)]],
+        ),
         (&[K(Keyword::Else)], &[&[K(Keyword::End)]]),
         // — Set operators —
         (

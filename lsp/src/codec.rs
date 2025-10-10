@@ -1,15 +1,23 @@
-use crate::rpc;
+use std::marker::PhantomData;
 
-pub struct JsonRpcCodec {
+pub struct LspJsonCodec<Req, Res> {
     buffer: String,
     lsp_headers: bool,
+    _req: PhantomData<Req>,
+    _res: PhantomData<Res>,
 }
 
-impl JsonRpcCodec {
+impl<Req, Res> LspJsonCodec<Req, Res>
+where
+    Req: serde::de::DeserializeOwned,
+    Res: serde::Serialize,
+{
     pub fn new(lsp_headers: bool) -> Self {
         Self {
             buffer: String::new(),
             lsp_headers,
+            _req: PhantomData,
+            _res: PhantomData,
         }
     }
 
@@ -17,7 +25,7 @@ impl JsonRpcCodec {
         self.buffer.push_str(s);
     }
 
-    pub fn encode(&self, response: rpc::ResponseEnvelope) -> Result<String, String> {
+    pub fn encode(&self, response: Res) -> Result<String, String> {
         let json = serde_json::to_string(&response).map_err(|e| e.to_string())?;
         let msg = match self.lsp_headers {
             true => format!("Content-Length: {}\r\n\r\n{}", json.len(), json),
@@ -26,14 +34,13 @@ impl JsonRpcCodec {
         Ok(msg)
     }
 
-    pub fn decode(&mut self) -> Result<Option<rpc::JsonRequest>, String> {
-        match self.try_extract_message() {
-            Ok(Some(s)) => match serde_json::from_str::<rpc::JsonRequest>(s.as_str()) {
-                Ok(request) => Ok(Some(request)),
-                Err(e) => Err(e.to_string()),
+    pub fn decode(&mut self) -> Result<Option<Req>, String> {
+        match self.try_extract_message()? {
+            Some(s) => match serde_json::from_str::<Req>(&s) {
+                Ok(req) => Ok(Some(req)),
+                Err(_) => Err(format!("Error decoding request: {}", s)),
             },
-            Ok(None) => Ok(None),
-            Err(e) => Err(e),
+            None => Ok(None),
         }
     }
 

@@ -1,6 +1,6 @@
 use querent_core::{
     catalog::{InMemoryCatalog, schema},
-    dialect::{Ansi, Dialect},
+    dialect::{Ansi, Dialect, DialectSpec},
     doc::Content,
     engine::{Completion, CompletionKind, Engine},
 };
@@ -89,14 +89,15 @@ fn with_suggests_recursive_after_with() {
 fn column_suggests_from_all_tables_without_from() {
     // Without FROM clause, suggest columns from all tables in catalog
     let t = case("SELECT ^").catalog(users_posts()).run();
-    t.assert_col(["content", "email", "id", "id", "name", "title"]);
+    // Duplicate column names (id) show with qualified names
+    t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
     t.assert_col_source([
         "public.posts",
         "public.users",
         "public.users",
         "public.posts",
-        "public.users",
         "public.posts",
+        "public.users",
     ]);
 }
 
@@ -151,7 +152,7 @@ fn column_continues_qualified_syntax() {
     let t = case("SELECT users.name, ^ FROM users")
         .catalog(users_posts())
         .run();
-    t.assert_col(["email", "id"]);
+    t.assert_col(["users.email", "users.id"]);
     t.assert_apply("SELECT users.name, users.email FROM users");
 }
 
@@ -190,10 +191,10 @@ fn column_qualifies_with_aliases_for_multiple_tables() {
         .catalog(users_posts())
         .run();
 
-    // Order is deterministic (label asc, then source), but we assert a subsequence to be robust
+    // Duplicate "id" columns show with qualified names using aliases
     t.assert_kind_contains_in_order(
         |k| matches!(k, CompletionKind::Column(_)),
-        ["content", "email", "id", "id", "title"],
+        ["p.content", "p.id", "u.email", "u.id"],
     );
     t.assert_apply("SELECT u.name, p.content FROM public.users u, public.posts p");
 }
@@ -233,6 +234,18 @@ fn column_completes_from_cte_with_alias() {
     let t = case(sql).catalog(users_posts()).run();
     t.assert_col(["id", "name"]);
     t.assert_col_source(["public.users", "public.users"]);
+}
+
+#[test]
+fn column_shows_qualified_labels_for_duplicates() {
+    // When multiple tables have the same column name, show qualified labels
+    let cat = CatalogBuilder::new()
+        .table("public", "users", &["id", "name"])
+        .table("public", "posts", &["id", "title"])
+        .build();
+    let t = case("SELECT ^ FROM users, posts").catalog(cat).run();
+    // Both "id" columns should show with qualified names (sorted alphabetically)
+    t.assert_col(["name", "posts.id", "title", "users.id"]);
 }
 
 #[test]
@@ -323,7 +336,8 @@ fn join_suggests_columns_in_on_clause() {
     // Suggest columns from both tables in JOIN ON clause
     let sql = "SELECT * FROM users JOIN posts ON ^";
     let t = case(sql).catalog(users_posts()).run();
-    t.assert_col(["content", "email", "id", "id", "name", "title"]);
+    // Duplicate "id" columns show with qualified names
+    t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
 }
 
 #[test]
@@ -331,7 +345,8 @@ fn join_suggests_columns_after_logical_operator() {
     // After logical operator (AND/OR), suggest columns again
     let sql = "SELECT * FROM users JOIN posts ON users.id = posts.id AND ^";
     let t = case(sql).catalog(users_posts()).run();
-    t.assert_col(["content", "email", "id", "id", "name", "title"]);
+    // Duplicate "id" columns show with qualified names
+    t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
 }
 
 #[test]
@@ -371,7 +386,8 @@ fn join_supports_inner() {
     // INNER JOIN works the same as JOIN
     let sql = "SELECT * FROM users INNER JOIN posts ON ^";
     let t = case(sql).catalog(users_posts()).run();
-    t.assert_col(["content", "email", "id", "id", "name", "title"]);
+    // Duplicate "id" columns show with qualified names
+    t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
 }
 
 #[test]
@@ -517,7 +533,8 @@ fn case_suggests_when_after_case() {
 fn case_suggests_columns_after_when_condition() {
     // Suggest THEN after WHEN condition
     let t = case("SELECT CASE WHEN ^").catalog(users_posts()).run();
-    t.assert_col(["content", "email", "id", "id", "name", "title"]);
+    // Duplicate "id" columns show with qualified names
+    t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
 }
 
 #[test]
@@ -545,9 +562,9 @@ fn users_posts() -> InMemoryCatalog {
         .build()
 }
 
-fn case(input: &str) -> CompletionTester<Ansi> {
+fn case(input: &str) -> CompletionTester {
     let (input, pos) = with_caret_cursor(input);
-    CompletionTester::new(Ansi, input, pos)
+    CompletionTester::new(Ansi::default().spec, input, pos)
 }
 
 struct TestCase {
@@ -687,18 +704,18 @@ impl TestCase {
     }
 }
 
-struct CompletionTester<D> {
+struct CompletionTester {
     catalog: InMemoryCatalog,
-    dialect: D,
+    spec: &'static DialectSpec,
     input: String,
     cursor: usize,
 }
 
-impl<D: Dialect> CompletionTester<D> {
-    fn new(dialect: D, input: impl Into<String>, cursor: usize) -> Self {
+impl CompletionTester {
+    fn new(spec: &'static DialectSpec, input: impl Into<String>, cursor: usize) -> Self {
         Self {
+            spec,
             catalog: InMemoryCatalog::new(),
-            dialect,
             input: input.into(),
             cursor,
         }
@@ -711,7 +728,7 @@ impl<D: Dialect> CompletionTester<D> {
         let mut doc = Content::default();
         doc.set_content(&self.input);
         doc.set_cursor(self.cursor);
-        let engine = Engine::new(self.catalog, self.dialect);
+        let engine = Engine::new(Box::new(self.catalog), self.spec);
         let completions = futures::executor::block_on(engine.complete(&doc));
         TestCase {
             sql: self.input,

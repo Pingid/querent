@@ -4,7 +4,7 @@ import * as vscode from 'vscode'
 import { Duplex } from 'stream'
 import WebSocket from 'ws'
 
-import { registerConnections } from './connections'
+import { registerConnections, getConnectionForFile } from './connections'
 
 let client: LanguageClient
 
@@ -23,8 +23,81 @@ export const activate = (context: vscode.ExtensionContext) => {
     vscode.window.showErrorMessage(`Failed to start SQL LSP: ${err.message}`)
   })
 
-  // Register commands
+  // Set up document lifecycle handlers
+  context.subscriptions.push(
+    vscode.workspace.onDidOpenTextDocument((document) => {
+      if (document.languageId === 'sql') {
+        setEngineForDocument(context, document)
+      }
+    }),
+  )
+
+  context.subscriptions.push(
+    vscode.workspace.onDidCloseTextDocument((document) => {
+      if (document.languageId === 'sql') {
+        removeEngineForDocument(document)
+      }
+    }),
+  )
+
+  // Set engine for already open documents after client starts
+  setTimeout(() => {
+    vscode.workspace.textDocuments.forEach((document) => {
+      if (document.languageId === 'sql') {
+        setEngineForDocument(context, document)
+      }
+    })
+  }, 1000)
+
+  // Register commands with callback for connection changes
   registerConnections(context)
+
+  // Export a function to notify when connections change
+  context.subscriptions.push(
+    vscode.commands.registerCommand('querent.updateEngineForDocument', (documentUri: string) => {
+      const document = vscode.workspace.textDocuments.find((doc) => doc.uri.toString() === documentUri)
+      if (document) {
+        setEngineForDocument(context, document)
+      }
+    }),
+  )
+}
+
+const setEngineForDocument = async (context: vscode.ExtensionContext, document: vscode.TextDocument) => {
+  const connection = getConnectionForFile(context, document.uri.toString())
+  if (!connection) {
+    return
+  }
+
+  try {
+    const response = await client.sendRequest('engine/set', {
+      document_uri: document.uri.toString(),
+      uri: connection.uri,
+      kind: { type: 'postgres', uri: connection.uri },
+    })
+
+    if (response && typeof response === 'object' && 'result' in response) {
+      const result = (response as any).result
+      if (result && typeof result === 'object' && 'status' in result) {
+        if (result.status === 'success') {
+          vscode.window.showInformationMessage(
+            `✓ Connected to ${connection.name} for ${document.fileName.split('/').pop()}`,
+          )
+        } else if (result.status === 'error') {
+          const errorMsg = result.message || 'Unknown error'
+          vscode.window.showErrorMessage(`✗ Failed to connect to ${connection.name}: ${errorMsg}`)
+        }
+      }
+    }
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`Failed to connect to ${connection.name}: ${err.message || err}`)
+  }
+}
+
+const removeEngineForDocument = (document: vscode.TextDocument) => {
+  client.sendNotification('engine/remove', {
+    document_uri: document.uri.toString(),
+  })
 }
 
 export const deactivate = () => client?.stop()

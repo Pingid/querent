@@ -5,7 +5,7 @@ type BaseConnection = {
   name: string
 }
 
-type PgConnection = BaseConnection & { type: 'pg'; uri: string }
+type PgConnection = BaseConnection & { type: 'postgres'; uri: string }
 type MySqlConnection = BaseConnection & { type: 'mysql'; uri: string }
 type SqliteConnection = BaseConnection & { type: 'sqlite'; uri: string }
 type RemoteConnection = BaseConnection & {
@@ -107,26 +107,18 @@ const buildRemoteConnection = async (name: string): Promise<RemoteConnection | u
 
 const buildDbConnection = async (
   name: string,
-  type: 'pg' | 'mysql',
+  type: 'postgres' | 'mysql',
 ): Promise<PgConnection | MySqlConnection | undefined> => {
-  const defaultPort = type === 'pg' ? '5432' : '3306'
-  const host = await input('Host', { placeHolder: 'localhost', value: 'localhost' })
-  if (!host) return undefined
+  const exampleUri = type === 'postgres'
+    ? 'postgresql://user:password@localhost:5432/database'
+    : 'mysql://user:password@localhost:3306/database'
 
-  const port = await input('Port', { placeHolder: defaultPort, value: defaultPort })
-  if (!port) return undefined
+  const uri = await input('Connection URI', {
+    placeHolder: exampleUri,
+    prompt: 'Enter the full database connection URI'
+  })
 
-  const database = await input('Database name', { placeHolder: type === 'pg' ? 'postgres' : 'mysql' })
-  if (!database) return undefined
-
-  const username = await input('Username', { placeHolder: 'user' })
-  if (!username) return undefined
-
-  const password = await input('Password (optional)', { placeHolder: 'password', password: true })
-
-  const protocol = type === 'pg' ? 'postgresql' : 'mysql'
-  const auth = `${username}${password ? ':' + password : ''}`
-  const uri = `${protocol}://${auth}@${host}:${port}/${database}`
+  if (!uri) return undefined
 
   return { id: Date.now().toString(), name, type, uri }
 }
@@ -137,18 +129,17 @@ const addConnection = async (context: vscode.ExtensionContext) => {
   if (!name) return
 
   const typeOptions = [
-    { label: 'PostgreSQL', value: 'pg' as const },
-    { label: 'MySQL', value: 'mysql' as const },
-    { label: 'SQLite', value: 'sqlite' as const },
-    { label: 'Remote', value: 'remote' as const },
+    { label: 'PostgreSQL', value: 'postgres' as const },
+    // Temporarily disabled - only PostgreSQL is supported in LSP currently
+    // { label: 'MySQL', value: 'mysql' as const },
+    // { label: 'SQLite', value: 'sqlite' as const },
+    // { label: 'Remote', value: 'remote' as const },
   ]
   const type = await pick(typeOptions, 'Select connection type')
   if (!type) return
 
-  let connection: Connection | undefined
-  if (type.value === 'sqlite') connection = await buildSqliteConnection(name)
-  else if (type.value === 'remote') connection = await buildRemoteConnection(name)
-  else connection = await buildDbConnection(name, type.value)
+  // Only PostgreSQL is supported for now
+  const connection = await buildDbConnection(name, type.value)
 
   if (!connection) return
 
@@ -156,7 +147,13 @@ const addConnection = async (context: vscode.ExtensionContext) => {
   await setState(context, 'connections', [...connections, connection])
 
   const editor = vscode.window.activeTextEditor
-  await setConnectionForFile(context, connection.id, editor?.document.uri.toString())
+  const fileUri = editor?.document.uri.toString()
+  await setConnectionForFile(context, connection.id, fileUri)
+
+  // Notify the LSP to update the engine for this document
+  if (fileUri) {
+    await vscode.commands.executeCommand('querent.updateEngineForDocument', fileUri)
+  }
 
   const msg = editor
     ? `Connection "${name}" added and set as default for ${editor.document.fileName}`
@@ -197,6 +194,10 @@ const viewConnections = async (context: vscode.ExtensionContext) => {
   if (!selected) return
 
   await setConnectionForFile(context, selected.connection.id, fileUri)
+
+  // Notify the LSP to update the engine for this document
+  await vscode.commands.executeCommand('querent.updateEngineForDocument', fileUri)
+
   vscode.window.showInformationMessage(
     `Connection "${selected.connection.name}" set as default for ${editor.document.fileName}`,
   )

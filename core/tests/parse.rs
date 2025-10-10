@@ -11,7 +11,7 @@ use common::ast::AstDisplay;
 // ---------------- Test: Statement ----------------
 #[test]
 fn statement_partial_and_query() {
-    let dialect = Ansi;
+    let dialect = Ansi::default();
     let spec = dialect.get_spec();
     let ast = statement("", spec);
     assert!(matches!(ast, ast::Statement::Partial(_)));
@@ -119,7 +119,7 @@ fn pg_complete() {
         // WINDOW name + FILTER
         "SELECT dept, SUM(salary) FILTER (WHERE active) OVER w AS active_sum, SUM(salary) OVER w AS total_sum FROM emp WINDOW w AS (PARTITION BY dept ORDER BY hired_at)",
     ];
-    let d = Postgres;
+    let d = Postgres::default();
     let spec = d.get_spec();
     assert_display_match(&inputs, std::slice::from_ref(spec));
 }
@@ -162,8 +162,8 @@ fn assert_display_match_pairs(inputs: &[(&str, &str)], specs: &[DialectSpec]) {
 }
 
 fn ansi_compliant_specs() -> Vec<DialectSpec> {
-    let ansi = Ansi;
-    let pg = Postgres;
+    let ansi = Ansi::default();
+    let pg = Postgres::default();
     vec![ansi.get_spec().clone(), pg.get_spec().clone()]
 }
 

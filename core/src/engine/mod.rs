@@ -1,5 +1,5 @@
 use crate::{
-    catalog::CatalogRead, dialect::Dialect, doc::Content, parse::parse_statement, token::lex,
+    catalog::CatalogRead, dialect::DialectSpec, doc::Content, parse::parse_statement, token::lex,
 };
 
 mod completion;
@@ -12,22 +12,18 @@ use context::build_context;
 use provider::ProviderRegistry;
 use ranker::{DefaultRanker, DefaultScorer, Ranker};
 
-pub struct Engine<C, D> {
-    pub catalog: C,
-    pub dialect: D,
+pub struct Engine {
+    pub spec: &'static DialectSpec,
+    pub catalog: Box<dyn CatalogRead + Send + Sync>,
     pub ranker: Box<dyn Ranker + Send + Sync>,
     pub providers: ProviderRegistry,
 }
 
-impl<C, D> Engine<C, D>
-where
-    C: CatalogRead + Send + Sync,
-    D: Dialect,
-{
-    pub fn new(catalog: C, dialect: D) -> Self {
+impl Engine {
+    pub fn new(catalog: Box<dyn CatalogRead + Send + Sync>, spec: &'static DialectSpec) -> Self {
         Self {
+            spec,
             catalog,
-            dialect,
             ranker: Box::new(DefaultRanker::new(DefaultScorer)),
             providers: ProviderRegistry::default(),
         }
@@ -35,7 +31,7 @@ where
 
     pub async fn complete(&self, doc: &Content) -> Vec<Completion> {
         let txt = doc.current_statement();
-        let spec = self.dialect.get_spec();
+        let spec = self.spec;
         let tokens = lex(spec, &txt);
         let Some(stmt) = parse_statement(&tokens) else {
             return vec![];
@@ -43,7 +39,7 @@ where
         let cursor = doc.cursor().min(txt.len());
         let ctx = build_context(&txt, &tokens, cursor, &stmt);
         let fragment = ctx.cursor.fragment.clone();
-        let completions = self.providers.complete(&self.catalog, spec, ctx).await;
+        let completions = self.providers.complete(&*self.catalog, spec, ctx).await;
         self.ranker.rank(&fragment, completions)
     }
 }

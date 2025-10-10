@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "method")]
-pub enum JsonRequest {
+pub enum LspJsonRequest {
     // Lifecycle
     #[serde(rename = "initialize")]
     Initialize(RequestEnvelope<InitializeParams>),
