@@ -130,28 +130,6 @@ impl CatalogReadSync for InMemoryCatalog {
                 .cloned()
         }
     }
-
-    fn list_functions(&self) -> Vec<schema::Function> {
-        self.schemas
-            .values()
-            .flat_map(|sch| sch.functions.clone())
-            .collect()
-    }
-
-    fn describe_table_function(&self, name: &str, schema: &str) -> Vec<schema::Column> {
-        if schema.is_empty() {
-            // Search all schemas for the function
-            self.schemas
-                .values()
-                .find_map(|sch| sch.table_function_columns.get(name).cloned())
-                .unwrap_or_default()
-        } else {
-            self.schemas
-                .get(schema)
-                .and_then(|sch| sch.table_function_columns.get(name).cloned())
-                .unwrap_or_default()
-        }
-    }
 }
 
 impl<'a> CatalogReadSync for &'a InMemoryCatalog {
@@ -169,13 +147,5 @@ impl<'a> CatalogReadSync for &'a InMemoryCatalog {
 
     fn get_table(&self, table: &str, schema: &str) -> Option<schema::Table> {
         (*self).get_table(table, schema)
-    }
-
-    fn list_functions(&self) -> Vec<schema::Function> {
-        (*self).list_functions()
-    }
-
-    fn describe_table_function(&self, name: &str, schema: &str) -> Vec<schema::Column> {
-        (*self).describe_table_function(name, schema)
     }
 }

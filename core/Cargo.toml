@@ -11,6 +11,7 @@ strsim = "0.11.1"
 # Feature dependencies
 serde = { workspace = true, features = ["derive"], optional = true }
 tracing = "0.1.41"
+thiserror = "2.0.17"
 
 [features]
 serde = ["dep:serde"]

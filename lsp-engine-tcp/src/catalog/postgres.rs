@@ -116,11 +116,7 @@ impl CatalogRead for PostgresConnectedCatalog {
         })
     }
 
-    fn list_columns(
-        &self,
-        table: &str,
-        schema: &str,
-    ) -> BoxedFuture<'_, Vec<schema::Column>> {
+    fn list_columns(&self, table: &str, schema: &str) -> BoxedFuture<'_, Vec<schema::Column>> {
         let table = table.to_string();
         let schema = if schema.is_empty() { "public" } else { schema }.to_string();
         Box::pin(async move {
@@ -194,11 +190,7 @@ impl CatalogRead for PostgresConnectedCatalog {
         })
     }
 
-    fn get_table(
-        &self,
-        table: &str,
-        schema: &str,
-    ) -> BoxedFuture<'_, Option<schema::Table>> {
+    fn get_table(&self, table: &str, schema: &str) -> BoxedFuture<'_, Option<schema::Table>> {
         let table = table.to_string();
         let schema_str = if schema.is_empty() { "public" } else { schema }.to_string();
         Box::pin(async move {
@@ -296,59 +288,59 @@ impl CatalogRead for PostgresConnectedCatalog {
         })
     }
 
-    fn list_functions(&self) -> BoxedFuture<'_, Vec<schema::Function>> {
-        Box::pin(async move {
-            let conn = match self.pool.get().await {
-                Ok(c) => c,
-                Err(_) => return vec![],
-            };
+    // fn list_functions(&self) -> BoxedFuture<'_, Vec<schema::Function>> {
+    //     Box::pin(async move {
+    //         let conn = match self.pool.get().await {
+    //             Ok(c) => c,
+    //             Err(_) => return vec![],
+    //         };
 
-            let rows = conn
-                .query(
-                    "SELECT
-                        p.proname,
-                        pg_catalog.pg_get_function_arguments(p.oid) as args,
-                        CASE
-                            WHEN p.proretset THEN 'table'
-                            WHEN p.prokind = 'a' THEN 'aggregate'
-                            ELSE 'scalar'
-                        END as function_type,
-                        pg_catalog.obj_description(p.oid, 'pg_proc') as description,
-                        pg_catalog.format_type(p.prorettype, NULL) as return_type
-                     FROM pg_catalog.pg_proc p
-                     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
-                     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-                     ORDER BY p.proname",
-                    &[],
-                )
-                .await
-                .unwrap_or_default();
+    //         let rows = conn
+    //             .query(
+    //                 "SELECT
+    //                     p.proname,
+    //                     pg_catalog.pg_get_function_arguments(p.oid) as args,
+    //                     CASE
+    //                         WHEN p.proretset THEN 'table'
+    //                         WHEN p.prokind = 'a' THEN 'aggregate'
+    //                         ELSE 'scalar'
+    //                     END as function_type,
+    //                     pg_catalog.obj_description(p.oid, 'pg_proc') as description,
+    //                     pg_catalog.format_type(p.prorettype, NULL) as return_type
+    //                  FROM pg_catalog.pg_proc p
+    //                  LEFT JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
+    //                  WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+    //                  ORDER BY p.proname",
+    //                 &[],
+    //             )
+    //             .await
+    //             .unwrap_or_default();
 
-            rows.iter()
-                .map(|row| {
-                    let name: String = row.get(0);
-                    let _args: String = row.get(1); // TODO: parse arguments
-                    let fn_type: String = row.get(2);
-                    let description: Option<String> = row.get(3);
-                    let return_type_str: String = row.get(4);
+    //         rows.iter()
+    //             .map(|row| {
+    //                 let name: String = row.get(0);
+    //                 let _args: String = row.get(1); // TODO: parse arguments
+    //                 let fn_type: String = row.get(2);
+    //                 let description: Option<String> = row.get(3);
+    //                 let return_type_str: String = row.get(4);
 
-                    let function_type = match fn_type.as_str() {
-                        "table" => schema::FunctionType::Table,
-                        "aggregate" => schema::FunctionType::Aggregate,
-                        _ => schema::FunctionType::Scalar,
-                    };
+    //                 let function_type = match fn_type.as_str() {
+    //                     "table" => schema::FunctionType::Table,
+    //                     "aggregate" => schema::FunctionType::Aggregate,
+    //                     _ => schema::FunctionType::Scalar,
+    //                 };
 
-                    schema::Function {
-                        name,
-                        parameter_types: vec![], // TODO: parse from args
-                        function_type,
-                        description,
-                        return_type: Some(parse_postgres_type(&return_type_str)),
-                    }
-                })
-                .collect()
-        })
-    }
+    //                 schema::Function {
+    //                     name,
+    //                     parameter_types: vec![], // TODO: parse from args
+    //                     function_type,
+    //                     description,
+    //                     return_type: Some(parse_postgres_type(&return_type_str)),
+    //                 }
+    //             })
+    //             .collect()
+    //     })
+    // }
 }
 
 fn parse_postgres_type(pg_type: &str) -> schema::SimpleType {

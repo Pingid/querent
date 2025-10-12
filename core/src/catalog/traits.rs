@@ -5,22 +5,20 @@ use std::pin::Pin;
 use crate::catalog::schema;
 
 pub type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub type CatalogResult<'a, T> = BoxedFuture<'a, Result<T, CatalogError>>;
+
+#[derive(Debug)]
+pub enum CatalogError {
+    NotFound,
+    Backend(String),
+    Other(String),
+}
 
 pub trait CatalogRead {
     fn list_schemas(&self) -> BoxedFuture<'_, Vec<String>>;
     fn list_tables(&self, schema: &str) -> BoxedFuture<'_, Vec<String>>;
     fn list_columns(&self, table: &str, schema: &str) -> BoxedFuture<'_, Vec<schema::Column>>;
     fn get_table(&self, table: &str, schema: &str) -> BoxedFuture<'_, Option<schema::Table>>;
-    fn list_functions(&self) -> BoxedFuture<'_, Vec<schema::Function>> {
-        Box::pin(ready(vec![]))
-    }
-    fn describe_table_function(
-        &self,
-        _name: &str,
-        _schema: &str,
-    ) -> BoxedFuture<'_, Vec<schema::Column>> {
-        Box::pin(ready(vec![]))
-    }
     fn close(&self) -> BoxedFuture<'_, ()> {
         Box::pin(ready(()))
     }
@@ -31,12 +29,6 @@ pub trait CatalogReadSync {
     fn list_tables(&self, schema: &str) -> Vec<String>;
     fn list_columns(&self, table: &str, schema: &str) -> Vec<schema::Column>;
     fn get_table(&self, table: &str, schema: &str) -> Option<schema::Table>;
-    fn list_functions(&self) -> Vec<schema::Function> {
-        vec![]
-    }
-    fn describe_table_function(&self, _name: &str, _schema: &str) -> Vec<schema::Column> {
-        vec![]
-    }
 }
 
 impl<T> CatalogRead for T
@@ -65,17 +57,5 @@ where
         schema: &str,
     ) -> Pin<Box<dyn Future<Output = Option<schema::Table>> + Send + '_>> {
         Box::pin(ready(self.get_table(table, schema)))
-    }
-
-    fn list_functions(&self) -> Pin<Box<dyn Future<Output = Vec<schema::Function>> + Send + '_>> {
-        Box::pin(ready(self.list_functions()))
-    }
-
-    fn describe_table_function(
-        &self,
-        name: &str,
-        schema: &str,
-    ) -> Pin<Box<dyn Future<Output = Vec<schema::Column>> + Send + '_>> {
-        Box::pin(ready(self.describe_table_function(name, schema)))
     }
 }

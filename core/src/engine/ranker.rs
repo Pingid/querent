@@ -2,8 +2,6 @@ use std::cmp::Ordering;
 use strsim::jaro_winkler;
 
 use super::completion::{Completion, CompletionKind};
-#[cfg(test)]
-use super::completion::TableCompletion;
 
 /// Ranker decides how a batch of completions should be ordered for a given `needle`.
 pub trait Ranker {
@@ -48,51 +46,48 @@ impl<S: Scorer> Ranker for DefaultRanker<S> {
     }
 }
 
-// ---- internal helpers -------------------------------------------------------
+/// Sorting that mirrors the scorer’s tuple but also keeps keywords last.
+fn compare(a: &Completion, b: &Completion, needle: &str, scorer: &impl Scorer) -> Ordering {
+    let ka = is_keyword(&a.kind);
+    let kb = is_keyword(&b.kind);
+
+    ka.cmp(&kb).then_with(|| {
+        let sa = scorer.score(a, needle);
+        let sb = scorer.score(b, needle);
+
+        // exact desc
+        (sb.exact as u8)
+            .cmp(&(sa.exact as u8))
+            // prefix desc
+            .then_with(|| (sb.prefix as u8).cmp(&(sa.prefix as u8)))
+            // fuzzy desc
+            .then_with(|| sb.fuzzy.partial_cmp(&sa.fuzzy).unwrap_or(Ordering::Equal))
+            // label asc
+            .then_with(|| a.label.cmp(&b.label))
+    })
+}
 
 fn is_keyword(kind: &CompletionKind) -> bool {
     matches!(kind, CompletionKind::Keyword)
 }
 
-/// Sorting that mirrors the scorer’s tuple but also keeps keywords last.
-fn compare(a: &Completion, b: &Completion, needle: &str, scorer: &impl Scorer) -> Ordering {
-    // Scorer returns: (is_kw, exact, prefix, fuzzy, label)
-    // We recompute `is_kw` locally to avoid trusting scorer on that part.
-    let ka = is_keyword(&a.kind);
-    let kb = is_keyword(&b.kind);
-
-    // Non-keywords first (false < true)
-    ka.cmp(&kb)
-        // Now delegate to the scorer for the remaining signals
-        .then_with(|| {
-            let (_ska, ea, pa, ja, la) = scorer.score(a, needle);
-            let (_skb, eb, pb, jb, lb) = scorer.score(b, needle);
-
-            // exact desc
-            (eb as u8)
-                .cmp(&(ea as u8))
-                // prefix desc
-                .then_with(|| (pb as u8).cmp(&(pa as u8)))
-                // fuzzy desc
-                .then_with(|| jb.partial_cmp(&ja).unwrap_or(Ordering::Equal))
-                // label asc
-                .then_with(|| la.cmp(&lb))
-        })
-}
-
 /// Scorer decides how we rank completions for a given `needle`.
 /// Return tuple fields are ordered by decreasing priority in `compare_with_scorer`.
 pub trait Scorer {
-    fn score(&self, c: &Completion, needle: &str) -> (bool, bool, bool, f32, String);
+    fn score(&self, c: &Completion, needle: &str) -> Score;
 }
 
-/// Default implementation mirrors the legacy behavior but is case-insensitive.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Score {
+    pub exact: bool,
+    pub prefix: bool,
+    pub fuzzy: f64,
+}
+
 pub struct DefaultScorer;
 
 impl Scorer for DefaultScorer {
-    fn score(&self, c: &Completion, needle: &str) -> (bool, bool, bool, f32, String) {
-        let is_kw = is_keyword(&c.kind);
-
+    fn score(&self, c: &Completion, needle: &str) -> Score {
         // Use filter_text if available, otherwise fall back to insert_text
         let text_to_match = c.filter_text.as_ref().unwrap_or(&c.insert_text);
 
@@ -101,7 +96,11 @@ impl Scorer for DefaultScorer {
             .to_lowercase()
             .starts_with(&needle.to_lowercase());
         let fuzzy = jaro_winkler(&text_to_match.to_lowercase(), &needle.to_lowercase());
-        (is_kw, exact, prefix, fuzzy as f32, c.label.clone())
+        Score {
+            exact,
+            prefix,
+            fuzzy,
+        }
     }
 }
 
@@ -109,7 +108,7 @@ impl Scorer for DefaultScorer {
 
 #[cfg(test)]
 mod tests {
-    use super::super::completion::CompletionKind;
+    use super::super::completion::{CompletionKind, TableCompletion};
     use super::*;
 
     fn c(label: &str, kind: CompletionKind) -> Completion {
@@ -140,18 +139,4 @@ mod tests {
         assert_eq!(ranked[0].label, "users");
         assert_eq!(ranked[1].label, "SELECT");
     }
-
-    // #[test]
-    // fn exact_then_prefix_then_fuzzy_then_label() {
-    //     let r = DefaultRanker::new(DefaultScorer);
-    //     let items = vec![
-    //         c("user", CompletionKind::Table(None)), // exact for needle "user"
-    //         c("users", CompletionKind::Table(None)), // prefix
-    //         c("account", CompletionKind::Table(None)), // fuzzy
-    //         c("SELECT", CompletionKind::Keyword),   // keyword last
-    //     ];
-    //     let ranked = r.rank("user", items);
-    //     let labels: Vec<_> = ranked.into_iter().map(|x| x.label).collect();
-    //     assert_eq!(labels, vec!["user", "users", "account", "SELECT"]);
-    // }
 }

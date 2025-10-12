@@ -252,11 +252,7 @@ where
         })
     }
 
-    fn list_columns(
-        &self,
-        table: &str,
-        schema: &str,
-    ) -> BoxedFuture<'_, Vec<schema::Column>> {
+    fn list_columns(&self, table: &str, schema: &str) -> BoxedFuture<'_, Vec<schema::Column>> {
         let schema_str = if schema.is_empty() { "public" } else { schema }.to_string();
         let table_str = table.to_string();
         let key = (schema_str.clone(), table_str.clone());
@@ -284,9 +280,7 @@ where
                         let inner_clone = inner.clone();
                         let cache_clone = columns_cache.clone();
                         tokio::spawn(async move {
-                            let fresh = inner_clone
-                                .list_columns(&table_clone, &schema_clone)
-                                .await;
+                            let fresh = inner_clone.list_columns(&table_clone, &schema_clone).await;
                             if let Ok(mut cache) = cache_clone.lock() {
                                 cache.put(key_clone, CacheEntry::new(fresh));
                             }
@@ -309,11 +303,7 @@ where
         })
     }
 
-    fn get_table(
-        &self,
-        table: &str,
-        schema: &str,
-    ) -> BoxedFuture<'_, Option<schema::Table>> {
+    fn get_table(&self, table: &str, schema: &str) -> BoxedFuture<'_, Option<schema::Table>> {
         let schema_str = if schema.is_empty() { "public" } else { schema }.to_string();
         let table_str = table.to_string();
         let key = (schema_str.clone(), table_str.clone());
@@ -341,9 +331,7 @@ where
                         let inner_clone = inner.clone();
                         let cache_clone = table_cache.clone();
                         tokio::spawn(async move {
-                            let fresh = inner_clone
-                                .get_table(&table_clone, &schema_clone)
-                                .await;
+                            let fresh = inner_clone.get_table(&table_clone, &schema_clone).await;
                             if let Ok(mut cache) = cache_clone.lock() {
                                 cache.put(key_clone, CacheEntry::new(fresh));
                             }
@@ -363,53 +351,6 @@ where
             }
 
             table_info
-        })
-    }
-
-    fn list_functions(&self) -> BoxedFuture<'_, Vec<schema::Function>> {
-        let key = "all".to_string();
-        let functions_cache = self.functions_cache.clone();
-        let inner = self.inner.clone();
-        let ttl = self.ttl.clone();
-
-        Box::pin(async move {
-            let current_ttl = ttl.lock().ok().and_then(|t| *t);
-
-            // Check cache first
-            if let Ok(mut cache) = functions_cache.lock() {
-                if let Some(entry) = cache.get(&key) {
-                    let is_expired = entry.is_expired(current_ttl);
-
-                    // Return cached value immediately
-                    let cached_value = entry.value.clone();
-
-                    // If expired, spawn background refresh
-                    if is_expired {
-                        let key_clone = key.clone();
-                        drop(cache); // Release lock before spawning
-                        let inner_clone = inner.clone();
-                        let cache_clone = functions_cache.clone();
-                        tokio::spawn(async move {
-                            let fresh = inner_clone.list_functions().await;
-                            if let Ok(mut cache) = cache_clone.lock() {
-                                cache.put(key_clone, CacheEntry::new(fresh));
-                            }
-                        });
-                    }
-
-                    return cached_value;
-                }
-            }
-
-            // Cache miss - fetch from underlying catalog (blocking)
-            let functions = inner.list_functions().await;
-
-            // Update cache
-            if let Ok(mut cache) = functions_cache.lock() {
-                cache.put(key, CacheEntry::new(functions.clone()));
-            }
-
-            functions
         })
     }
 }

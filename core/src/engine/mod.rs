@@ -9,14 +9,12 @@ mod ranker;
 
 pub use completion::*;
 use context::build_context;
-use provider::ProviderRegistry;
 use ranker::{DefaultRanker, DefaultScorer, Ranker};
 
 pub struct Engine {
     pub spec: &'static DialectSpec,
     pub catalog: Box<dyn CatalogRead + Send + Sync>,
     pub ranker: Box<dyn Ranker + Send + Sync>,
-    pub providers: ProviderRegistry,
 }
 
 impl Engine {
@@ -25,7 +23,6 @@ impl Engine {
             spec,
             catalog,
             ranker: Box::new(DefaultRanker::new(DefaultScorer)),
-            providers: ProviderRegistry::default(),
         }
     }
 
@@ -39,7 +36,7 @@ impl Engine {
         let cursor = doc.cursor().min(txt.len());
         let ctx = build_context(&txt, &tokens, cursor, &stmt);
         let fragment = ctx.cursor.fragment.clone();
-        let completions = self.providers.complete(&*self.catalog, spec, ctx).await;
+        let completions = provider::complete(&ctx, &*self.catalog, spec).await;
         self.ranker.rank(&fragment, completions)
     }
 }

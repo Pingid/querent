@@ -1,80 +1,65 @@
-use std::{future::Future, pin::Pin};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
-    catalog::CatalogRead,
-    dialect::DialectSpec,
-    engine::{
-        Completion, CompletionKind,
-        context::{ClauseKind, Context, Location, Origin, RelationKind},
-    },
+    catalog::{CatalogRead, schema},
+    engine::{ColumnCompletion, Completion, CompletionKind, context},
     token::OpTag,
 };
 
-use super::CompletionProvider;
+pub fn supports(ctx: &context::Context) -> bool {
+    match ctx.clause {
+        context::ClauseKind::Select => is_select_position(ctx),
+        context::ClauseKind::From => is_from_position(ctx),
+        context::ClauseKind::Where => is_where_position(ctx),
+        context::ClauseKind::GroupBy => is_group_by_position(ctx),
+        context::ClauseKind::OrderBy => is_order_by_position(ctx),
+        context::ClauseKind::Using => is_using_position(ctx),
+        _ => false,
+    }
+}
 
-/// Provide column name completions.
-pub struct ColumnProvider;
-
-impl CompletionProvider for ColumnProvider {
-    fn supports(&self, ctx: &Context) -> bool {
-        match ctx.clause {
-            ClauseKind::Select => is_select_position(ctx),
-            ClauseKind::From => is_from_position(ctx),
-            ClauseKind::Where => is_where_position(ctx),
-            ClauseKind::GroupBy => is_group_by_position(ctx),
-            ClauseKind::OrderBy => is_order_by_position(ctx),
-            ClauseKind::Using => is_using_position(ctx),
-            _ => false,
-        }
+pub async fn complete<C: CatalogRead + ?Sized>(
+    ctx: &context::Context,
+    catalog: &C,
+) -> Vec<Completion> {
+    // Handle qualified column access (e.g., "users.^")
+    if let Some(completions) = complete_qualified_columns(catalog, ctx).await {
+        return completions;
     }
 
-    fn complete<'a>(
-        &'a self,
-        catalog: &'a (dyn CatalogRead + Send + Sync),
-        _spec: &'a DialectSpec,
-        ctx: &'a Context,
-    ) -> Pin<Box<dyn Future<Output = Vec<Completion>> + Send + 'a>> {
-        Box::pin(async move {
-            // Handle qualified column access (e.g., "users.^")
-            if let Some(completions) = complete_qualified_columns(catalog, ctx).await {
-                return completions;
-            }
-
-            // Handle CTEs or subqueries - return their projected columns
-            if let Some(completions) = complete_from_derived_table(catalog, ctx).await {
-                return completions;
-            }
-
-            // Gather context information
-            let analysis = analyze_context(ctx);
-            let base_relations = extract_base_relations(ctx);
-
-            // Determine which tables to query
-            let eligible_tables = determine_eligible_tables(
-                catalog,
-                ctx,
-                &base_relations,
-                &analysis.selected_relations,
-                &analysis.already_selected,
-            )
-            .await;
-
-            // Collect columns from all eligible tables
-            let mut columns = collect_columns_from_tables(
-                catalog,
-                &eligible_tables,
-                &base_relations,
-                analysis.use_qualified,
-            )
-            .await;
-
-            // Apply clause-specific filtering
-            apply_clause_filters(&mut columns, ctx, &analysis);
-
-            // Convert to completions
-            columns_to_completions(columns, analysis.use_qualified, ctx)
-        })
+    // Handle CTEs or subqueries - return their projected columns
+    if let Some(completions) = complete_from_derived_table(catalog, ctx).await {
+        return completions;
     }
+
+    // Gather context information
+    let analysis = analyze_context(ctx);
+    let base_relations = extract_base_relations(ctx);
+
+    // Determine which tables to query
+    let eligible_tables = determine_eligible_tables(
+        catalog,
+        ctx,
+        &base_relations,
+        &analysis.selected_relations,
+        &analysis.already_selected,
+    )
+    .await;
+
+    // Collect columns from all eligible tables
+    let mut columns = collect_columns_from_tables(
+        catalog,
+        &eligible_tables,
+        &base_relations,
+        analysis.use_qualified,
+    )
+    .await;
+
+    // Apply clause-specific filtering
+    apply_clause_filters(&mut columns, ctx, &analysis);
+
+    // Convert to completions
+    columns_to_completions(columns, analysis.use_qualified, ctx)
 }
 
 // Common commit characters for column completions
@@ -84,15 +69,15 @@ const COMMIT_CHARS: [char; 4] = [',', ')', ' ', '\n'];
 // Utility Functions
 // ============================================================================
 
-/// Analysis of the current context for column completion
+/// Analysis of the current context for column ContextAnalysis<'a> {
 struct ContextAnalysis<'a> {
-    already_selected: std::collections::HashSet<&'a str>,
+    already_selected: HashSet<&'a str>,
     use_qualified: bool,
-    selected_relations: std::collections::HashSet<crate::engine::context::RelationId>,
+    selected_relations: HashSet<context::RelationId>,
 }
 
 /// Analyze context to extract useful information for column completion
-fn analyze_context(ctx: &Context) -> ContextAnalysis<'_> {
+fn analyze_context(ctx: &context::Context) -> ContextAnalysis<'_> {
     let already_selected = ctx
         .scope
         .projected
@@ -107,11 +92,10 @@ fn analyze_context(ctx: &Context) -> ContextAnalysis<'_> {
         .projected
         .iter()
         .filter_map(|col| match &col.origin {
-            Origin::BaseColumn { relation, .. } => Some(*relation),
+            context::Origin::BaseColumn { relation, .. } => Some(*relation),
             _ => None,
         })
         .collect();
-
     ContextAnalysis {
         already_selected,
         use_qualified,
@@ -121,13 +105,13 @@ fn analyze_context(ctx: &Context) -> ContextAnalysis<'_> {
 
 /// Extract base table relations from the scope
 fn extract_base_relations(
-    ctx: &Context,
-) -> Vec<(&crate::engine::context::RelationBinding, &Vec<String>)> {
+    ctx: &context::Context,
+) -> Vec<(&context::RelationBinding, &Vec<String>)> {
     ctx.scope
         .relations
         .values()
         .filter_map(|rel| {
-            if let RelationKind::Base(path) = &rel.kind {
+            if let context::RelationKind::Base(path) = &rel.kind {
                 Some((rel, &path.0))
             } else {
                 None
@@ -137,9 +121,9 @@ fn extract_base_relations(
 }
 
 /// Handle completions for qualified column access (e.g., "users.^")
-async fn complete_qualified_columns(
-    catalog: &(dyn CatalogRead + Send + Sync),
-    ctx: &Context,
+async fn complete_qualified_columns<C: CatalogRead + ?Sized>(
+    catalog: &C,
+    ctx: &context::Context,
 ) -> Option<Vec<Completion>> {
     // If there's a qualifier, we must handle it (return Some) even if empty
     let qualifier = ctx.cursor.qualifier.as_ref()?;
@@ -156,7 +140,7 @@ async fn complete_qualified_columns(
     };
 
     match &rel.kind {
-        RelationKind::Base(path) => {
+        context::RelationKind::Base(path) => {
             let Some((schema, table)) = parse_path_parts(&path.0) else {
                 return Some(vec![]);
             };
@@ -173,19 +157,21 @@ async fn complete_qualified_columns(
                     .collect(),
             )
         }
-        RelationKind::Subquery(scope) | RelationKind::Cte(scope) => {
+        context::RelationKind::Subquery(scope) | context::RelationKind::Cte(scope) => {
             Some(completions_from_projection(catalog, scope, ctx).await)
         }
     }
 }
 
 /// Handle completions from CTEs or subqueries
-async fn complete_from_derived_table(
-    catalog: &(dyn CatalogRead + Send + Sync),
-    ctx: &Context,
+async fn complete_from_derived_table<C: CatalogRead + ?Sized>(
+    catalog: &C,
+    ctx: &context::Context,
 ) -> Option<Vec<Completion>> {
     for rel in ctx.scope.relations.values() {
-        if let RelationKind::Cte(scope) | RelationKind::Subquery(scope) = &rel.kind {
+        if let context::RelationKind::Cte(scope) | context::RelationKind::Subquery(scope) =
+            &rel.kind
+        {
             return Some(completions_from_projection(catalog, scope, ctx).await);
         }
     }
@@ -193,12 +179,12 @@ async fn complete_from_derived_table(
 }
 
 /// Determine which tables are eligible for column completion
-async fn determine_eligible_tables(
-    catalog: &(dyn CatalogRead + Send + Sync),
-    ctx: &Context,
-    base_relations: &[(&crate::engine::context::RelationBinding, &Vec<String>)],
-    selected_relations: &std::collections::HashSet<crate::engine::context::RelationId>,
-    already_selected: &std::collections::HashSet<&str>,
+async fn determine_eligible_tables<C: CatalogRead + ?Sized>(
+    catalog: &C,
+    ctx: &context::Context,
+    base_relations: &[(&context::RelationBinding, &Vec<String>)],
+    selected_relations: &HashSet<context::RelationId>,
+    already_selected: &HashSet<&str>,
 ) -> Vec<(String, String)> {
     if !base_relations.is_empty() {
         // FROM clause exists - use those tables (no catalog lookup needed)
@@ -214,7 +200,7 @@ async fn determine_eligible_tables(
             .iter()
             .filter_map(|&rel_id| {
                 ctx.scope.relations.get(&rel_id).and_then(|rel| {
-                    if let RelationKind::Base(path) = &rel.kind {
+                    if let context::RelationKind::Base(path) = &rel.kind {
                         parse_path_parts(&path.0)
                     } else {
                         None
@@ -234,17 +220,12 @@ async fn determine_eligible_tables(
 }
 
 /// Collect columns from eligible tables
-async fn collect_columns_from_tables(
-    catalog: &(dyn CatalogRead + Send + Sync),
+async fn collect_columns_from_tables<C: CatalogRead + ?Sized>(
+    catalog: &C,
     eligible_tables: &[(String, String)],
-    base_relations: &[(&crate::engine::context::RelationBinding, &Vec<String>)],
+    base_relations: &[(&context::RelationBinding, &Vec<String>)],
     _use_qualified: bool,
-) -> Vec<(
-    String,
-    String,
-    String,
-    Option<crate::catalog::schema::Column>,
-)> {
+) -> Vec<(String, String, String, Option<schema::Column>)> {
     let mut columns = Vec::new();
 
     for (schema, table) in eligible_tables {
@@ -266,26 +247,21 @@ async fn collect_columns_from_tables(
 
 /// Apply clause-specific filtering to columns
 fn apply_clause_filters(
-    columns: &mut Vec<(
-        String,
-        String,
-        String,
-        Option<crate::catalog::schema::Column>,
-    )>,
-    ctx: &Context,
+    columns: &mut Vec<(String, String, String, Option<schema::Column>)>,
+    ctx: &context::Context,
     analysis: &ContextAnalysis,
 ) {
     match ctx.clause {
-        ClauseKind::Select => {
+        context::ClauseKind::Select => {
             columns.retain(|(name, _, _, _)| !analysis.already_selected.contains(name.as_str()));
         }
-        ClauseKind::GroupBy => {
+        context::ClauseKind::GroupBy => {
             filter_for_group_by(columns, ctx);
         }
-        ClauseKind::OrderBy => {
+        context::ClauseKind::OrderBy => {
             filter_for_order_by(columns, ctx);
         }
-        ClauseKind::Using => {
+        context::ClauseKind::Using => {
             filter_for_using(columns, ctx);
         }
         _ => {}
@@ -294,18 +270,12 @@ fn apply_clause_filters(
 
 /// Convert column tuples to Completion objects
 fn columns_to_completions(
-    columns: Vec<(
-        String,
-        String,
-        String,
-        Option<crate::catalog::schema::Column>,
-    )>,
+    columns: Vec<(String, String, String, Option<schema::Column>)>,
     use_qualified: bool,
-    ctx: &Context,
+    ctx: &context::Context,
 ) -> Vec<Completion> {
     // Count occurrences of each column name to detect duplicates
-    let mut name_counts: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
+    let mut name_counts: HashMap<String, usize> = HashMap::new();
     for (name, _, _, _) in &columns {
         *name_counts.entry(name.clone()).or_insert(0) += 1;
     }
@@ -331,7 +301,7 @@ fn columns_to_completions(
                 label,
                 insert_text,
                 filter_text,
-                kind: CompletionKind::Column(crate::engine::ColumnCompletion {
+                kind: CompletionKind::Column(ColumnCompletion {
                     qualifier: Some(source),
                     column,
                 }),
@@ -366,7 +336,7 @@ fn format_source(schema: &str, table: &str) -> String {
 
 /// Find the qualifier (alias or table name) for a table
 fn find_table_qualifier<'a>(
-    base_relations: &[(&'a crate::engine::context::RelationBinding, &Vec<String>)],
+    base_relations: &[(&'a context::RelationBinding, &Vec<String>)],
     schema: &str,
     table: &str,
 ) -> Option<&'a str> {
@@ -381,9 +351,9 @@ fn find_table_qualifier<'a>(
 }
 
 /// Find tables that contain all specified columns
-async fn find_tables_with_columns(
-    catalog: &(dyn CatalogRead + Send + Sync),
-    selected_columns: &std::collections::HashSet<&str>,
+async fn find_tables_with_columns<C: CatalogRead + ?Sized>(
+    catalog: &C,
+    selected_columns: &HashSet<&str>,
 ) -> Vec<(String, String)> {
     let schemas = catalog.list_schemas().await;
     let mut eligible = Vec::new();
@@ -392,8 +362,7 @@ async fn find_tables_with_columns(
         let tables = catalog.list_tables(&schema).await;
         for table in tables {
             let cols = catalog.list_columns(&table, &schema).await;
-            let col_names: std::collections::HashSet<_> =
-                cols.iter().map(|c| c.column_name.as_str()).collect();
+            let col_names: HashSet<_> = cols.iter().map(|c| c.column_name.as_str()).collect();
 
             if selected_columns.iter().all(|sel| col_names.contains(sel)) {
                 eligible.push((schema.clone(), table));
@@ -405,7 +374,7 @@ async fn find_tables_with_columns(
 }
 
 /// Fetch all tables from the catalog
-async fn fetch_all_tables(catalog: &(dyn CatalogRead + Send + Sync)) -> Vec<(String, String)> {
+async fn fetch_all_tables<C: CatalogRead + ?Sized>(catalog: &C) -> Vec<(String, String)> {
     let schemas = catalog.list_schemas().await;
     let mut all_tables = Vec::new();
 
@@ -421,33 +390,28 @@ async fn fetch_all_tables(catalog: &(dyn CatalogRead + Send + Sync)) -> Vec<(Str
 
 /// Filter columns for GROUP BY clause
 fn filter_for_group_by(
-    columns: &mut Vec<(
-        String,
-        String,
-        String,
-        Option<crate::catalog::schema::Column>,
-    )>,
-    ctx: &Context,
+    columns: &mut Vec<(String, String, String, Option<schema::Column>)>,
+    ctx: &context::Context,
 ) {
-    let already_grouped_names: std::collections::HashSet<_> =
+    let already_grouped_names: HashSet<_> =
         ctx.scope.grouped.iter().map(|c| c.name.as_str()).collect();
 
-    let grouped_base_columns: std::collections::HashSet<_> = ctx
+    let grouped_base_columns: HashSet<_> = ctx
         .scope
         .grouped
         .iter()
         .filter_map(|c| match &c.origin {
-            Origin::BaseColumn { name, .. } => Some(name.as_str()),
+            context::Origin::BaseColumn { name, .. } => Some(name.as_str()),
             _ => None,
         })
         .collect();
 
-    let projected_base_col_names: std::collections::HashSet<_> = ctx
+    let projected_base_col_names: HashSet<_> = ctx
         .scope
         .projected
         .iter()
         .filter_map(|c| match &c.origin {
-            Origin::BaseColumn { .. } => Some(c.name.as_str()),
+            context::Origin::BaseColumn { .. } => Some(c.name.as_str()),
             _ => None,
         })
         .collect();
@@ -462,23 +426,18 @@ fn filter_for_group_by(
 
 /// Filter columns for ORDER BY clause
 fn filter_for_order_by(
-    columns: &mut Vec<(
-        String,
-        String,
-        String,
-        Option<crate::catalog::schema::Column>,
-    )>,
-    ctx: &Context,
+    columns: &mut Vec<(String, String, String, Option<schema::Column>)>,
+    ctx: &context::Context,
 ) {
-    let already_ordered_names: std::collections::HashSet<_> =
+    let already_ordered_names: HashSet<_> =
         ctx.scope.ordered.iter().map(|c| c.name.as_str()).collect();
 
-    let ordered_base_columns: std::collections::HashSet<_> = ctx
+    let ordered_base_columns: HashSet<_> = ctx
         .scope
         .ordered
         .iter()
         .filter_map(|c| match &c.origin {
-            Origin::BaseColumn { name, .. } => Some(name.as_str()),
+            context::Origin::BaseColumn { name, .. } => Some(name.as_str()),
             _ => None,
         })
         .collect();
@@ -491,98 +450,99 @@ fn filter_for_order_by(
 
 /// Filter columns for USING clause (only common columns)
 fn filter_for_using(
-    columns: &mut Vec<(
-        String,
-        String,
-        String,
-        Option<crate::catalog::schema::Column>,
-    )>,
-    ctx: &Context,
+    columns: &mut Vec<(String, String, String, Option<schema::Column>)>,
+    ctx: &context::Context,
 ) {
-    let column_counts: std::collections::HashMap<String, usize> = columns.iter().fold(
-        std::collections::HashMap::new(),
-        |mut acc, (name, _, _, _)| {
-            *acc.entry(name.clone()).or_insert(0) += 1;
-            acc
-        },
-    );
+    let column_counts: HashMap<String, usize> =
+        columns
+            .iter()
+            .fold(HashMap::new(), |mut acc, (name, _, _, _)| {
+                *acc.entry(name.clone()).or_insert(0) += 1;
+                acc
+            });
 
     let table_count = ctx.scope.relations.len();
 
     columns.retain(|(name, _, _, _)| column_counts.get(name).copied().unwrap_or(0) == table_count);
 
     // Deduplicate by column name
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
     columns.retain(|(name, _, _, _)| seen.insert(name.clone()));
 }
 
-fn is_select_position(ctx: &Context) -> bool {
+fn is_select_position(ctx: &context::Context) -> bool {
     match &ctx.cursor.location {
-        Location::Space(inner) => {
-            matches!(**inner, Location::Keyword | Location::Comma | Location::Dot)
+        context::Location::Space(inner) => {
+            matches!(
+                **inner,
+                context::Location::Keyword | context::Location::Comma | context::Location::Dot
+            )
         }
-        Location::Dot => true,
+        context::Location::Dot => true,
         _ => false,
     }
 }
 
-fn is_from_position(ctx: &Context) -> bool {
+fn is_from_position(ctx: &context::Context) -> bool {
     // Support column completions in FROM clause for:
     // 1. After ON keyword (JOIN ... ON ^)
     // 2. After logical operators in ON conditions (JOIN ... ON a = b AND ^)
     // 3. After dot for qualified names (JOIN ... ON users.^)
     match &ctx.cursor.location {
-        Location::Space(inner) => match **inner {
-            Location::Keyword => {
+        context::Location::Space(inner) => match **inner {
+            context::Location::Keyword => {
                 // Check if the current keyword is ON or if ON is in preceding
                 ctx.cursor.current_keyword == Some(crate::token::Keyword::On)
                     || ctx.cursor.preceding.contains(&crate::token::Keyword::On)
             }
-            Location::Operator(op) => {
+            context::Location::Operator(op) => {
                 // After logical operators (AND, OR) in ON conditions
                 // Also check that we're in a context with ON (JOIN clause)
                 matches!(op, OpTag::And | OpTag::Or)
                     && (ctx.cursor.current_keyword == Some(crate::token::Keyword::On)
                         || ctx.cursor.preceding.contains(&crate::token::Keyword::On))
             }
-            Location::Dot => true,
+            context::Location::Dot => true,
             _ => false,
         },
-        Location::Dot => true,
+        context::Location::Dot => true,
         _ => false,
     }
 }
 
-fn is_where_position(ctx: &Context) -> bool {
+fn is_where_position(ctx: &context::Context) -> bool {
     match &ctx.cursor.location {
-        Location::Space(inner) => match **inner {
-            Location::Keyword => true,
-            Location::Operator(op) => matches!(op, OpTag::And | OpTag::Or),
+        context::Location::Space(inner) => match **inner {
+            context::Location::Keyword => true,
+            context::Location::Operator(op) => matches!(op, OpTag::And | OpTag::Or),
             _ => false,
         },
-        Location::Dot => true,
+        context::Location::Dot => true,
         _ => false,
     }
 }
 
-fn is_group_by_position(ctx: &Context) -> bool {
+fn is_group_by_position(ctx: &context::Context) -> bool {
     matches!(
         &ctx.cursor.location,
-        Location::Space(inner) if matches!(**inner, Location::Keyword | Location::Comma)
+        context::Location::Space(inner) if matches!(**inner, context::Location::Keyword | context::Location::Comma)
     )
 }
 
-fn is_order_by_position(ctx: &Context) -> bool {
+fn is_order_by_position(ctx: &context::Context) -> bool {
     matches!(
         &ctx.cursor.location,
-        Location::Space(inner) if matches!(**inner, Location::Keyword | Location::Comma)
+        context::Location::Space(inner) if matches!(**inner, context::Location::Keyword | context::Location::Comma)
     )
 }
 
-fn is_using_position(ctx: &Context) -> bool {
+fn is_using_position(ctx: &context::Context) -> bool {
     match &ctx.cursor.location {
-        Location::Paren => true,
-        Location::Space(inner) => matches!(**inner, Location::Keyword | Location::Paren),
+        context::Location::Paren => true,
+        context::Location::Space(inner) => matches!(
+            **inner,
+            context::Location::Keyword | context::Location::Paren
+        ),
         _ => false,
     }
 }
@@ -590,14 +550,14 @@ fn is_using_position(ctx: &Context) -> bool {
 fn make_completion(
     name: String,
     source: Option<String>,
-    column: Option<crate::catalog::schema::Column>,
-    ctx: &Context,
+    column: Option<schema::Column>,
+    ctx: &context::Context,
 ) -> Completion {
     Completion {
         label: name.clone(),
         insert_text: name.clone(),
         filter_text: Some(name),
-        kind: CompletionKind::Column(crate::engine::ColumnCompletion {
+        kind: CompletionKind::Column(ColumnCompletion {
             qualifier: source,
             column,
         }),
@@ -606,8 +566,8 @@ fn make_completion(
     }
 }
 
-async fn resolve_source_from_parts(
-    catalog: &(dyn CatalogRead + Send + Sync),
+async fn resolve_source_from_parts<C: CatalogRead + ?Sized>(
+    catalog: &C,
     parts: &[String],
 ) -> Option<String> {
     let (schema, table) = match parts.len() {
@@ -635,17 +595,17 @@ async fn resolve_source_from_parts(
     })
 }
 
-async fn completions_from_projection(
-    catalog: &(dyn CatalogRead + Send + Sync),
-    scope: &crate::engine::context::Scope,
-    ctx: &Context,
+async fn completions_from_projection<C: CatalogRead + ?Sized>(
+    catalog: &C,
+    scope: &context::Scope,
+    ctx: &context::Context,
 ) -> Vec<Completion> {
     let mut out = Vec::new();
     for col in &scope.projected {
         let (source, column_schema) = match &col.origin {
-            Origin::BaseColumn { relation, name, .. } => {
+            context::Origin::BaseColumn { relation, name, .. } => {
                 if let Some(rel) = scope.relations.get(relation) {
-                    if let RelationKind::Base(path) = &rel.kind {
+                    if let context::RelationKind::Base(path) = &rel.kind {
                         let source = resolve_source_from_parts(catalog, &path.0).await;
 
                         // Try to fetch the actual column from the catalog
@@ -669,7 +629,7 @@ async fn completions_from_projection(
             }
             _ => {
                 // For non-base columns (e.g., computed columns), construct a minimal Column
-                let column = col.ty.as_ref().map(|ty| crate::catalog::schema::Column {
+                let column = col.ty.as_ref().map(|ty| schema::Column {
                     column_name: col.name.clone(),
                     data_type: Some(ty.clone()),
                     nullable: true, // Conservative assumption
