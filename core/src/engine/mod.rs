@@ -2,8 +2,8 @@ use crate::{
     catalog::{CatalogRead, CatalogResult},
     dialect::DialectSpec,
     doc::Content,
+    lex::lex,
     parse::parse_statement,
-    token::lex,
 };
 
 mod completion;

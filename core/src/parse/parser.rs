@@ -1,6 +1,6 @@
 use crate::ast::*;
+use crate::lex::{Keyword, OpTag, Token, TokenKind, TokenTape};
 use crate::span::Loc;
-use crate::token::{Keyword, OpTag, Token, TokenKind, TokenTape};
 
 #[derive(Debug)]
 pub struct Parser<'txt, 'tok> {
@@ -138,24 +138,27 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         loop {
             // Attempt ORDER BY if not set
             if order_by.is_none()
-                && let Some(ob) = self.node(|s| s.parse_order_by()) {
-                    order_by = Some(ob);
-                    continue;
-                }
+                && let Some(ob) = self.node(|s| s.parse_order_by())
+            {
+                order_by = Some(ob);
+                continue;
+            }
 
             // Attempt LIMIT/FETCH if not set
             if limit.is_none()
-                && let Some(lim) = self.node(|s| s.parse_limit()) {
-                    limit = Some(lim);
-                    continue;
-                }
+                && let Some(lim) = self.node(|s| s.parse_limit())
+            {
+                limit = Some(lim);
+                continue;
+            }
 
             // Attempt OFFSET if not set
             if offset.is_none()
-                && let Some(off) = self.node(|s| s.parse_offset()) {
-                    offset = Some(off);
-                    continue;
-                }
+                && let Some(off) = self.node(|s| s.parse_offset())
+            {
+                offset = Some(off);
+                continue;
+            }
 
             break;
         }
@@ -545,11 +548,12 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         }
         // Allow non-reserved keywords as identifiers (e.g., "key", "value", but not "FROM", "WHERE")
         if let Some(TokenKind::Keyword(kw)) = self.tokens.current_kind()
-            && !self.is_reserved_keyword(kw) {
-                let span = self.tokens.current()?.span;
-                self.tokens.advance()?;
-                return Some(NamePart::Ident(span));
-            }
+            && !self.is_reserved_keyword(kw)
+        {
+            let span = self.tokens.current()?.span;
+            self.tokens.advance()?;
+            return Some(NamePart::Ident(span));
+        }
         None
     }
 

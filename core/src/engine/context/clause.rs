@@ -1,4 +1,4 @@
-use crate::token::{Keyword, Token, TokenKind};
+use crate::lex::{Keyword, Token, TokenKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClauseKind {

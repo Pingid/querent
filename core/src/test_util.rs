@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     dialect::{Ansi, DialectSpecProvider},
-    token::{Token, lex},
+    lex::{Token, lex},
 };
 
 pub fn with_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {

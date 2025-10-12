@@ -1,6 +1,6 @@
 use proptest::prelude::*;
 use querent_core::dialect::{Ansi, DialectSpecProvider};
-use querent_core::token::{Keyword, Token, TokenKind, lex};
+use querent_core::lex::{Keyword, Token, TokenKind, lex};
 
 #[test]
 fn basic_select_line() {

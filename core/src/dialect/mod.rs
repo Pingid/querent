@@ -1,4 +1,4 @@
-use crate::token::{Keyword, OpTag, Operator, QuoteStyle};
+use crate::lex::{Keyword, OpTag, Operator, QuoteStyle};
 
 mod ansi;
 mod postgres;

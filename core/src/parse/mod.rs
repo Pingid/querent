@@ -1,4 +1,4 @@
-use crate::{ast, span::Loc, token::TokenTape};
+use crate::{ast, lex::TokenTape, span::Loc};
 
 mod expr;
 

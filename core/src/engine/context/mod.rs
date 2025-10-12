@@ -1,4 +1,4 @@
-use crate::{ast, token::Token};
+use crate::{ast, lex::Token};
 
 mod cursor;
 pub use cursor::*;

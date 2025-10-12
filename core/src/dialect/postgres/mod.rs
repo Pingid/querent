@@ -1,6 +1,6 @@
 use crate::{
     dialect::{CaseFold, CommentStyle, DialectSpec, DialectSpecProvider, StyleRules},
-    token::{Keyword, QuoteStyle},
+    lex::{Keyword, QuoteStyle},
 };
 
 // Include the generated Postgres keywords

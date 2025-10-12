@@ -1,6 +1,6 @@
 use querent_core::{
     catalog::{InMemoryCatalog, schema},
-    dialect::{Ansi, DialectSpecProvider, DialectSpec},
+    dialect::{Ansi, DialectSpec},
     doc::Content,
     engine::{Completion, CompletionKind, Engine},
 };

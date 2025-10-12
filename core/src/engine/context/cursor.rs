@@ -1,5 +1,5 @@
+use crate::lex::{Keyword, OpTag, Token, TokenKind};
 use crate::span::Span;
-use crate::token::{Keyword, OpTag, Token, TokenKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cursor {
@@ -149,8 +149,8 @@ pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: us
 #[cfg(test)]
 mod tests {
     use crate::{
+        lex::Keyword,
         test_util::{ansi_tokens, with_caret_cursor},
-        token::Keyword,
     };
 
     use super::*;
@@ -181,11 +181,11 @@ mod tests {
     #[test]
     fn operator() {
         let text = ansi_detect_cursor("SELECT one +^ FROM users");
-        assert_eq!(text.location, Location::Operator(crate::token::OpTag::Add));
+        assert_eq!(text.location, Location::Operator(crate::lex::OpTag::Add));
         let text = ansi_detect_cursor("SELECT one + ^ FROM users");
         assert_eq!(
             text.location,
-            Location::Space(Box::new(Location::Operator(crate::token::OpTag::Add)))
+            Location::Space(Box::new(Location::Operator(crate::lex::OpTag::Add)))
         );
     }
 

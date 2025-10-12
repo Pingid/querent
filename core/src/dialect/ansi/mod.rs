@@ -1,6 +1,6 @@
 use crate::{
     dialect::{CaseFold, CommentStyle, DialectSpec, DialectSpecProvider, FollowWord, StyleRules},
-    token::{Keyword, QuoteStyle},
+    lex::{Keyword, QuoteStyle},
 };
 
 // Include the generated ANSI keywords

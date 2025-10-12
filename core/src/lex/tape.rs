@@ -1,4 +1,4 @@
-use crate::token::{OpTag, Token, TokenKind};
+use crate::lex::{OpTag, Token, TokenKind};
 
 #[derive(Debug)]
 pub struct TokenTape<'txt, 'tok> {

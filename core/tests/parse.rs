@@ -1,8 +1,8 @@
 use querent_core::{
     ast,
-    dialect::{Ansi, DialectSpecProvider, DialectSpec, Postgres},
+    dialect::{Ansi, DialectSpec, DialectSpecProvider, Postgres},
+    lex::lex,
     parse::Parser,
-    token::lex,
 };
 
 mod common;

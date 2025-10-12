@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     catalog::{CatalogRead, CatalogResult, schema},
     engine::{ColumnCompletion, Completion, CompletionKind, context},
-    token::OpTag,
+    lex::OpTag,
 };
 
 pub fn supports(ctx: &context::Context) -> bool {
@@ -582,15 +582,15 @@ fn is_from_position(ctx: &context::Context) -> bool {
         context::Location::Space(inner) => match **inner {
             context::Location::Keyword => {
                 // Check if the current keyword is ON or if ON is in preceding
-                ctx.cursor.current_keyword == Some(crate::token::Keyword::On)
-                    || ctx.cursor.preceding.contains(&crate::token::Keyword::On)
+                ctx.cursor.current_keyword == Some(crate::lex::Keyword::On)
+                    || ctx.cursor.preceding.contains(&crate::lex::Keyword::On)
             }
             context::Location::Operator(op) => {
                 // After logical operators (AND, OR) in ON conditions
                 // Also check that we're in a context with ON (JOIN clause)
                 matches!(op, OpTag::And | OpTag::Or)
-                    && (ctx.cursor.current_keyword == Some(crate::token::Keyword::On)
-                        || ctx.cursor.preceding.contains(&crate::token::Keyword::On))
+                    && (ctx.cursor.current_keyword == Some(crate::lex::Keyword::On)
+                        || ctx.cursor.preceding.contains(&crate::lex::Keyword::On))
             }
             context::Location::Dot => true,
             _ => false,

@@ -1,5 +1,5 @@
+use crate::lex::{OpTag, TokenKind};
 use crate::span::{Loc, Span};
-use crate::token::{OpTag, TokenKind};
 
 /// Identifier is a zero-copy string slice tracked by Span
 pub type SpannedStr = Span;

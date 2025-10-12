@@ -1,7 +1,7 @@
 use crate::ast::*;
+use crate::lex::{Assoc, Keyword, OpTag, Operator, TokenKind};
 use crate::parse::Parser;
 use crate::span::Loc;
-use crate::token::{Assoc, Keyword, OpTag, Operator, TokenKind};
 
 /// Pratt parser for expressions.
 impl<'txt, 'tok> Parser<'txt, 'tok> {

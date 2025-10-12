@@ -1,16 +1,17 @@
 use js_sys::Promise;
-use querent_core::{catalog::InMemoryCatalog, dialect::Ansi, engine::Engine};
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen as swb;
 use std::{rc::Rc, sync::Arc};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
+use querent_core::{catalog::InMemoryCatalog, dialect::Ansi, engine::Engine};
 use querent_lsp::{DocEngineProvider, LspRequest, LspServer};
 
 #[wasm_bindgen]
 pub struct WasmLspServer {
     server: Rc<LspServer<WasmEngineProvider>>,
+    serializer: Rc<swb::Serializer>,
 }
 
 #[wasm_bindgen]
@@ -19,36 +20,29 @@ impl WasmLspServer {
     pub fn new() -> Self {
         Self {
             server: Rc::new(LspServer::new(WasmEngineProvider {})),
+            serializer: Rc::new(swb::Serializer::json_compatible()),
         }
     }
 
     #[wasm_bindgen]
     pub fn handle(&self, msg: JsValue) -> Promise {
         let server = Rc::clone(&self.server);
+        let serializer = Rc::clone(&self.serializer);
         future_to_promise(async move {
-            let msg_result = swb::from_value::<WasmLspRequest>(msg.clone());
+            let msg_result = swb::from_value::<WasmLspRequest>(msg);
 
             let request = match msg_result {
                 Ok(WasmLspRequest::Lsp(req)) => req,
-                Err(_) => match swb::from_value::<LspRequest>(msg) {
-                    Ok(req) => req,
-                    Err(e) => {
-                        log_error(format!("Failed to deserialize LSP request: {:?}", e));
-                        return Err(JsValue::from_str(&format!(
-                            "Invalid request format: {:?}",
-                            e
-                        )));
-                    }
-                },
+                Err(e) => {
+                    let err = format!("Failed to deserialize LSP request: {:?}", e);
+                    return Err(JsValue::from_str(&err));
+                }
             };
-
             let response = server.handle_json_rpc(request).await;
-            let ser = swb::Serializer::json_compatible();
             match response {
-                Some(response) => response.serialize(&ser).map_err(|e| {
-                    log_error(format!("Failed to serialize LSP response: {:?}", e));
-                    JsValue::null()
-                }),
+                Some(response) => response
+                    .serialize(&*serializer)
+                    .map_err(|e| format!("Failed to serialize LSP response: {:?}", e).into()),
                 None => Ok(JsValue::null()),
             }
         })
@@ -76,10 +70,10 @@ impl DocEngineProvider for WasmEngineProvider {
     }
 }
 
-pub fn log_error(error: String) {
-    web_sys::console::error_1(&format!("{}", error).into());
-}
+// fn log_error(error: String) {
+//     web_sys::console::error_1(&format!("{}", error).into());
+// }
 
-pub fn log_info(info: String) {
-    web_sys::console::log_1(&format!("{}", info).into());
-}
+// fn log_info(info: String) {
+//     web_sys::console::log_1(&format!("{}", info).into());
+// }

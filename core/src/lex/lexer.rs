@@ -1,8 +1,8 @@
 use crate::dialect::{CommentStyle, DialectSpec};
+use crate::lex::QuoteStyle;
+use crate::lex::Token;
+use crate::lex::TokenKind;
 use crate::span::Span;
-use crate::token::QuoteStyle;
-use crate::token::Token;
-use crate::token::TokenKind;
 
 pub struct Lexer<'txt, 'spec> {
     spec: &'spec DialectSpec,
@@ -158,10 +158,11 @@ impl<'txt, 'spec> Lexer<'txt, 'spec> {
                 continue;
             }
             if let Some(slice) = remaining.get(..len)
-                && let Some(op) = self.spec.match_operator(slice) {
-                    self.cursor += len;
-                    return Some(self.make_token(start, TokenKind::Operator(op)));
-                }
+                && let Some(op) = self.spec.match_operator(slice)
+            {
+                self.cursor += len;
+                return Some(self.make_token(start, TokenKind::Operator(op)));
+            }
         }
         None
     }

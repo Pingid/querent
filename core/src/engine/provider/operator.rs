@@ -1,7 +1,7 @@
 use crate::{
     dialect::DialectSpec,
     engine::{Completion, CompletionKind, context},
-    token::{Fixity, OpTag},
+    lex::{Fixity, OpTag},
 };
 
 pub fn supports(ctx: &context::Context) -> bool {

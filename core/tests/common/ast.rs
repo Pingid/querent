@@ -1,4 +1,4 @@
-use querent_core::{ast, span::Loc, token::OpTag};
+use querent_core::{ast, lex::OpTag, span::Loc};
 
 #[allow(dead_code)]
 pub trait AstDisplay {
