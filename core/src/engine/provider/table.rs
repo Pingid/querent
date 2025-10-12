@@ -1,5 +1,5 @@
 use crate::{
-    catalog::CatalogRead,
+    catalog::{CatalogRead, CatalogResult},
     engine::{Completion, CompletionKind, TableCompletion, context},
 };
 
@@ -24,14 +24,14 @@ pub fn supports(ctx: &context::Context) -> bool {
 pub async fn complete<C: CatalogRead + ?Sized>(
     ctx: &context::Context,
     catalog: &C,
-) -> Vec<Completion> {
+) -> CatalogResult<Vec<Completion>> {
     // If we have a qualifier (e.g., "public.^"), only suggest tables from that schema
     if let Some(qualifier) = &ctx.cursor.qualifier {
-        let schema_tables = catalog.list_tables(qualifier).await;
+        let schema_tables = catalog.list_tables(qualifier).await?;
         let mut completions = Vec::new();
 
         for name in schema_tables {
-            let table = catalog.get_table(&name, qualifier).await;
+            let table = catalog.get_table(&name, qualifier).await?;
 
             completions.push(Completion {
                 label: name.clone(),
@@ -46,15 +46,15 @@ pub async fn complete<C: CatalogRead + ?Sized>(
             });
         }
 
-        return completions;
+        return Ok(completions);
     }
 
     // Get all schemas and tables from catalog
-    let schemas = catalog.list_schemas().await;
+    let schemas = catalog.list_schemas().await?;
     let mut tables: Vec<(String, String)> = Vec::new(); // (table_name, schema)
 
     for schema in &schemas {
-        let schema_tables = catalog.list_tables(schema).await;
+        let schema_tables = catalog.list_tables(schema).await?;
         for table in schema_tables {
             tables.push((table, schema.clone()));
         }
@@ -86,7 +86,7 @@ pub async fn complete<C: CatalogRead + ?Sized>(
     // Convert to completions
     let mut completions = Vec::new();
     for (name, schema) in tables {
-        let table = catalog.get_table(&name, &schema).await;
+        let table = catalog.get_table(&name, &schema).await?;
 
         let qualifier = if schema.is_empty() {
             None
@@ -103,5 +103,5 @@ pub async fn complete<C: CatalogRead + ?Sized>(
             commit_characters: vec![' ', ',', '\n'],
         });
     }
-    completions
+    Ok(completions)
 }

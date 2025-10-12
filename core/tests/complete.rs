@@ -1,6 +1,6 @@
 use querent_core::{
     catalog::{InMemoryCatalog, schema},
-    dialect::{Ansi, Dialect, DialectSpec},
+    dialect::{Ansi, DialectSpecProvider, DialectSpec},
     doc::Content,
     engine::{Completion, CompletionKind, Engine},
 };
@@ -729,7 +729,8 @@ impl CompletionTester {
         doc.set_content(&self.input);
         doc.set_cursor(self.cursor);
         let engine = Engine::new(Box::new(self.catalog), self.spec);
-        let completions = futures::executor::block_on(engine.complete(&doc));
+        let completions =
+            futures::executor::block_on(engine.complete(&doc)).expect("failed to complete");
         TestCase {
             sql: self.input,
             completions,

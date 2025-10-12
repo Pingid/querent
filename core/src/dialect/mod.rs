@@ -6,7 +6,7 @@ mod postgres;
 pub use ansi::Ansi;
 pub use postgres::Postgres;
 
-pub trait Dialect {
+pub trait DialectSpecProvider {
     fn get_spec(&self) -> &DialectSpec;
 }
 
@@ -16,7 +16,7 @@ pub enum DialectKind {
     Postgres(postgres::Postgres),
 }
 
-impl Dialect for DialectKind {
+impl DialectSpecProvider for DialectKind {
     fn get_spec(&self) -> &DialectSpec {
         match self {
             DialectKind::Ansi(d) => d.get_spec(),
@@ -40,12 +40,10 @@ impl TryFrom<&str> for DialectKind {
 pub struct DialectSpec {
     pub name: &'static str,
     pub keywords: &'static phf::Map<&'static str, Keyword>,
-    /// Follow keywords are used to suggest keywords or operators after a given keyword or operator.
-    pub follow_keywords: &'static [(&'static [FollowWord], &'static [&'static [FollowWord]])],
     pub operators: &'static phf::Map<&'static str, Operator>,
-    pub quote_styles: &'static [QuoteStyle],
-    pub case_rules: CaseRules,
-    pub comment_styles: &'static [CommentStyle],
+    pub style_rules: StyleRules,
+    /// Follow keywords are used to suggest keywords or operators after a given keyword or operator.
+    pub follow_words: &'static [(&'static [FollowWord], &'static [&'static [FollowWord]])],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +54,7 @@ pub enum FollowWord {
 
 impl DialectSpec {
     pub fn match_keyword(&self, keyword: &str) -> Option<Keyword> {
-        let kw_lookup = match self.case_rules.keywords_case_insensitive {
+        let kw_lookup = match self.style_rules.keywords_case_insensitive {
             true => std::borrow::Cow::Owned(keyword.to_ascii_uppercase()),
             false => std::borrow::Cow::Borrowed(keyword),
         };
@@ -64,7 +62,7 @@ impl DialectSpec {
     }
 
     pub fn match_operator(&self, operator: &str) -> Option<Operator> {
-        let op_lookup = match self.case_rules.word_ops_case_insensitive {
+        let op_lookup = match self.style_rules.word_ops_case_insensitive {
             true => std::borrow::Cow::Owned(operator.to_ascii_uppercase()),
             false => std::borrow::Cow::Borrowed(operator),
         };
@@ -72,11 +70,11 @@ impl DialectSpec {
     }
 
     pub fn supports_quote_style(&self, quote: QuoteStyle) -> bool {
-        self.quote_styles.contains(&quote)
+        self.style_rules.quotes.contains(&quote)
     }
 
     pub fn supports_comment_style(&self, comment: CommentStyle) -> bool {
-        self.comment_styles.contains(&comment)
+        self.style_rules.comments.contains(&comment)
     }
 
     pub fn is_ident_start(ch: char) -> bool {
@@ -93,7 +91,7 @@ impl DialectSpec {
 
     /// Fold an *unquoted* identifier according to dialect rules.
     pub fn fold_unquoted_identifier<'a>(&self, ident: &'a str) -> std::borrow::Cow<'a, str> {
-        match self.case_rules.unquoted_identifier_fold {
+        match self.style_rules.unquoted_identifier_fold {
             CaseFold::Upper => std::borrow::Cow::Owned(ident.to_ascii_uppercase()),
             CaseFold::Lower => std::borrow::Cow::Owned(ident.to_ascii_lowercase()),
             CaseFold::Preserve => std::borrow::Cow::Borrowed(ident),
@@ -101,7 +99,7 @@ impl DialectSpec {
     }
 
     pub fn follow_keywords(&self, preceding: &[FollowWord]) -> Vec<&'static [FollowWord]> {
-        self.follow_keywords
+        self.follow_words
             .iter()
             .find(|(p, _)| {
                 if p.is_empty() {
@@ -123,16 +121,19 @@ pub enum CaseFold {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CaseRules {
+pub struct StyleRules {
     /// Are keywords case-insensitive? (ANSI & all major engines: yes)
     pub keywords_case_insensitive: bool,
     /// Are word-operators (AND/OR/NOT/LIKE/ILIKE/IN, etc.) case-insensitive?
     pub word_ops_case_insensitive: bool,
-    /// How to fold *unquoted* identifiers (tables/cols): Upper (ANSI/Oracle),
-    /// Lower (Postgres), or None (e.g., user/OS/collation-driven).
+    /// How to fold *unquoted* identifiers
     pub unquoted_identifier_fold: CaseFold,
     /// Quoted identifiers are treated as case-sensitive (ANSI default).
     pub quoted_identifiers_case_sensitive: bool,
+    /// What comment styles are supported?
+    pub comments: &'static [CommentStyle],
+    /// What quote styles are supported?
+    pub quotes: &'static [QuoteStyle],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

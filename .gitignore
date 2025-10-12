@@ -7,4 +7,3 @@ node_modules
 # Auto-generated keyword files
 src/dialect/*/keyword.rs
 src/dialect/*/operator.rs
-

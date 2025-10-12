@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::{
-    dialect::{Ansi, Dialect},
+    dialect::{Ansi, DialectSpecProvider},
     token::{Token, lex},
 };
 

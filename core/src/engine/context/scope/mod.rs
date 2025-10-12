@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 
-use crate::ast::{self};
 use crate::catalog::schema::SimpleType;
-use crate::span::Loc;
 
 mod builder;
-pub use builder::*;
+pub use builder::build_scope;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Scope {
@@ -119,12 +117,12 @@ pub enum Origin {
         name: String, // base column name
     },
     /// From another bound column (used for SELECT passthrough, CTEs).
-    FromColumn(ColumnId),
-    /// Computed expression. Keep input lineage for “deep” tracking.
-    DerivedExpr {
-        expr: Loc<ast::Expr>,
-        inputs: Vec<Origin>,
-    },
+    // FromColumn(ColumnId),
+    // /// Computed expression. Keep input lineage for “deep” tracking.
+    // DerivedExpr {
+    //     expr: Loc<ast::Expr>,
+    //     inputs: Vec<Origin>,
+    // },
     /// Wildcard expansion marker (resolved to concrete columns upstream).
     Star {
         relation: Option<RelationId>, // None => unqualified *

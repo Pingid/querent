@@ -1,5 +1,5 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use querent_core::dialect::Dialect;
+use querent_core::dialect::DialectSpecProvider;
 use std::time::Duration;
 
 use querent_core::dialect::Postgres;

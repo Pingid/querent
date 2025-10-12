@@ -1,5 +1,5 @@
 use crate::{
-    dialect::{CaseFold, CaseRules, CommentStyle, Dialect, DialectSpec},
+    dialect::{CaseFold, CommentStyle, DialectSpec, DialectSpecProvider, StyleRules},
     token::{Keyword, QuoteStyle},
 };
 
@@ -21,7 +21,7 @@ impl Default for Postgres {
     }
 }
 
-impl Dialect for Postgres {
+impl DialectSpecProvider for Postgres {
     fn get_spec(&self) -> &DialectSpec {
         &SPEC
     }
@@ -35,16 +35,15 @@ pub static SPEC: DialectSpec = DialectSpec {
     name: "postgres",
     keywords: &KEYWORDS,
     operators: &OP_TABLE,
-    quote_styles: &[QuoteStyle::Double],
-    case_rules: CaseRules {
+    style_rules: StyleRules {
         keywords_case_insensitive: true,
         word_ops_case_insensitive: true,
         unquoted_identifier_fold: CaseFold::Lower, // PostgreSQL defaults to lowercase
         quoted_identifiers_case_sensitive: true,
+        comments: &[CommentStyle::DoubleDash, CommentStyle::SlashStar],
+        quotes: &[QuoteStyle::Double],
     },
-    comment_styles: &[CommentStyle::DoubleDash, CommentStyle::SlashStar],
-    follow_keywords: &[
-        // — Statement starters —
+    follow_words: &[
         (
             &[],
             &[

@@ -90,17 +90,20 @@ impl<E: DocEngineProvider> LspServer<E> {
                     return None;
                 };
 
-                let completions = engine.complete(&doc).await;
-
-                let items = completions
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, c)| completion_from_engine(&doc, c, i))
-                    .collect();
-                Some(LspResponse::result(
-                    req.id,
-                    LspResponseCompletions::new(items),
-                ))
+                match engine.complete(&doc).await {
+                    Ok(completions) => {
+                        let items = completions
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, c)| completion_from_engine(&doc, c, i))
+                            .collect();
+                        Some(LspResponse::result(
+                            req.id,
+                            LspResponseCompletions::new(items),
+                        ))
+                    }
+                    Err(e) => return Some(LspResponse::error(req.id, e.to_string())),
+                }
             }
             LspRequest::Shutdown(_) => {
                 self.documents.lock().await.clear();

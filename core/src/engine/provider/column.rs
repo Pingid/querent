@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    catalog::{CatalogRead, schema},
+    catalog::{CatalogRead, CatalogResult, schema},
     engine::{ColumnCompletion, Completion, CompletionKind, context},
     token::OpTag,
 };
@@ -21,15 +21,15 @@ pub fn supports(ctx: &context::Context) -> bool {
 pub async fn complete<C: CatalogRead + ?Sized>(
     ctx: &context::Context,
     catalog: &C,
-) -> Vec<Completion> {
+) -> CatalogResult<Vec<Completion>> {
     // Handle qualified column access (e.g., "users.^")
-    if let Some(completions) = complete_qualified_columns(catalog, ctx).await {
-        return completions;
+    if let Some(completions) = complete_qualified_columns(catalog, ctx).await? {
+        return Ok(completions);
     }
 
     // Handle CTEs or subqueries - return their projected columns
-    if let Some(completions) = complete_from_derived_table(catalog, ctx).await {
-        return completions;
+    if let Some(completions) = complete_from_derived_table(catalog, ctx).await? {
+        return Ok(completions);
     }
 
     // Gather context information
@@ -44,7 +44,7 @@ pub async fn complete<C: CatalogRead + ?Sized>(
         &analysis.selected_relations,
         &analysis.already_selected,
     )
-    .await;
+    .await?;
 
     // Collect columns from all eligible tables
     let mut columns = collect_columns_from_tables(
@@ -53,13 +53,13 @@ pub async fn complete<C: CatalogRead + ?Sized>(
         &base_relations,
         analysis.use_qualified,
     )
-    .await;
+    .await?;
 
     // Apply clause-specific filtering
     apply_clause_filters(&mut columns, ctx, &analysis);
 
     // Convert to completions
-    columns_to_completions(columns, analysis.use_qualified, ctx)
+    Ok(columns_to_completions(columns, analysis.use_qualified, ctx))
 }
 
 // Common commit characters for column completions
@@ -124,42 +124,44 @@ fn extract_base_relations(
 async fn complete_qualified_columns<C: CatalogRead + ?Sized>(
     catalog: &C,
     ctx: &context::Context,
-) -> Option<Vec<Completion>> {
+) -> CatalogResult<Option<Vec<Completion>>> {
     // If there's a qualifier, we must handle it (return Some) even if empty
-    let qualifier = ctx.cursor.qualifier.as_ref()?;
+    let Some(qualifier) = ctx.cursor.qualifier.as_ref() else {
+        return Ok(None);
+    };
 
     // Try to find the relation
     let Some(rel_id) = ctx.scope.relation(qualifier) else {
         // Qualifier exists but doesn't match any relation - return empty
-        return Some(vec![]);
+        return Ok(Some(vec![]));
     };
 
     let Some(rel) = ctx.scope.relations.get(&rel_id) else {
         // Relation ID found but relation doesn't exist - return empty
-        return Some(vec![]);
+        return Ok(Some(vec![]));
     };
 
     match &rel.kind {
         context::RelationKind::Base(path) => {
             let Some((schema, table)) = parse_path_parts(&path.0) else {
-                return Some(vec![]);
+                return Ok(Some(vec![]));
             };
 
-            let cols = catalog.list_columns(&table, &schema).await;
+            let cols = catalog.list_columns(&table, &schema).await?;
 
             let source = format_source(&schema, &table);
-            Some(
+            Ok(Some(
                 cols.into_iter()
                     .map(|c| {
                         let name = c.column_name.clone();
                         make_completion(name, Some(source.clone()), Some(c), ctx)
                     })
                     .collect(),
-            )
+            ))
         }
-        context::RelationKind::Subquery(scope) | context::RelationKind::Cte(scope) => {
-            Some(completions_from_projection(catalog, scope, ctx).await)
-        }
+        context::RelationKind::Subquery(scope) | context::RelationKind::Cte(scope) => Ok(Some(
+            completions_from_projection(catalog, scope, ctx).await?,
+        )),
     }
 }
 
@@ -167,15 +169,17 @@ async fn complete_qualified_columns<C: CatalogRead + ?Sized>(
 async fn complete_from_derived_table<C: CatalogRead + ?Sized>(
     catalog: &C,
     ctx: &context::Context,
-) -> Option<Vec<Completion>> {
+) -> CatalogResult<Option<Vec<Completion>>> {
     for rel in ctx.scope.relations.values() {
         if let context::RelationKind::Cte(scope) | context::RelationKind::Subquery(scope) =
             &rel.kind
         {
-            return Some(completions_from_projection(catalog, scope, ctx).await);
+            return Ok(Some(
+                completions_from_projection(catalog, scope, ctx).await?,
+            ));
         }
     }
-    None
+    Ok(None)
 }
 
 /// Determine which tables are eligible for column completion
@@ -185,18 +189,18 @@ async fn determine_eligible_tables<C: CatalogRead + ?Sized>(
     base_relations: &[(&context::RelationBinding, &Vec<String>)],
     selected_relations: &HashSet<context::RelationId>,
     already_selected: &HashSet<&str>,
-) -> Vec<(String, String)> {
+) -> CatalogResult<Vec<(String, String)>> {
     if !base_relations.is_empty() {
         // FROM clause exists - use those tables (no catalog lookup needed)
-        return base_relations
+        return Ok(base_relations
             .iter()
             .filter_map(|(_, parts)| parse_path_parts(parts))
-            .collect();
+            .collect());
     }
 
     if !selected_relations.is_empty() {
         // Use tables from selected column relations
-        return selected_relations
+        return Ok(selected_relations
             .iter()
             .filter_map(|&rel_id| {
                 ctx.scope.relations.get(&rel_id).and_then(|rel| {
@@ -207,7 +211,7 @@ async fn determine_eligible_tables<C: CatalogRead + ?Sized>(
                     }
                 })
             })
-            .collect();
+            .collect());
     }
 
     if !already_selected.is_empty() {
@@ -225,11 +229,11 @@ async fn collect_columns_from_tables<C: CatalogRead + ?Sized>(
     eligible_tables: &[(String, String)],
     base_relations: &[(&context::RelationBinding, &Vec<String>)],
     _use_qualified: bool,
-) -> Vec<(String, String, String, Option<schema::Column>)> {
+) -> CatalogResult<Vec<(String, String, String, Option<schema::Column>)>> {
     let mut columns = Vec::new();
 
     for (schema, table) in eligible_tables {
-        let cols = catalog.list_columns(table, &schema).await;
+        let cols = catalog.list_columns(table, &schema).await?;
 
         let source = format_source(schema, table);
         // Always get qualifier for duplicate detection, even if not used for display yet
@@ -242,7 +246,7 @@ async fn collect_columns_from_tables<C: CatalogRead + ?Sized>(
         }
     }
 
-    columns
+    Ok(columns)
 }
 
 /// Apply clause-specific filtering to columns
@@ -312,56 +316,18 @@ fn columns_to_completions(
         .collect()
 }
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Parse path parts into (schema, table)
-fn parse_path_parts(parts: &[String]) -> Option<(String, String)> {
-    match parts.len() {
-        1 => Some((String::new(), parts[0].clone())),
-        2 => Some((parts[0].clone(), parts[1].clone())),
-        _ => None,
-    }
-}
-
-/// Format source string from schema and table
-fn format_source(schema: &str, table: &str) -> String {
-    if schema.is_empty() {
-        table.to_string()
-    } else {
-        format!("{}.{}", schema, table)
-    }
-}
-
-/// Find the qualifier (alias or table name) for a table
-fn find_table_qualifier<'a>(
-    base_relations: &[(&'a context::RelationBinding, &Vec<String>)],
-    schema: &str,
-    table: &str,
-) -> Option<&'a str> {
-    base_relations
-        .iter()
-        .find(|(_, parts)| match parts.len() {
-            1 => &parts[0] == table,
-            2 => &parts[0] == schema && &parts[1] == table,
-            _ => false,
-        })
-        .and_then(|(rel, _)| rel.alias.as_deref())
-}
-
 /// Find tables that contain all specified columns
 async fn find_tables_with_columns<C: CatalogRead + ?Sized>(
     catalog: &C,
     selected_columns: &HashSet<&str>,
-) -> Vec<(String, String)> {
-    let schemas = catalog.list_schemas().await;
+) -> CatalogResult<Vec<(String, String)>> {
+    let schemas = catalog.list_schemas().await?;
     let mut eligible = Vec::new();
 
     for schema in schemas {
-        let tables = catalog.list_tables(&schema).await;
+        let tables = catalog.list_tables(&schema).await?;
         for table in tables {
-            let cols = catalog.list_columns(&table, &schema).await;
+            let cols = catalog.list_columns(&table, &schema).await?;
             let col_names: HashSet<_> = cols.iter().map(|c| c.column_name.as_str()).collect();
 
             if selected_columns.iter().all(|sel| col_names.contains(sel)) {
@@ -370,22 +336,112 @@ async fn find_tables_with_columns<C: CatalogRead + ?Sized>(
         }
     }
 
-    eligible
+    Ok(eligible)
 }
 
 /// Fetch all tables from the catalog
-async fn fetch_all_tables<C: CatalogRead + ?Sized>(catalog: &C) -> Vec<(String, String)> {
-    let schemas = catalog.list_schemas().await;
+async fn fetch_all_tables<C: CatalogRead + ?Sized>(
+    catalog: &C,
+) -> CatalogResult<Vec<(String, String)>> {
+    let schemas = catalog.list_schemas().await?;
     let mut all_tables = Vec::new();
 
     for schema in schemas {
-        let tables = catalog.list_tables(&schema).await;
+        let tables = catalog.list_tables(&schema).await?;
         for table in tables {
             all_tables.push((schema.clone(), table));
         }
     }
 
-    all_tables
+    Ok(all_tables)
+}
+
+async fn completions_from_projection<C: CatalogRead + ?Sized>(
+    catalog: &C,
+    scope: &context::Scope,
+    ctx: &context::Context,
+) -> CatalogResult<Vec<Completion>> {
+    let mut out = Vec::new();
+    for col in &scope.projected {
+        let (source, column_schema) = match &col.origin {
+            context::Origin::BaseColumn { relation, name, .. } => {
+                if let Some(rel) = scope.relations.get(relation) {
+                    if let context::RelationKind::Base(path) = &rel.kind {
+                        let source = resolve_source_from_parts(catalog, &path.0).await?;
+
+                        // Try to fetch the actual column from the catalog
+                        let parts = &path.0;
+                        let (schema, table) = match parts.len() {
+                            1 => ("", &parts[0]),
+                            2 => (parts[0].as_str(), &parts[1]),
+                            _ => ("", &parts[0]),
+                        };
+
+                        let cols = catalog.list_columns(table, schema).await?;
+                        let column = cols.into_iter().find(|c| &c.column_name == name);
+
+                        (source, column)
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            _ => {
+                // For non-base columns (e.g., computed columns), construct a minimal Column
+                let column = col.ty.as_ref().map(|ty| schema::Column {
+                    column_name: col.name.clone(),
+                    data_type: Some(ty.clone()),
+                    nullable: true, // Conservative assumption
+                    default: None,
+                    is_pk: false,
+                    generated: false,
+                    collation: None,
+                    comment: None,
+                    ordinal: None,
+                });
+                (None, column)
+            }
+        };
+
+        out.push(make_completion(
+            col.name.clone(),
+            source,
+            column_schema,
+            ctx,
+        ));
+    }
+    Ok(out)
+}
+
+async fn resolve_source_from_parts<C: CatalogRead + ?Sized>(
+    catalog: &C,
+    parts: &[String],
+) -> CatalogResult<Option<String>> {
+    let (schema, table) = match parts.len() {
+        1 => {
+            // Try to resolve schema by scanning, otherwise leave empty
+            let schemas = catalog.list_schemas().await?;
+            let mut found_schema = String::new();
+            for s in &schemas {
+                let tables = catalog.list_tables(s).await?;
+                if tables.contains(&parts[0]) {
+                    found_schema = s.clone();
+                    break;
+                }
+            }
+            (found_schema, parts[0].clone())
+        }
+        2 => (parts[0].clone(), parts[1].clone()),
+        _ => return Ok(None),
+    };
+
+    Ok(Some(if schema.is_empty() {
+        table
+    } else {
+        format!("{}.{}", schema, table)
+    }))
 }
 
 /// Filter columns for GROUP BY clause
@@ -446,6 +502,40 @@ fn filter_for_order_by(
         !already_ordered_names.contains(name.as_str())
             && !ordered_base_columns.contains(name.as_str())
     });
+}
+
+/// Parse path parts into (schema, table)
+fn parse_path_parts(parts: &[String]) -> Option<(String, String)> {
+    match parts.len() {
+        1 => Some((String::new(), parts[0].clone())),
+        2 => Some((parts[0].clone(), parts[1].clone())),
+        _ => None,
+    }
+}
+
+/// Format source string from schema and table
+fn format_source(schema: &str, table: &str) -> String {
+    if schema.is_empty() {
+        table.to_string()
+    } else {
+        format!("{}.{}", schema, table)
+    }
+}
+
+/// Find the qualifier (alias or table name) for a table
+fn find_table_qualifier<'a>(
+    base_relations: &[(&'a context::RelationBinding, &Vec<String>)],
+    schema: &str,
+    table: &str,
+) -> Option<&'a str> {
+    base_relations
+        .iter()
+        .find(|(_, parts)| match parts.len() {
+            1 => &parts[0] == table,
+            2 => &parts[0] == schema && &parts[1] == table,
+            _ => false,
+        })
+        .and_then(|(rel, _)| rel.alias.as_deref())
 }
 
 /// Filter columns for USING clause (only common columns)
@@ -564,92 +654,4 @@ fn make_completion(
         replace: ctx.cursor.replace,
         commit_characters: COMMIT_CHARS.into(),
     }
-}
-
-async fn resolve_source_from_parts<C: CatalogRead + ?Sized>(
-    catalog: &C,
-    parts: &[String],
-) -> Option<String> {
-    let (schema, table) = match parts.len() {
-        1 => {
-            // Try to resolve schema by scanning, otherwise leave empty
-            let schemas = catalog.list_schemas().await;
-            let mut found_schema = String::new();
-            for s in &schemas {
-                let tables = catalog.list_tables(s).await;
-                if tables.contains(&parts[0]) {
-                    found_schema = s.clone();
-                    break;
-                }
-            }
-            (found_schema, parts[0].clone())
-        }
-        2 => (parts[0].clone(), parts[1].clone()),
-        _ => return None,
-    };
-
-    Some(if schema.is_empty() {
-        table
-    } else {
-        format!("{}.{}", schema, table)
-    })
-}
-
-async fn completions_from_projection<C: CatalogRead + ?Sized>(
-    catalog: &C,
-    scope: &context::Scope,
-    ctx: &context::Context,
-) -> Vec<Completion> {
-    let mut out = Vec::new();
-    for col in &scope.projected {
-        let (source, column_schema) = match &col.origin {
-            context::Origin::BaseColumn { relation, name, .. } => {
-                if let Some(rel) = scope.relations.get(relation) {
-                    if let context::RelationKind::Base(path) = &rel.kind {
-                        let source = resolve_source_from_parts(catalog, &path.0).await;
-
-                        // Try to fetch the actual column from the catalog
-                        let parts = &path.0;
-                        let (schema, table) = match parts.len() {
-                            1 => ("", &parts[0]),
-                            2 => (parts[0].as_str(), &parts[1]),
-                            _ => ("", &parts[0]),
-                        };
-
-                        let cols = catalog.list_columns(table, schema).await;
-                        let column = cols.into_iter().find(|c| &c.column_name == name);
-
-                        (source, column)
-                    } else {
-                        (None, None)
-                    }
-                } else {
-                    (None, None)
-                }
-            }
-            _ => {
-                // For non-base columns (e.g., computed columns), construct a minimal Column
-                let column = col.ty.as_ref().map(|ty| schema::Column {
-                    column_name: col.name.clone(),
-                    data_type: Some(ty.clone()),
-                    nullable: true, // Conservative assumption
-                    default: None,
-                    is_pk: false,
-                    generated: false,
-                    collation: None,
-                    comment: None,
-                    ordinal: None,
-                });
-                (None, column)
-            }
-        };
-
-        out.push(make_completion(
-            col.name.clone(),
-            source,
-            column_schema,
-            ctx,
-        ));
-    }
-    out
 }

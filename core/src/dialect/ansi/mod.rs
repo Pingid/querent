@@ -1,5 +1,5 @@
 use crate::{
-    dialect::{CaseFold, CaseRules, CommentStyle, Dialect, DialectSpec, FollowWord},
+    dialect::{CaseFold, CommentStyle, DialectSpec, DialectSpecProvider, FollowWord, StyleRules},
     token::{Keyword, QuoteStyle},
 };
 
@@ -21,7 +21,7 @@ impl Default for Ansi {
     }
 }
 
-impl Dialect for Ansi {
+impl DialectSpecProvider for Ansi {
     fn get_spec(&self) -> &'static DialectSpec {
         self.spec
     }
@@ -35,15 +35,15 @@ pub static SPEC: DialectSpec = DialectSpec {
     name: "ansi",
     keywords: &KEYWORDS,
     operators: &OP_TABLE,
-    quote_styles: &[QuoteStyle::Double],
-    case_rules: CaseRules {
+    style_rules: StyleRules {
         keywords_case_insensitive: true,
         word_ops_case_insensitive: true,
         unquoted_identifier_fold: CaseFold::Upper,
         quoted_identifiers_case_sensitive: true,
+        comments: &[CommentStyle::DoubleDash, CommentStyle::SlashStar],
+        quotes: &[QuoteStyle::Double],
     },
-    comment_styles: &[CommentStyle::DoubleDash, CommentStyle::SlashStar],
-    follow_keywords: &[
+    follow_words: &[
         // — Statement starters —
         (
             &[],

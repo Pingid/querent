@@ -1,5 +1,5 @@
 use proptest::prelude::*;
-use querent_core::dialect::{Ansi, Dialect};
+use querent_core::dialect::{Ansi, DialectSpecProvider};
 use querent_core::token::{Keyword, Token, TokenKind, lex};
 
 #[test]

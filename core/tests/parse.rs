@@ -1,6 +1,6 @@
 use querent_core::{
     ast,
-    dialect::{Ansi, Dialect, DialectSpec, Postgres},
+    dialect::{Ansi, DialectSpecProvider, DialectSpec, Postgres},
     parse::Parser,
     token::lex,
 };
