@@ -728,7 +728,7 @@ impl CompletionTester {
         let mut doc = Content::default();
         doc.set_content(&self.input);
         doc.set_cursor(self.cursor);
-        let engine = Engine::new(Box::new(self.catalog), self.spec);
+        let engine = Engine::new(self.catalog, self.spec);
         let completions =
             futures::executor::block_on(engine.complete(&doc)).expect("failed to complete");
         TestCase {
@@ -744,9 +744,11 @@ impl CatalogBuilder {
         Self(InMemoryCatalog::new())
     }
     pub(crate) fn table(mut self, schema: &str, name: &str, cols: &[&str]) -> Self {
-        let mut table = schema::Table::new(name);
-        table.columns = cols.iter().map(|c| schema::Column::new(*c)).collect();
-        self.0.add_table(schema, table);
+        self.0.add_table(schema, schema::Table::new(schema, name));
+        for c in cols {
+            self.0
+                .add_column(schema, name, schema::Column::new(schema, name, *c));
+        }
         self
     }
     pub(crate) fn build(self) -> InMemoryCatalog {

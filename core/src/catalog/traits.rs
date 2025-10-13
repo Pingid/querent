@@ -4,7 +4,12 @@ use std::pin::Pin;
 
 use crate::catalog::schema;
 
-pub type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+// #[cfg(not(target_arch = "wasm32"))]
+pub type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
+
+// #[cfg(target_arch = "wasm32")]
+// pub type BoxedFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
+
 pub type CatalogResult<T> = Result<T, CatalogError>;
 pub type CatalogReadResult<'a, T> = BoxedFuture<'a, CatalogResult<T>>;
 

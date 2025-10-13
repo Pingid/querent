@@ -9,14 +9,18 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Querent
 querent-lsp = { path = "../lsp" }
-querent-core = { path = "../core" }
+querent-core = { path = "../core", features = ["serde", "typescript"] }
 
 wasm-bindgen = { version = "0.2.104", features = ["serde_json"] }
-getrandom = { version = "0.3.3", features = ["wasm_js"] }
+getrandom = { version = "0.2", features = ["js"] }
 
 # Serialization
 serde = { workspace = true }
 serde-wasm-bindgen = "0.6.5"
 wasm-bindgen-futures = "0.4.54"
-js-sys = "0.3.81"
+js-sys = { version = "0.3.81" }
 web-sys = { version = "0.3.81", features = ["console"] }
+
+[build-dependencies]
+ts-rs = { version = "11" }
+querent-core = { path = "../core", features = ["serde", "typescript"] }

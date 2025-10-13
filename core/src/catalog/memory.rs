@@ -38,16 +38,15 @@ impl InMemoryCatalog {
             .schemas
             .entry(schema.clone())
             .or_insert(schema::Schema::new(schema.clone()));
-        if let Some(t) = schem.tables.iter_mut().find(|t| t.name == table) {
-            t.columns.push(column);
+
+        if let Some(t) = schem.columns.get_mut(&table) {
+            if let Some(c) = t.iter_mut().find(|c| c.column_name == column.column_name) {
+                *c = column;
+            } else {
+                t.push(column);
+            }
         } else {
-            schem.tables.push(schema::Table {
-                name: table,
-                kind: schema::TableKind::Table,
-                columns: vec![column],
-                foreign_keys: vec![],
-                description: None,
-            });
+            schem.columns.insert(table, vec![column]);
         }
     }
 
@@ -93,32 +92,29 @@ impl CatalogReadSync for InMemoryCatalog {
     fn list_tables(&self, schema: &str) -> Vec<String> {
         self.schemas
             .get(schema)
-            .map(|sch| sch.tables.iter().map(|t| t.name.clone()).collect())
+            .map(|sch| sch.tables.iter().map(|t| t.table_name.clone()).collect())
             .unwrap_or_default()
     }
     fn list_columns(&self, table: &str, schema: &str) -> Vec<schema::Column> {
         if schema.is_empty() {
-            // Search all schemas for the table
-            for sch in self.schemas.values() {
-                if let Some(t) = sch.tables.iter().find(|t| t.name == table) {
-                    return t.columns.clone();
-                }
-            }
-            Vec::new()
-        } else {
-            self.schemas
-                .get(schema)
-                .and_then(|sch| sch.tables.iter().find(|t| t.name == table))
-                .map(|t| t.columns.clone())
-                .unwrap_or_default()
+            return self
+                .list_schemas()
+                .into_iter()
+                .flat_map(|s| self.list_columns(table, &s))
+                .collect();
         }
+        self.schemas
+            .get(schema)
+            .and_then(|sch| sch.columns.get(table))
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn get_table(&self, table: &str, schema: &str) -> Option<schema::Table> {
         if schema.is_empty() {
             // Search all schemas for the table
             for sch in self.schemas.values() {
-                if let Some(t) = sch.tables.iter().find(|t| t.name == table) {
+                if let Some(t) = sch.tables.iter().find(|t| t.table_name == table) {
                     return Some(t.clone());
                 }
             }
@@ -126,7 +122,7 @@ impl CatalogReadSync for InMemoryCatalog {
         } else {
             self.schemas
                 .get(schema)
-                .and_then(|sch| sch.tables.iter().find(|t| t.name == table))
+                .and_then(|sch| sch.tables.iter().find(|t| t.table_name == table))
                 .cloned()
         }
     }

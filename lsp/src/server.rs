@@ -1,8 +1,9 @@
 use futures::lock::Mutex;
 use serde_json::json;
-use std::{collections::HashMap, pin::Pin, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use querent_core::{
+    catalog::CatalogRead,
     doc::Content,
     engine::{Completion, Engine},
 };
@@ -10,7 +11,8 @@ use querent_core::{
 use crate::{LspRequest, LspResponse, response::LspResponseCompletions};
 
 pub trait DocEngineProvider {
-    fn get(&self, uri: String) -> Pin<Box<dyn Future<Output = Option<Arc<Engine>>> + Send + '_>>;
+    type Catalog: CatalogRead;
+    fn get(&self, uri: String) -> Option<Engine<Self::Catalog>>;
 }
 
 #[derive(Clone)]
@@ -27,7 +29,7 @@ impl<E: DocEngineProvider> LspServer<E> {
             documents: Arc::new(Mutex::new(HashMap::new())),
             capabilities: json!({
                 "completionProvider": {
-                    "triggerCharacters": [".", " ", ","]
+                    "triggerCharacters": [";", "\n", ".", " ", ","]
                 },
                 "textDocumentSync": {
                     "openClose": true,
@@ -86,7 +88,7 @@ impl<E: DocEngineProvider> LspServer<E> {
                     params.position.line as usize,
                     params.position.character as usize,
                 ));
-                let Some(engine) = self.engines.get(uri.clone()).await else {
+                let Some(engine) = self.engines.get(uri.clone()) else {
                     return None;
                 };
 

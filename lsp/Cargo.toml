@@ -13,3 +13,4 @@ lsp-types = "0.97.0"
 
 # Runtime
 futures = { version = "0.3" }
+tracing = "0.1.41"

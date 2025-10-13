@@ -61,7 +61,7 @@ where
         self.catalog
             .tables
             .get(schema)
-            .map(|tables| tables.iter().map(|t| t.name.clone()).collect())
+            .map(|tables| tables.iter().map(|t| t.table_name.clone()).collect())
             .unwrap_or_default()
     }
     fn list_columns(&self, table: &str, schema: &str) -> Vec<schema::Column> {
@@ -89,7 +89,7 @@ where
         self.catalog
             .tables
             .get(schema)
-            .and_then(|tables| tables.iter().find(|t| t.name == table).cloned())
+            .and_then(|tables| tables.iter().find(|t| t.table_name == table).cloned())
     }
 }
 
@@ -140,7 +140,7 @@ fn handle_catalog_request_response(
             let table =
                 serde_json::from_value::<schema::Table>(result).map_err(|e| e.to_string())?;
             if let Some(tables) = catalog.tables.get_mut(&schema) {
-                if let Some(t) = tables.iter_mut().find(|t| t.name == table.name) {
+                if let Some(t) = tables.iter_mut().find(|t| t.table_name == table.table_name) {
                     *t = table;
                 } else {
                     tables.push(table);

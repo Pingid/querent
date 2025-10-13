@@ -15,6 +15,7 @@ pub trait Ranker {
 /// 3) Prefix match before non-prefix
 /// 4) Higher fuzzy score first
 /// 5) Label ascending (tie-break)
+#[derive(Clone)]
 pub struct DefaultRanker<S: Scorer> {
     scorer: S,
 }
@@ -84,6 +85,7 @@ pub struct Score {
     pub fuzzy: f64,
 }
 
+#[derive(Clone, Copy)]
 pub struct DefaultScorer;
 
 impl Scorer for DefaultScorer {

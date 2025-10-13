@@ -391,12 +391,14 @@ async fn completions_from_projection<C: CatalogRead + ?Sized>(
             _ => {
                 // For non-base columns (e.g., computed columns), construct a minimal Column
                 let column = col.ty.as_ref().map(|ty| schema::Column {
+                    table_schema: "".to_string(),
+                    table_name: "".to_string(),
                     column_name: col.name.clone(),
                     data_type: Some(ty.clone()),
-                    nullable: true, // Conservative assumption
+                    nullable: Some(true), // Conservative assumption
                     default: None,
-                    is_pk: false,
-                    generated: false,
+                    is_pk: Some(false),
+                    generated: Some(false),
                     collation: None,
                     comment: None,
                     ordinal: None,

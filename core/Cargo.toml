@@ -9,12 +9,14 @@ ropey = "1.6.1"
 strsim = "0.11.1"
 
 # Feature dependencies
+ts-rs = { version = "11", optional = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 tracing = "0.1.41"
 thiserror = "2.0.17"
 
 [features]
 serde = ["dep:serde"]
+typescript = ["dep:ts-rs"]
 
 [build-dependencies]
 phf_codegen = "0.13"

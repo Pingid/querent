@@ -42,6 +42,10 @@ impl Content {
         self.cursor = self.get_offset(cursor);
     }
 
+    pub fn to_string(&self) -> String {
+        self.text.to_string()
+    }
+
     pub fn current_statement(&self) -> String {
         get_statement_at_cursor(&self.text, self.cursor)
     }
