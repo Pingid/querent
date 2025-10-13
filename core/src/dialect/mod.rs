@@ -1,13 +1,16 @@
-use crate::lex::{Keyword, OpTag, Operator, QuoteStyle};
+use crate::lex::{Keyword, Operator, QuoteStyle, TokenKind};
+
+mod follow;
+pub use follow::*;
 
 mod ansi;
-mod postgres;
-
 pub use ansi::Ansi;
+
+mod postgres;
 pub use postgres::Postgres;
 
 pub trait DialectSpecProvider {
-    fn get_spec(&self) -> &DialectSpec;
+    fn get_spec(&self) -> &'static DialectSpec;
 }
 
 #[derive(Debug, Clone)]
@@ -16,8 +19,23 @@ pub enum DialectKind {
     Postgres(postgres::Postgres),
 }
 
+impl Default for DialectKind {
+    fn default() -> Self {
+        DialectKind::Ansi(ansi::Ansi::default())
+    }
+}
+
+impl DialectKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            DialectKind::Ansi(_) => "ansi",
+            DialectKind::Postgres(_) => "postgres",
+        }
+    }
+}
+
 impl DialectSpecProvider for DialectKind {
-    fn get_spec(&self) -> &DialectSpec {
+    fn get_spec(&self) -> &'static DialectSpec {
         match self {
             DialectKind::Ansi(d) => d.get_spec(),
             DialectKind::Postgres(d) => d.get_spec(),
@@ -25,14 +43,18 @@ impl DialectSpecProvider for DialectKind {
     }
 }
 
-impl TryFrom<&str> for DialectKind {
-    type Error = String;
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "postgres" | "pg" => Ok(DialectKind::Postgres(postgres::Postgres::default())),
-            "ansi" => Ok(DialectKind::Ansi(ansi::Ansi::default())),
-            _ => Err(format!("Unsupported dialect: {}", value)),
+impl From<&str> for DialectKind {
+    fn from(s: &str) -> Self {
+        match s {
+            "postgres" | "pg" => DialectKind::Postgres(postgres::Postgres::default()),
+            _ => DialectKind::Ansi(ansi::Ansi::default()),
         }
+    }
+}
+
+impl From<String> for DialectKind {
+    fn from(s: String) -> Self {
+        DialectKind::from(s.as_str())
     }
 }
 
@@ -42,14 +64,7 @@ pub struct DialectSpec {
     pub keywords: &'static phf::Map<&'static str, Keyword>,
     pub operators: &'static phf::Map<&'static str, Operator>,
     pub style_rules: StyleRules,
-    /// Follow keywords are used to suggest keywords or operators after a given keyword or operator.
-    pub follow_words: &'static [(&'static [FollowWord], &'static [&'static [FollowWord]])],
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FollowWord {
-    Keyword(Keyword),
-    Operator(OpTag),
+    pub follow_rules: &'static [RuleSet],
 }
 
 impl DialectSpec {
@@ -98,18 +113,8 @@ impl DialectSpec {
         }
     }
 
-    pub fn follow_keywords(&self, preceding: &[FollowWord]) -> Vec<&'static [FollowWord]> {
-        self.follow_words
-            .iter()
-            .find(|(p, _)| {
-                if p.is_empty() {
-                    return preceding.is_empty();
-                }
-                p.len() <= preceding.len()
-                    && **p == preceding[(preceding.len() - p.len())..preceding.len()]
-            })
-            .map(|(_, follow)| follow.to_vec())
-            .unwrap_or_default()
+    pub fn resolve_follow_rules(&self, tokens: &[TokenKind]) -> impl Iterator<Item = String> {
+        resolve_follow_rules(self.follow_rules, tokens)
     }
 }
 

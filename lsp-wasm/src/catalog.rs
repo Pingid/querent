@@ -1,12 +1,13 @@
 use js_sys::{Function, Promise, Reflect};
-use querent_core::catalog::CatalogError;
-use querent_core::catalog::CatalogRead;
-use querent_core::catalog::CatalogReadResult;
-use querent_core::catalog::CatalogResult;
 use serde_wasm_bindgen as swb;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
+
+use querent_core::catalog::CatalogError;
+use querent_core::catalog::CatalogRead;
+use querent_core::catalog::CatalogReadResult;
+use querent_core::catalog::CatalogResult;
 
 #[wasm_bindgen]
 extern "C" {
@@ -40,17 +41,10 @@ export interface CatalogApi {
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct JsCatalog {
-    uri: String,
     list_schemas_fn: Function,
     list_tables_fn: Function,
     list_columns_fn: Function,
     get_table_fn: Function,
-}
-
-impl JsCatalog {
-    pub fn set_uri(&mut self, uri: String) {
-        self.uri = uri;
-    }
 }
 
 #[wasm_bindgen]
@@ -69,7 +63,6 @@ impl JsCatalog {
             Reflect::get(api_obj, &JsValue::from_str("getTable"))?.dyn_into::<Function>()?;
 
         Ok(Self {
-            uri: "".to_string(),
             list_schemas_fn,
             list_tables_fn,
             list_columns_fn,
@@ -78,9 +71,20 @@ impl JsCatalog {
     }
 }
 
-impl CatalogRead for JsCatalog {
+pub struct JsCatalogReader {
+    catalog: JsCatalog,
+    uri: String,
+}
+
+impl JsCatalogReader {
+    pub fn new(catalog: JsCatalog, uri: String) -> Self {
+        Self { catalog, uri }
+    }
+}
+
+impl CatalogRead for JsCatalogReader {
     fn list_schemas(&self) -> CatalogReadResult<'_, Vec<String>> {
-        let f = self.list_schemas_fn.clone();
+        let f = self.catalog.list_schemas_fn.clone();
         let uri = self.uri.clone();
         Box::pin(async move {
             let p_val = f.call1(&JsValue::NULL, &JsValue::from_str(&uri));
@@ -89,7 +93,7 @@ impl CatalogRead for JsCatalog {
     }
 
     fn list_tables(&self, schema: &str) -> CatalogReadResult<'_, Vec<String>> {
-        let f = self.list_tables_fn.clone();
+        let f = self.catalog.list_tables_fn.clone();
         let uri = self.uri.clone();
         let schema = schema.to_string();
         Box::pin(async move {
@@ -104,7 +108,7 @@ impl CatalogRead for JsCatalog {
         table: &str,
         schema: &str,
     ) -> CatalogReadResult<'_, Vec<querent_core::catalog::schema::Column>> {
-        let f = self.list_columns_fn.clone();
+        let f = self.catalog.list_columns_fn.clone();
         let table = table.to_string();
         let schema = schema.to_string();
         let uri = self.uri.clone();
@@ -126,7 +130,7 @@ impl CatalogRead for JsCatalog {
         table: &str,
         schema: &str,
     ) -> CatalogReadResult<'_, Option<querent_core::catalog::schema::Table>> {
-        let f = self.get_table_fn.clone();
+        let f = self.catalog.get_table_fn.clone();
         let table = table.to_string();
         let schema = schema.to_string();
         let uri = self.uri.clone();

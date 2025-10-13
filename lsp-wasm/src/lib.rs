@@ -1,22 +1,22 @@
 use js_sys::Promise;
 use serde::{Deserialize, Serialize};
 use serde_wasm_bindgen as swb;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
-use querent_core::{dialect::Ansi, engine::Engine};
-use querent_lsp::{DocEngineProvider, LspRequest, LspServer};
+use querent_lsp::{LspRequest, LspServer};
 
 mod catalog;
-mod types;
-
+mod engine;
 pub use catalog::*;
-pub use querent_core::catalog::schema::*;
+
+use crate::engine::{DialectName, WasmEngineProvider};
 
 #[wasm_bindgen]
 pub struct WasmLspServer {
-    server: Rc<LspServer<CatalogProvider>>,
+    engine_provider: WasmEngineProvider,
+    server: Rc<LspServer<WasmEngineProvider>>,
     serializer: Rc<swb::Serializer>,
 }
 
@@ -24,11 +24,17 @@ pub struct WasmLspServer {
 impl WasmLspServer {
     #[wasm_bindgen(constructor)]
     pub fn new(catalog_reader: JsCatalog) -> Self {
-        let catalog_provider = CatalogProvider::new(catalog_reader);
+        let engine_provider = WasmEngineProvider::new(catalog_reader);
         Self {
-            server: Rc::new(LspServer::new(catalog_provider)),
+            engine_provider: engine_provider.clone(),
+            server: Rc::new(LspServer::new(engine_provider)),
             serializer: Rc::new(swb::Serializer::json_compatible()),
         }
+    }
+
+    #[wasm_bindgen]
+    pub fn set_document_dialect(&mut self, uri: String, kind: DialectName) {
+        self.engine_provider.set_document_dialect(uri, kind);
     }
 
     #[wasm_bindgen]
@@ -60,31 +66,4 @@ impl WasmLspServer {
 #[serde(untagged)]
 pub enum WasmLspRequest {
     Lsp(LspRequest),
-}
-
-#[wasm_bindgen]
-pub struct CatalogProvider {
-    catalog_reader: JsCatalog,
-    readers: Rc<RefCell<HashMap<String, Engine<JsCatalog>>>>,
-}
-
-impl CatalogProvider {
-    pub fn new(catalog_reader: JsCatalog) -> Self {
-        Self {
-            catalog_reader,
-            readers: Rc::new(RefCell::new(HashMap::new())),
-        }
-    }
-}
-
-impl DocEngineProvider for CatalogProvider {
-    type Catalog = JsCatalog;
-    fn get(&self, uri: String) -> Option<Engine<Self::Catalog>> {
-        if let Some(reader) = self.readers.borrow().get(&uri) {
-            return Some(reader.clone());
-        }
-        let mut catalog_reader = self.catalog_reader.clone();
-        catalog_reader.set_uri(uri);
-        Some(Engine::new(catalog_reader, Ansi::default().spec))
-    }
 }

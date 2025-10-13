@@ -11,8 +11,8 @@ pub struct Cursor {
     pub fragment: String,
     /// The span into text to replace.
     pub replace: Span,
-    /// The keywords preceding the cursor.
-    pub preceding: Vec<Keyword>,
+    /// The tokens from the start of the statement to the cursor.
+    pub preceding: Vec<TokenKind>,
     /// The current keyword token (if cursor is on/after a keyword)
     pub current_keyword: Option<Keyword>,
     /// For qualified names (e.g., table.column), the qualifier before the dot
@@ -108,13 +108,15 @@ pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: us
         (String::new(), Span::new(position, position))
     };
 
-    let preceding = tokens[..token_i]
-        .iter()
-        .filter_map(|t| match t.kind {
-            TokenKind::Keyword(kw) => Some(kw),
-            _ => None,
-        })
-        .collect();
+    let mut preceding = Vec::new();
+
+    for t in tokens[..(token_i + 1).min(tokens.len() - 1)].iter().rev() {
+        if let TokenKind::Semicolon = t.kind {
+            break;
+        }
+        preceding.push(t.kind);
+    }
+    preceding.reverse();
 
     // Also track the current token's keyword if applicable
     let current_keyword = match token.kind {
@@ -148,10 +150,7 @@ pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: us
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        lex::Keyword,
-        test_util::{ansi_tokens, with_caret_cursor},
-    };
+    use crate::test_util::{ansi_tokens, with_caret_cursor};
 
     use super::*;
 
@@ -165,7 +164,6 @@ mod tests {
     fn comma() {
         let text = ansi_detect_cursor("SELECT one,^ FROM users");
         assert_eq!(text.location, Location::Comma);
-        assert_eq!(text.preceding, vec![Keyword::Select]);
         let text = ansi_detect_cursor("SELECT one, ^ FROM users");
         assert_eq!(text.location, Location::Space(Box::new(Location::Comma)));
     }
@@ -214,15 +212,6 @@ mod tests {
         assert_eq!(text.location, Location::Ident);
         assert_eq!(text.fragment, "one");
         assert_eq!(text.replace, Span::new(8, 11));
-    }
-
-    #[test]
-    fn preceding() {
-        let text = ansi_detect_cursor("SELECT * FROM users WHERE name = 'John'^");
-        assert_eq!(
-            text.preceding,
-            vec![Keyword::Select, Keyword::From, Keyword::Where]
-        );
     }
 
     fn ansi_detect_cursor(sql: &str) -> Cursor {

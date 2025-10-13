@@ -12,7 +12,7 @@ use crate::{LspRequest, LspResponse, response::LspResponseCompletions};
 
 pub trait DocEngineProvider {
     type Catalog: CatalogRead;
-    fn get(&self, uri: String) -> Option<Engine<Self::Catalog>>;
+    fn get(&self, uri: String) -> impl Future<Output = Option<Engine<Self::Catalog>>>;
 }
 
 #[derive(Clone)]
@@ -88,7 +88,7 @@ impl<E: DocEngineProvider> LspServer<E> {
                     params.position.line as usize,
                     params.position.character as usize,
                 ));
-                let Some(engine) = self.engines.get(uri.clone()) else {
+                let Some(engine) = self.engines.get(uri.clone()).await else {
                     return None;
                 };
 

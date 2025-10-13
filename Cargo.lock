@@ -1170,6 +1170,7 @@ dependencies = [
  "querent-lsp",
  "serde",
  "serde-wasm-bindgen",
+ "tracing",
  "ts-rs",
  "wasm-bindgen",
  "wasm-bindgen-futures",

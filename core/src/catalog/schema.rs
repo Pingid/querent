@@ -72,7 +72,6 @@ pub struct Column {
     pub table_name: String,
     pub column_name: String,
     pub data_type: Option<SimpleType>,
-    #[cfg_attr(feature = "serde", serde(default = "true_"))]
     pub nullable: Option<bool>,
     pub default: Option<String>,
     pub is_pk: Option<bool>,
@@ -186,7 +185,3 @@ pub enum FunctionType {
     Scalar,
     Aggregate,
 }
-
-fn true_() -> Option<bool> {
-    Some(true)
-} // custom default

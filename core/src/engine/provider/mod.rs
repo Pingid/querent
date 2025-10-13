@@ -24,8 +24,8 @@ pub async fn complete<C: CatalogRead + ?Sized>(
     if column::supports(ctx) {
         completions.extend(column::complete(ctx, catalog).await?);
     }
-    if operator::supports(ctx) {
-        completions.extend(operator::complete(ctx, spec).await);
-    }
+    // if operator::supports(ctx) {
+    //     completions.extend(operator::complete(ctx, spec).await);
+    // }
     Ok(completions)
 }

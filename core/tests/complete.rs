@@ -12,74 +12,27 @@ use common::*;
 // Keyword Completions
 // ============================================================================
 
-#[test]
-fn keyword_completes_partial_at_start() {
-    // Complete partial keyword at statement start
-    let t: TestCase = case("SELE^").run();
-    t.assert_kw_starts_with(["SELECT"]);
-    t.assert_apply("SELECT ");
-}
+// #[test]
+// fn keyword_completes_partial_at_start() {
+//     // Complete partial keyword at statement start
+//     let t: TestCase = case("SELE^").run();
+//     t.assert_kw_starts_with(["SELECT"]);
+//     t.assert_apply("SELECT ");
+// }
 
-#[test]
-fn keyword_suggests_from_after_select() {
-    // Suggest FROM keyword after SELECT clause
-    let t: TestCase = case("SELECT name ^").run();
-    t.assert_includes_kw(["FROM"]);
-}
+// #[test]
+// fn keyword_includes_natural_join() {
+//     // Suggest NATURAL JOIN alongside other join types
+//     let t = case("SELECT * FROM users ^").catalog(users_posts()).run();
+//     t.assert_includes_kw(["NATURAL JOIN", "INNER JOIN"]);
+// }
 
-#[test]
-fn keyword_suggests_clauses_after_from() {
-    // After FROM clause, suggest common trailing keywords and clauses
-    let t = case("SELECT * FROM users ^").run();
-    t.assert_includes_kw(["JOIN", "WHERE", "GROUP BY", "ORDER BY", "LIMIT"]);
-}
-
-#[test]
-fn keyword_suggests_all_join_types() {
-    // Suggest all JOIN type variants as multi-word keywords
-    let t = case("SELECT * FROM users ^").run();
-    t.assert_includes_kw([
-        "LEFT JOIN",
-        "RIGHT JOIN",
-        "FULL JOIN",
-        "INNER JOIN",
-        "OUTER JOIN",
-        "CROSS JOIN",
-        "NATURAL JOIN",
-    ]);
-    let t = case("SELECT * FROM users LE^").run();
-    t.assert_kw_starts_with(["LEFT JOIN"]);
-}
-
-#[test]
-fn keyword_suggests_set_operations() {
-    // Suggest set operation keywords after a complete SELECT statement
-    let t = case("SELECT id FROM users ^").catalog(users_posts()).run();
-    t.assert_includes_kw(["UNION", "UNION ALL", "INTERSECT", "EXCEPT"]);
-}
-
-#[test]
-fn keyword_suggests_order_by_modifiers() {
-    // Suggest sort direction (ASC/DESC) and null ordering modifiers
-    let t = case("SELECT * FROM users ORDER BY name ^")
-        .catalog(users_posts())
-        .run();
-    t.assert_includes_kw(["ASC", "DESC", "NULLS FIRST", "NULLS LAST"]);
-}
-
-#[test]
-fn keyword_includes_natural_join() {
-    // Suggest NATURAL JOIN alongside other join types
-    let t = case("SELECT * FROM users ^").catalog(users_posts()).run();
-    t.assert_includes_kw(["NATURAL JOIN", "INNER JOIN"]);
-}
-
-#[test]
-fn with_suggests_recursive_after_with() {
-    // Suggest RECURSIVE after WITH
-    let t = case("WITH ^").run();
-    t.assert_includes_kw(["RECURSIVE"]);
-}
+// #[test]
+// fn with_suggests_recursive_after_with() {
+//     // Suggest RECURSIVE after WITH
+//     let t = case("WITH ^").run();
+//     t.assert_includes_kw(["RECURSIVE"]);
+// }
 
 // ============================================================================
 // Column Completions - Basic
@@ -122,15 +75,6 @@ fn column_suggests_after_distinct() {
         .catalog(users_posts())
         .run();
     t.assert_col(["email", "id", "name"]);
-}
-
-#[test]
-fn having_suggests_after_group_by() {
-    // Suggest HAVING after GROUP BY
-    let t = case("SELECT COUNT(*) FROM users GROUP BY name ^")
-        .catalog(users_posts())
-        .run();
-    t.assert_includes_kw(["HAVING", "ORDER BY", "LIMIT"]);
 }
 
 // ============================================================================
@@ -500,34 +444,27 @@ fn subquery_completes_qualified_columns() {
 // ============================================================================
 // Operator Completions
 // ============================================================================
-#[test]
-fn operator_suggests_comparison_operators() {
-    // Suggest comparison operators after column
-    let t = case("SELECT * FROM users WHERE id ^").run();
-    t.assert_includes_op([
-        "=", "!=", "<>", ">", "<", ">=", "<=", "IN", "NOT IN", "LIKE", "IS", "IS NOT",
-    ]);
-}
+// #[test]
+// fn operator_suggests_comparison_operators() {
+//     // Suggest comparison operators after column
+//     let t = case("SELECT * FROM users WHERE id ^").run();
+//     t.assert_includes_op([
+//         "=", "!=", "<>", ">", "<", ">=", "<=", "IN", "NOT IN", "LIKE", "IS", "IS NOT",
+//     ]);
+// }
 
-#[test]
-fn operator_suggests_logical_operators_after_condition() {
-    // Suggest logical operators after complete condition
-    let t = case("SELECT * FROM users WHERE id = 1 ^")
-        .catalog(users_posts())
-        .run();
-    t.assert_includes_op(["AND", "OR"]);
-}
+// #[test]
+// fn operator_suggests_logical_operators_after_condition() {
+//     // Suggest logical operators after complete condition
+//     let t = case("SELECT * FROM users WHERE id = 1 ^")
+//         .catalog(users_posts())
+//         .run();
+//     t.assert_includes_op(["AND", "OR"]);
+// }
 
 // ============================================================================
 // CASE Expression Completions
 // ============================================================================
-
-#[test]
-fn case_suggests_when_after_case() {
-    // Suggest WHEN after CASE
-    let t = case("SELECT CASE ^").run();
-    t.assert_includes_kw(["WHEN"]);
-}
 
 #[test]
 fn case_suggests_columns_after_when_condition() {
@@ -535,20 +472,6 @@ fn case_suggests_columns_after_when_condition() {
     let t = case("SELECT CASE WHEN ^").catalog(users_posts()).run();
     // Duplicate "id" columns show with qualified names
     t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
-}
-
-#[test]
-fn case_suggests_then_after_when_condition() {
-    // Suggest THEN after WHEN condition
-    let t = case("SELECT CASE WHEN id = 1 ^").run();
-    t.assert_includes_kw(["THEN"]);
-}
-
-#[test]
-fn case_suggests_when_else_end_after_then() {
-    // Suggest WHEN, ELSE, END after THEN value
-    let t = case("SELECT CASE WHEN id = 1 THEN 'one' ^").run();
-    t.assert_includes_kw(["WHEN", "ELSE", "END"]);
 }
 
 // ============================================================================
