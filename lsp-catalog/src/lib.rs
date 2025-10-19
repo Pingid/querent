@@ -1,5 +1,12 @@
-mod catalog;
-mod remote;
+use std::collections::HashMap;
 
-pub use catalog::*;
-pub use remote::*;
+use querent_core::complete::Engine;
+
+pub struct LspEngines {
+    engines: HashMap<String, Engine>,
+}
+// mod catalog;
+// mod remote;
+
+// pub use catalog::*;
+// pub use remote::*;

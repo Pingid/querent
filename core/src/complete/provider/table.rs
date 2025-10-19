@@ -1,6 +1,6 @@
 use crate::{
-    catalog::{CatalogRead, CatalogResult},
-    engine::{Completion, CompletionKind, TableCompletion, context},
+    complete::{Completion, CompletionKind, TableCompletion, context},
+    schema,
 };
 
 pub fn supports(ctx: &context::Context) -> bool {
@@ -21,17 +21,14 @@ pub fn supports(ctx: &context::Context) -> bool {
     }
 }
 
-pub async fn complete<C: CatalogRead + ?Sized>(
-    ctx: &context::Context,
-    catalog: &C,
-) -> CatalogResult<Vec<Completion>> {
+pub fn complete(ctx: &context::Context, cache: &schema::Cache) -> Vec<Completion> {
     // If we have a qualifier (e.g., "public.^"), only suggest tables from that schema
     if let Some(qualifier) = &ctx.cursor.qualifier {
-        let schema_tables = catalog.list_tables(qualifier).await?;
+        let schema_tables = list_tables(cache, qualifier);
         let mut completions = Vec::new();
 
         for name in schema_tables {
-            let table = catalog.get_table(&name, qualifier).await?;
+            let table = get_table(cache, &name, qualifier);
 
             completions.push(Completion {
                 label: name.clone(),
@@ -46,15 +43,15 @@ pub async fn complete<C: CatalogRead + ?Sized>(
             });
         }
 
-        return Ok(completions);
+        return completions;
     }
 
-    // Get all schemas and tables from catalog
-    let schemas = catalog.list_schemas().await?;
+    // Get all schemas and tables from cache
+    let schemas = list_schemas(cache);
     let mut tables: Vec<(String, String)> = Vec::new(); // (table_name, schema)
 
     for schema in &schemas {
-        let schema_tables = catalog.list_tables(schema).await?;
+        let schema_tables = list_tables(cache, schema);
         for table in schema_tables {
             tables.push((table, schema.clone()));
         }
@@ -68,7 +65,7 @@ pub async fn complete<C: CatalogRead + ?Sized>(
             .relations
             .values()
             .filter_map(|rel| match &rel.kind {
-                crate::engine::context::RelationKind::Base(path) => {
+                crate::complete::context::RelationKind::Base(path) => {
                     path.0.last().map(|s| s.to_string())
                 }
                 _ => None,
@@ -86,7 +83,7 @@ pub async fn complete<C: CatalogRead + ?Sized>(
     // Convert to completions
     let mut completions = Vec::new();
     for (name, schema) in tables {
-        let table = catalog.get_table(&name, &schema).await?;
+        let table = get_table(cache, &name, &schema);
 
         let qualifier = if schema.is_empty() {
             None
@@ -103,5 +100,58 @@ pub async fn complete<C: CatalogRead + ?Sized>(
             commit_characters: vec![' ', ',', '\n'],
         });
     }
-    Ok(completions)
+    completions
+}
+
+// ============================================================================
+// Cache Helper Functions
+// ============================================================================
+
+/// List all schemas from the cache
+fn list_schemas(cache: &schema::Cache) -> Vec<String> {
+    let mut schemas: Vec<String> = cache
+        .get_tables()
+        .iter()
+        .filter_map(|t| t.schema_name.clone())
+        .collect();
+    schemas.sort();
+    schemas.dedup();
+    schemas
+}
+
+/// List all tables in a schema from the cache
+fn list_tables(cache: &schema::Cache, schema: &str) -> Vec<String> {
+    if schema.is_empty() {
+        // If schema is empty, return all tables
+        cache
+            .get_tables()
+            .iter()
+            .map(|t| t.table_name.clone())
+            .collect()
+    } else {
+        cache
+            .get_tables()
+            .iter()
+            .filter(|t| t.schema_name.as_deref() == Some(schema))
+            .map(|t| t.table_name.clone())
+            .collect()
+    }
+}
+
+/// Get a specific table from the cache
+fn get_table(cache: &schema::Cache, table: &str, schema: &str) -> Option<schema::Table> {
+    if schema.is_empty() {
+        // If schema is empty, search all schemas for the table
+        cache
+            .get_tables()
+            .iter()
+            .find(|t| t.table_name == table)
+            .cloned()
+    } else {
+        cache
+            .get_tables()
+            .iter()
+            .find(|t| t.table_name == table && t.schema_name.as_deref() == Some(schema))
+            .cloned()
+    }
 }

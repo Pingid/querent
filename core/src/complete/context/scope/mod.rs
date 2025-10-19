@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::catalog::schema::SimpleType;
+use crate::schema;
 
 mod builder;
 pub use builder::build_scope;
@@ -59,7 +59,7 @@ impl Scope {
         name: String,
         origin: Origin,
         qualifier: Option<String>,
-        ty: Option<SimpleType>,
+        ty: Option<schema::DataType>,
     ) -> ColumnId {
         let id = ColumnId(self.projected.len() as u32);
         self.projected.push(BoundColumn {
@@ -101,7 +101,7 @@ pub enum RelationKind {
 pub struct BoundColumn {
     pub id: ColumnId,
     pub name: String, // visible name (incl. alias)
-    pub ty: Option<SimpleType>,
+    pub ty: Option<schema::DataType>,
     pub origin: Origin, // lineage
     /// The qualifier used in the source (e.g., "users" in "users.name")
     pub qualifier: Option<String>,

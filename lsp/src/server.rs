@@ -2,17 +2,12 @@ use futures::lock::Mutex;
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 
-use querent_core::{
-    catalog::CatalogRead,
-    doc::Content,
-    engine::{Completion, Engine},
-};
+use querent_core::{complete::Completion, doc::Content};
 
 use crate::{LspRequest, LspResponse, response::LspResponseCompletions};
 
-pub trait DocEngineProvider {
-    type Catalog: CatalogRead;
-    fn get(&self, uri: String) -> impl Future<Output = Option<Engine<Self::Catalog>>>;
+pub trait CompletionProvider {
+    fn complete(&self, uri: String, doc: &Content) -> Vec<Completion>;
 }
 
 #[derive(Clone)]
@@ -22,7 +17,7 @@ pub struct LspServer<E> {
     capabilities: serde_json::Value,
 }
 
-impl<E: DocEngineProvider> LspServer<E> {
+impl<E: CompletionProvider> LspServer<E> {
     pub fn new(engines: E) -> Self {
         Self {
             engines,
@@ -88,24 +83,16 @@ impl<E: DocEngineProvider> LspServer<E> {
                     params.position.line as usize,
                     params.position.character as usize,
                 ));
-                let Some(engine) = self.engines.get(uri.clone()).await else {
-                    return None;
-                };
-
-                match engine.complete(&doc).await {
-                    Ok(completions) => {
-                        let items = completions
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, c)| completion_from_engine(&doc, c, i))
-                            .collect();
-                        Some(LspResponse::result(
-                            req.id,
-                            LspResponseCompletions::new(items),
-                        ))
-                    }
-                    Err(e) => return Some(LspResponse::error(req.id, e.to_string())),
-                }
+                let completions = self.engines.complete(uri, &doc);
+                let items = completions
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, c)| completion_from_engine(&doc, c, i))
+                    .collect();
+                Some(LspResponse::result(
+                    req.id,
+                    LspResponseCompletions::new(items),
+                ))
             }
             LspRequest::Shutdown(_) => {
                 self.documents.lock().await.clear();
@@ -135,11 +122,11 @@ fn completion_from_engine(
     let end = doc.get_line_col(completion.replace.end);
 
     let kind = match &completion.kind {
-        querent_core::engine::CompletionKind::Keyword => lsp_types::CompletionItemKind::KEYWORD,
-        querent_core::engine::CompletionKind::Table(_) => lsp_types::CompletionItemKind::CLASS,
-        querent_core::engine::CompletionKind::Column(_) => lsp_types::CompletionItemKind::FIELD,
-        querent_core::engine::CompletionKind::Function => lsp_types::CompletionItemKind::FUNCTION,
-        querent_core::engine::CompletionKind::Operator => lsp_types::CompletionItemKind::OPERATOR,
+        querent_core::complete::CompletionKind::Keyword => lsp_types::CompletionItemKind::KEYWORD,
+        querent_core::complete::CompletionKind::Table(_) => lsp_types::CompletionItemKind::CLASS,
+        querent_core::complete::CompletionKind::Column(_) => lsp_types::CompletionItemKind::FIELD,
+        querent_core::complete::CompletionKind::Function => lsp_types::CompletionItemKind::FUNCTION,
+        querent_core::complete::CompletionKind::Operator => lsp_types::CompletionItemKind::OPERATOR,
     };
 
     lsp_types::CompletionItem {

@@ -496,9 +496,10 @@ impl<'a> Node<'a> {
         let mut results = Vec::new();
         let _ = self.visit(&mut |event| {
             if let AstEvent::Enter(n) = event
-                && let Some(val) = f(n) {
-                    results.push(val);
-                }
+                && let Some(val) = f(n)
+            {
+                results.push(val);
+            }
             ControlFlow::Continue::<()>(())
         });
         results

@@ -1,6 +1,6 @@
 use crate::{
+    complete::{Completion, CompletionKind, context},
     dialect::DialectSpec,
-    engine::{Completion, CompletionKind, context},
 };
 
 pub fn supports(_ctx: &context::Context) -> bool {

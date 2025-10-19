@@ -2,10 +2,10 @@
 members = [
     "core",
     "lsp",
-    "lsp-catalog",
+    "lsp-wasm",
+    # "lsp-catalog",
     # "lsp-engine-tcp",
     # "lsp-server",
-    "lsp-wasm",
 ]
 resolver = "2"
 

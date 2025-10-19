@@ -7,34 +7,24 @@ use wasm_bindgen_futures::future_to_promise;
 
 use querent_lsp::{LspRequest, LspServer};
 
-mod catalog;
 mod engine;
-pub use catalog::*;
-
-use crate::engine::{DialectName, WasmEngineProvider};
+mod types;
+use engine::EngineProvider;
 
 #[wasm_bindgen]
 pub struct WasmLspServer {
-    engine_provider: WasmEngineProvider,
-    server: Rc<LspServer<WasmEngineProvider>>,
+    server: Rc<LspServer<EngineProvider>>,
     serializer: Rc<swb::Serializer>,
 }
 
 #[wasm_bindgen]
 impl WasmLspServer {
     #[wasm_bindgen(constructor)]
-    pub fn new(catalog_reader: JsCatalog) -> Self {
-        let engine_provider = WasmEngineProvider::new(catalog_reader);
+    pub fn new(engine_provider: &EngineProvider) -> Self {
         Self {
-            engine_provider: engine_provider.clone(),
-            server: Rc::new(LspServer::new(engine_provider)),
+            server: Rc::new(LspServer::new(engine_provider.clone())),
             serializer: Rc::new(swb::Serializer::json_compatible()),
         }
-    }
-
-    #[wasm_bindgen]
-    pub fn set_document_dialect(&mut self, uri: String, kind: DialectName) {
-        self.engine_provider.set_document_dialect(uri, kind);
     }
 
     #[wasm_bindgen]

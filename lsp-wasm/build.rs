@@ -2,20 +2,17 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 
-use querent_core::catalog::schema;
+use querent_core::schema;
 use ts_rs::TS;
 
 fn main() {
     let to_export = [
+        schema::Cache::decl(),
+        schema::DataType::decl(),
         schema::Table::decl(),
-        schema::TableType::decl(),
-        schema::ForeignKey::decl(),
+        schema::Column::decl(),
         schema::Function::decl(),
         schema::FunctionType::decl(),
-        schema::Column::decl(),
-        schema::SimpleType::decl(),
-        schema::QualifiedName::decl(),
-        schema::ColumnRef::decl(),
     ];
 
     let all = to_export
