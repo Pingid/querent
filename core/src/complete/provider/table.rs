@@ -1,36 +1,21 @@
-use crate::{
-    complete::{Completion, CompletionKind, TableCompletion, context},
-    schema,
-};
+use crate::complete::{CompletionBuilder, CompletionKind, PossibleCompletion, TableCompletion};
+use crate::schema;
 
-pub fn supports(ctx: &context::Context) -> bool {
-    // Provide completions in FROM clause
-    if !matches!(ctx.clause, context::ClauseKind::From) {
-        return false;
+use super::super::context;
+
+pub fn complete(ctx: &context::Context, builder: &mut CompletionBuilder) {
+    if !supports(ctx) {
+        return;
     }
 
-    match &ctx.cursor.location {
-        // After FROM keyword or after comma (e.g., "FROM users, ^")
-        context::Location::Space(inner) => matches!(
-            **inner,
-            context::Location::Keyword | context::Location::Comma
-        ),
-        // After schema qualifier dot (e.g., "FROM public.^")
-        context::Location::Dot => ctx.cursor.qualifier.is_some(),
-        _ => false,
-    }
-}
-
-pub fn complete(ctx: &context::Context, cache: &schema::Cache) -> Vec<Completion> {
     // If we have a qualifier (e.g., "public.^"), only suggest tables from that schema
     if let Some(qualifier) = &ctx.cursor.qualifier {
-        let schema_tables = list_tables(cache, qualifier);
-        let mut completions = Vec::new();
+        let schema_tables = list_tables(ctx.schema, qualifier);
 
         for name in schema_tables {
-            let table = get_table(cache, &name, qualifier);
+            let table = get_table(ctx.schema, &name, qualifier);
 
-            completions.push(Completion {
+            builder.add(PossibleCompletion {
                 label: name.clone(),
                 insert_text: name.clone(),
                 filter_text: Some(name.clone()),
@@ -38,20 +23,18 @@ pub fn complete(ctx: &context::Context, cache: &schema::Cache) -> Vec<Completion
                     qualifier: Some(qualifier.clone()),
                     table,
                 }),
-                replace: ctx.cursor.replace,
                 commit_characters: vec![' ', ',', '\n'],
+                score: 0.0,
             });
         }
-
-        return completions;
     }
 
     // Get all schemas and tables from cache
-    let schemas = list_schemas(cache);
+    let schemas = list_schemas(ctx.schema);
     let mut tables: Vec<(String, String)> = Vec::new(); // (table_name, schema)
 
     for schema in &schemas {
-        let schema_tables = list_tables(cache, schema);
+        let schema_tables = list_tables(ctx.schema, schema);
         for table in schema_tables {
             tables.push((table, schema.clone()));
         }
@@ -81,9 +64,9 @@ pub fn complete(ctx: &context::Context, cache: &schema::Cache) -> Vec<Completion
     };
 
     // Convert to completions
-    let mut completions = Vec::new();
+
     for (name, schema) in tables {
-        let table = get_table(cache, &name, &schema);
+        let table = get_table(ctx.schema, &name, &schema);
 
         let qualifier = if schema.is_empty() {
             None
@@ -91,16 +74,33 @@ pub fn complete(ctx: &context::Context, cache: &schema::Cache) -> Vec<Completion
             Some(schema)
         };
 
-        completions.push(Completion {
+        builder.add(PossibleCompletion {
             label: name.clone(),
             insert_text: name.clone(),
             filter_text: Some(name.clone()),
             kind: CompletionKind::Table(TableCompletion { qualifier, table }),
-            replace: ctx.cursor.replace,
             commit_characters: vec![' ', ',', '\n'],
+            score: 0.0,
         });
     }
-    completions
+}
+
+fn supports(ctx: &context::Context) -> bool {
+    // Provide completions in FROM clause
+    if !matches!(ctx.clause, context::ClauseKind::From) {
+        return false;
+    }
+
+    match &ctx.cursor.location {
+        // After FROM keyword or after comma (e.g., "FROM users, ^")
+        context::Location::Space(inner) => matches!(
+            **inner,
+            context::Location::Keyword | context::Location::Comma
+        ),
+        // After schema qualifier dot (e.g., "FROM public.^")
+        context::Location::Dot => ctx.cursor.qualifier.is_some(),
+        _ => false,
+    }
 }
 
 // ============================================================================

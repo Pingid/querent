@@ -23,7 +23,7 @@ pub enum If {
     AnyOf(&'static [If]),
     Not(&'static If),
     While(&'static If),
-    Pattern(&'static [If]),
+    Match(&'static [If]),
 }
 
 impl If {
@@ -85,7 +85,7 @@ impl If {
                 (true, o)
             }
 
-            If::Pattern(ifs) => {
+            If::Match(ifs) => {
                 let mut o = offset;
                 for if_ in ifs.iter().rev() {
                     let (m, next) = if_.match_consume(tokens, o);
@@ -145,28 +145,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_if_start() {
+    fn if_start() {
         assert_matches(true, If::Start, "SELEC");
         assert_matches(true, If::Start, "");
         assert_matches(false, If::Start, "SELECT");
     }
 
     #[test]
-    fn test_if_kw() {
+    fn if_kw() {
         assert_matches(true, If::Kw(Keyword::Select), "SELECT");
         assert_matches(false, If::Kw(Keyword::Select), "SELECT DISTINCT");
     }
 
     #[test]
-    fn test_if_kind() {
+    fn if_kind() {
         use TokenKind::*;
         assert_matches(true, If::Kind(LeftParen), "(");
         assert_matches(false, If::Kind(LeftParen), ")");
     }
 
     #[test]
-    fn test_pattter() {
-        let rule = If::Pattern(&[
+    fn if_match() {
+        let rule = If::Match(&[
             If::Kw(Keyword::Select),
             If::While(&If::Not(&If::AnyOf(&[
                 If::Kw(Keyword::From),

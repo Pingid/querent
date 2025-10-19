@@ -8,4 +8,4 @@ pub mod schema;
 pub mod span;
 
 #[cfg(test)]
-mod test_util;
+pub mod test_util;

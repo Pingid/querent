@@ -1,11 +1,11 @@
 use std::cmp::Ordering;
 use strsim::jaro_winkler;
 
-use super::completion::{Completion, CompletionKind};
+use super::{CompletionKind, PossibleCompletion};
 
 /// Ranker decides how a batch of completions should be ordered for a given `needle`.
 pub trait Ranker {
-    fn rank(&self, needle: &str, items: Vec<Completion>) -> Vec<Completion>;
+    fn rank(&self, needle: &str, items: Vec<PossibleCompletion>) -> Vec<PossibleCompletion>;
 }
 
 /// Default ranker: uses a provided `Scorer` (from `completion.rs`) and
@@ -27,7 +27,7 @@ impl<S: Scorer> DefaultRanker<S> {
 }
 
 impl<S: Scorer> Ranker for DefaultRanker<S> {
-    fn rank(&self, needle: &str, mut items: Vec<Completion>) -> Vec<Completion> {
+    fn rank(&self, needle: &str, mut items: Vec<PossibleCompletion>) -> Vec<PossibleCompletion> {
         // Small optimization: precompute lowercased needle once.
         let needle = needle.to_string();
 
@@ -48,7 +48,12 @@ impl<S: Scorer> Ranker for DefaultRanker<S> {
 }
 
 /// Sorting that mirrors the scorer’s tuple but also keeps keywords last.
-fn compare(a: &Completion, b: &Completion, needle: &str, scorer: &impl Scorer) -> Ordering {
+fn compare(
+    a: &PossibleCompletion,
+    b: &PossibleCompletion,
+    needle: &str,
+    scorer: &impl Scorer,
+) -> Ordering {
     let ka = is_keyword(&a.kind);
     let kb = is_keyword(&b.kind);
 
@@ -75,7 +80,7 @@ fn is_keyword(kind: &CompletionKind) -> bool {
 /// Scorer decides how we rank completions for a given `needle`.
 /// Return tuple fields are ordered by decreasing priority in `compare_with_scorer`.
 pub trait Scorer {
-    fn score(&self, c: &Completion, needle: &str) -> Score;
+    fn score(&self, c: &PossibleCompletion, needle: &str) -> Score;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,7 +94,7 @@ pub struct Score {
 pub struct DefaultScorer;
 
 impl Scorer for DefaultScorer {
-    fn score(&self, c: &Completion, needle: &str) -> Score {
+    fn score(&self, c: &PossibleCompletion, needle: &str) -> Score {
         // Use filter_text if available, otherwise fall back to insert_text
         let text_to_match = c.filter_text.as_ref().unwrap_or(&c.insert_text);
 
@@ -110,17 +115,19 @@ impl Scorer for DefaultScorer {
 
 #[cfg(test)]
 mod tests {
-    use super::super::completion::{CompletionKind, TableCompletion};
+    use crate::complete::TableCompletion;
+
+    use super::super::CompletionKind;
     use super::*;
 
-    fn c(label: &str, kind: CompletionKind) -> Completion {
-        Completion {
+    fn c(label: &str, kind: CompletionKind) -> PossibleCompletion {
+        PossibleCompletion {
             label: label.to_string(),
             insert_text: label.to_string(),
             filter_text: Some(label.to_string()),
             kind,
-            replace: (0, 0).into(),
             commit_characters: vec![],
+            score: 0.0,
         }
     }
 

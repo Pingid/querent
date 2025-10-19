@@ -1,5 +1,10 @@
 use crate::{schema, span::Span};
 
+mod builder;
+mod ranker;
+
+pub use builder::*;
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS), ts(optional_fields))]
 #[derive(Debug, Clone, PartialEq)]

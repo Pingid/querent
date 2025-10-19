@@ -1,15 +1,11 @@
-use crate::{
-    dialect::DialectSpec, doc::Content, lex::lex, parse::parse_statement_at_cursor, schema,
-};
+use crate::{dialect::DialectSpec, doc::Content, schema};
 
 mod completion;
 mod context;
 mod provider;
-mod ranker;
 
 pub use completion::*;
-use context::build_context;
-use ranker::{DefaultRanker, DefaultScorer, Ranker};
+pub use context::Context;
 
 pub struct Engine {
     pub spec: &'static DialectSpec,
@@ -27,13 +23,12 @@ impl Engine {
 }
 
 pub fn complete(spec: &DialectSpec, schema: &schema::Cache, doc: &Content) -> Vec<Completion> {
-    let txt = doc.to_string();
-    let tokens = lex(spec, &txt);
-    let Some(stmt) = parse_statement_at_cursor(&tokens, doc.cursor()) else {
+    let text = doc.to_string();
+    let cursor = doc.cursor().min(text.len());
+    let Some(ctx) = Context::build(spec, schema, &text, cursor) else {
         return vec![];
     };
-    let cursor = doc.cursor().min(txt.len());
-    let ctx = build_context(&txt, &tokens, cursor, &stmt);
-    let completions = provider::complete(&ctx, spec, schema);
-    DefaultRanker::new(DefaultScorer).rank(&ctx.cursor.fragment, completions)
+    let mut builder = CompletionBuilder::new();
+    provider::complete(&ctx, &mut builder);
+    builder.build(&ctx)
 }

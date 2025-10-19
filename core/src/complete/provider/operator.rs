@@ -26,7 +26,7 @@ pub fn supports(ctx: &context::Context) -> bool {
     }
 }
 
-pub async fn complete(ctx: &context::Context, spec: &DialectSpec) -> Vec<Completion> {
+pub async fn complete(ctx: &context::Context<'_>, spec: &DialectSpec) -> Vec<Completion> {
     let mut completions = Vec::new();
 
     // Add comparison and logical operators

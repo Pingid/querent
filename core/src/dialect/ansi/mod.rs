@@ -65,7 +65,7 @@ pub static ANSI_RULE_SETS: RuleSet = RuleSet(&[
     Rule(If::Kw(Keyword::Select), &[Then::Kw(Keyword::Distinct)]),
     Rule(If::Kw(Keyword::Select), &[Then::Kw(Keyword::All)]),
     Rule(
-        If::Pattern(&[
+        If::Match(&[
             If::Kw(Keyword::Select),
             If::While(&If::Not(&If::AnyOf(&[
                 If::Kw(Keyword::From),

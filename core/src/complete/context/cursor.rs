@@ -41,6 +41,12 @@ pub enum Location {
     Space(Box<Location>),
 }
 
+impl Location {
+    pub fn is_spaced(&self, other: &Location) -> bool {
+        matches!(self, Location::Space(inner) if **inner == *other)
+    }
+}
+
 pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: usize) -> Cursor {
     if tokens.len() <= 1 {
         return Cursor {
