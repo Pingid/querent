@@ -304,7 +304,7 @@ fn columns_to_completions(
                     column,
                 }),
                 commit_characters: COMMIT_CHARS.into(),
-                score: 0.0,
+                score: 0,
             });
         })
         .collect()
@@ -383,7 +383,7 @@ fn completions_from_projection(
                 // For non-base columns (e.g., computed columns), construct a minimal Column
                 let column = col.ty.as_ref().map(|ty| schema::Column {
                     schema_name: None,
-                    table_name: "".to_string(),
+                    table_name: None,
                     column_name: col.name.clone(),
                     data_type: ty.clone().into(),
                     is_nullable: Some(true), // Conservative assumption
@@ -635,7 +635,7 @@ fn make_completion(
             column,
         }),
         commit_characters: COMMIT_CHARS.into(),
-        score: 0.0,
+        score: 0,
     }
 }
 
@@ -681,14 +681,16 @@ fn list_columns(cache: &schema::Cache, table: &str, schema: &str) -> Vec<schema:
         cache
             .get_columns()
             .iter()
-            .filter(|c| c.table_name == table)
+            .filter(|c| c.table_name.as_deref() == Some(table))
             .cloned()
             .collect()
     } else {
         cache
             .get_columns()
             .iter()
-            .filter(|c| c.table_name == table && c.schema_name.as_deref() == Some(schema))
+            .filter(|c| {
+                c.table_name.as_deref() == Some(table) && c.schema_name.as_deref() == Some(schema)
+            })
             .cloned()
             .collect()
     }

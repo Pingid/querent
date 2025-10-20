@@ -24,7 +24,7 @@ pub fn complete(ctx: &context::Context, builder: &mut CompletionBuilder) {
                     table,
                 }),
                 commit_characters: vec![' ', ',', '\n'],
-                score: 0.0,
+                score: 0,
             });
         }
     }
@@ -80,7 +80,7 @@ pub fn complete(ctx: &context::Context, builder: &mut CompletionBuilder) {
             filter_text: Some(name.clone()),
             kind: CompletionKind::Table(TableCompletion { qualifier, table }),
             commit_characters: vec![' ', ',', '\n'],
-            score: 0.0,
+            score: 0,
         });
     }
 }

@@ -5,6 +5,13 @@ mod ranker;
 
 pub use builder::*;
 
+#[derive(Debug, Default, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS), ts(optional_fields))]
+pub struct Completions {
+    pub items: Vec<Completion>,
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS), ts(optional_fields))]
 #[derive(Debug, Clone, PartialEq)]

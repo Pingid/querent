@@ -529,47 +529,6 @@ impl TestCase {
         assert_eq!(labels, expected);
     }
 
-    /// Assert the first N keyword labels, preserving order.
-    fn assert_kw_starts_with<const N: usize>(&self, expected: [&str; N]) {
-        let labels: Vec<_> = self
-            .completions
-            .iter()
-            .filter(|c| c.kind == CompletionKind::Keyword)
-            .map(|c| c.label.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(labels[0..N], expected);
-    }
-
-    fn assert_includes_kw<const N: usize>(&self, expected: [&str; N]) {
-        let labels: Vec<_> = self
-            .completions
-            .iter()
-            .filter(|c| matches!(c.kind, CompletionKind::Keyword))
-            .map(|c| c.label.as_str())
-            .collect::<Vec<_>>();
-        for e in expected {
-            if !labels.contains(&e) {
-                eprintln!("Expected '{}' not found in keywords: {:?}", e, labels);
-            }
-            assert!(labels.contains(&e));
-        }
-    }
-
-    fn assert_includes_op<const N: usize>(&self, expected: [&str; N]) {
-        let labels: Vec<_> = self
-            .completions
-            .iter()
-            .filter(|c| matches!(c.kind, CompletionKind::Operator))
-            .map(|c| c.label.as_str())
-            .collect::<Vec<_>>();
-        for e in expected {
-            if !labels.contains(&e) {
-                eprintln!("Expected '{}' not found in operators: {:?}", e, labels);
-            }
-            assert!(labels.contains(&e));
-        }
-    }
-
     /// Assert table labels (exact order).
     fn assert_table<const N: usize>(&self, expected: [&str; N]) {
         let labels: Vec<_> = self
@@ -652,7 +611,7 @@ impl CompletionTester {
         let completions = complete(&self.spec, &self.cache, &doc);
         TestCase {
             sql: self.input,
-            completions,
+            completions: completions.items,
         }
     }
 }
@@ -670,7 +629,7 @@ impl SchemaCacheBuilder {
         for c in cols {
             self.0.add_column(schema::Column {
                 column_name: c.to_string(),
-                table_name: name.to_string(),
+                table_name: Some(name.to_string()),
                 schema_name: Some(schema.to_string()),
                 data_type: schema::DataType::Text,
                 is_nullable: Some(true),

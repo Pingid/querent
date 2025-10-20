@@ -4,29 +4,11 @@ use crate::{
     lex::{Fixity, OpTag},
 };
 
-pub fn supports(ctx: &context::Context) -> bool {
-    // Suggest operators after identifiers, literals, or after closing parentheses in WHERE/SELECT clauses
-    match ctx.clause {
-        context::ClauseKind::Where
-        | context::ClauseKind::Select
-        | context::ClauseKind::GroupBy
-        | context::ClauseKind::OrderBy => {
-            if let context::Location::Space(inner) = &ctx.cursor.location {
-                matches!(
-                    **inner,
-                    context::Location::Ident
-                        | context::Location::Paren
-                        | context::Location::Literal
-                )
-            } else {
-                false
-            }
-        }
-        _ => false,
-    }
-}
-
 pub async fn complete(ctx: &context::Context<'_>, spec: &DialectSpec) -> Vec<Completion> {
+    if !supports(ctx) {
+        return Vec::new();
+    }
+
     let mut completions = Vec::new();
 
     // Add comparison and logical operators
@@ -75,4 +57,26 @@ pub async fn complete(ctx: &context::Context<'_>, spec: &DialectSpec) -> Vec<Com
     });
 
     completions
+}
+
+fn supports(ctx: &context::Context) -> bool {
+    // Suggest operators after identifiers, literals, or after closing parentheses in WHERE/SELECT clauses
+    match ctx.clause {
+        context::ClauseKind::Where
+        | context::ClauseKind::Select
+        | context::ClauseKind::GroupBy
+        | context::ClauseKind::OrderBy => {
+            if let context::Location::Space(inner) = &ctx.cursor.location {
+                matches!(
+                    **inner,
+                    context::Location::Ident
+                        | context::Location::Paren
+                        | context::Location::Literal
+                )
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
 }

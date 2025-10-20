@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::{
-    complete::{CompletionBuilder, Context},
+    complete::{CompletionBuilder, CompletionKind, Completions, Context},
     dialect::{Ansi, DialectSpec, DialectSpecProvider},
     lex::{Token, lex},
     schema,
@@ -32,10 +32,10 @@ impl SchemaCacheBuilder {
         for c in cols {
             self.0.add_column(schema::Column {
                 column_name: c.to_string(),
-                table_name: name.to_string(),
+                table_name: Some(name.to_string()),
                 schema_name: Some(schema.to_string()),
                 data_type: schema::DataType::Text,
-                is_nullable: Some(true),
+                is_nullable: None,
             });
         }
         self
@@ -78,57 +78,27 @@ impl CompletionTest {
         )
     }
 
-    pub fn run_with(
-        self,
-        complete: impl Fn(&Context<'_>, &mut CompletionBuilder),
-    ) -> CompletionTestResult {
+    pub fn run_with(self, complete: impl Fn(&Context<'_>, &mut CompletionBuilder)) -> Completions {
         let spec = self.spec.unwrap_or_else(|| Ansi::default().spec.clone());
         let ctx = Context::build(&spec, &self.schema, &self.input, self.cursor).unwrap();
         let mut builder = CompletionBuilder::new();
         complete(&ctx, &mut builder);
-        CompletionTestResult {
-            input: self.input,
-            schema: self.schema,
-            completions: builder,
-        }
+        builder.build(&ctx)
     }
 }
 
-#[derive(Debug)]
-pub struct CompletionTestResult {
-    pub input: String,
-    pub schema: schema::Cache,
-    pub completions: CompletionBuilder,
+pub trait CompletionTestExt {
+    fn assert_col<const N: usize>(&self, expected: [&str; N]);
 }
 
-impl CompletionTestResult {
-    pub fn assert_labels(&self, expected: &[&str]) {
-        let mut completions = self
-            .completions
+impl CompletionTestExt for Completions {
+    fn assert_col<const N: usize>(&self, expected: [&str; N]) {
+        let labels: Vec<_> = self
             .items
             .iter()
+            .filter(|c| matches!(c.kind, CompletionKind::Column(_)))
             .map(|c| c.label.as_str())
             .collect::<Vec<_>>();
-        completions.sort();
-        let mut expected = expected.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        expected.sort();
-        assert_eq!(completions, expected, "{}", self.input);
-    }
-
-    pub fn assert_all_schema_columns(&self, qualified: bool) {
-        let schema_cols = self
-            .schema
-            .get_columns()
-            .iter()
-            .map(|c| match qualified {
-                true => format!(
-                    "{}.{}",
-                    c.schema_name.clone().unwrap_or_default(),
-                    c.column_name
-                ),
-                false => c.column_name.clone(),
-            })
-            .collect::<Vec<_>>();
-        self.assert_labels(&schema_cols.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+        assert_eq!(labels, expected);
     }
 }

@@ -9,7 +9,7 @@ pub fn complete(ctx: &Context, builder: &mut CompletionBuilder) {
             filter_text: Some(label.clone()),
             kind: CompletionKind::Keyword,
             commit_characters: vec![' ', '\n', '\t'],
-            score: 0.0,
+            score: 0,
         });
     }
 }

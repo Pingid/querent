@@ -4,6 +4,8 @@ use crate::schema;
 
 mod builder;
 pub use builder::build_scope;
+mod resolve;
+pub use resolve::*;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Scope {
@@ -111,6 +113,7 @@ pub struct BoundColumn {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Origin {
     UnresolvedIdent(NamePath),
+    Constant(Literal),
     /// Directly from a base table column.
     BaseColumn {
         relation: RelationId,
@@ -129,8 +132,36 @@ pub enum Origin {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Literal {
+    Number,
+    Float,
+    String,
+    Boolean,
+    Null,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamePath(pub Vec<String>);
+
+impl NamePath {
+    pub fn table_name(&self) -> Option<&String> {
+        let size = self.0.len();
+        if size >= 1 {
+            Some(&self.0[size - 1])
+        } else {
+            None
+        }
+    }
+    pub fn schema_name(&self) -> Option<&String> {
+        let size = self.0.len();
+        if size >= 2 {
+            Some(&self.0[size - 2])
+        } else {
+            None
+        }
+    }
+}
 
 impl<I, S> From<I> for NamePath
 where

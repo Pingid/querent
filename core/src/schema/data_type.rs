@@ -25,6 +25,7 @@ pub enum DataType {
     Json,
     Bytes,
     Uuid,
+    Null,
     #[default]
     Unknown,
 }

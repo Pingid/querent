@@ -127,7 +127,7 @@ mod tests {
             filter_text: Some(label.to_string()),
             kind,
             commit_characters: vec![],
-            score: 0.0,
+            score: 0,
         }
     }
 

@@ -247,6 +247,16 @@ impl<'txt> ScopeBuilder<'txt> {
     }
 
     fn column_origin(&self, scope: &Scope, expr: &Loc<ast::Expr>) -> Origin {
+        if let ast::Expr::Literal(literal) = &expr.item {
+            match &literal.item {
+                ast::Literal::Number(_) => return Origin::Constant(Literal::Number),
+                &ast::Literal::Boolean(_) => return Origin::Constant(Literal::Boolean),
+                &ast::Literal::String(_) => return Origin::Constant(Literal::String),
+                &ast::Literal::Null => return Origin::Constant(Literal::Null),
+                _ => return Origin::UnresolvedIdent(NamePath(vec![])),
+            };
+        };
+
         let ast::Expr::Name(name) = &expr.item else {
             return Origin::UnresolvedIdent(NamePath(vec![]));
         };

@@ -1,13 +1,15 @@
 use super::completion::CompletionBuilder;
 use super::context::Context;
 
+// mod col;
 mod column;
 mod keyword;
-mod operator;
+// mod operator;
 mod table;
 
 pub fn complete(ctx: &Context, builder: &mut CompletionBuilder) {
     keyword::complete(ctx, builder);
     table::complete(ctx, builder);
     column::complete(ctx, builder);
+    // col::complete(ctx, builder);
 }

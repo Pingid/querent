@@ -5,7 +5,7 @@ use crate::schema;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Column {
     pub column_name: String,
-    pub table_name: String,
+    pub table_name: Option<String>,
     pub schema_name: Option<String>,
     pub data_type: schema::DataType,
     pub is_nullable: Option<bool>,
