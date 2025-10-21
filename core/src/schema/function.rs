@@ -5,9 +5,11 @@ use crate::schema;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub function_name: String,
-    pub parameters: Vec<schema::DataType>,
-    pub description: Option<String>,
+    pub parameter_types: Vec<schema::DataType>,
     pub function_type: FunctionType,
+    pub description: Option<String>,
+    pub schema_name: Option<String>,
+    pub database_name: Option<String>,
 }
 
 #[cfg_attr(

@@ -1,24 +1,30 @@
-use crate::dialect::RuleSet;
-use crate::dialect::follow::{If, Rule, Then};
+use crate::dialect::Rules;
+use crate::dialect::follow::{Cond, Next, Rule};
 use crate::lex::{Keyword, OpTag, TokenKind};
 
-const SIMPLE_VALUE: If = If::Any(&[
-    If::Kind(TokenKind::Identifier),
-    If::Kind(TokenKind::RightParen),
-    If::Kind(TokenKind::Number),
-    If::Kind(TokenKind::Str),
+const SIMPLE_VALUE: Cond = Cond::Any(&[
+    Cond::Kind(TokenKind::Identifier),
+    Cond::Kind(TokenKind::RightParen),
+    Cond::Kind(TokenKind::Number),
+    Cond::Kind(TokenKind::Str),
 ]);
 
 #[cfg(test)]
-use crate::dialect::follow::Direction;
+use crate::dialect::follow::Dir;
 
-pub const ANSI_RULE_SET: RuleSet = RuleSet(&[
+pub const ANSI_RULE_SET: Rules = Rules(&[
     START_RULE,
     SELECT_RULE,
     FROM_RULE,
     WHERE_RULE,
-    GROUP_BY_RULE,
+    ORDER_BY_DIR_RULE,
+    ORDER_BY_DIR_AFTER_COMMA_RULE,
+    ORDER_BY_NULLS_PLACEMENT_RULE,
+    ORDER_BY_FOLLOW_RULE,
     ORDER_BY_RULE,
+    ORDER_BY_SUGGEST_RULE,
+    GROUP_BY_RULE,
+    GROUP_BY_SUGGEST_RULE,
     LIMIT_RULE,
     SUBQUERY_RULE,
     WITH_CTE_RULE,
@@ -39,252 +45,423 @@ pub const ANSI_RULE_SET: RuleSet = RuleSet(&[
     CREATE_TABLE_RULE,
     PRIMARY_KEY_RULE,
     FOREIGN_KEY_RULE,
+    CASE_WHEN_RULE,
+    WHEN_THEN_RULE,
+    THEN_FOLLOW_RULE,
+    ELSE_END_RULE,
     SET_OPERATION_ALL_RULE,
     SET_OP_RULE,
-    LIMIT_FOLLOW_RULE,
+]);
+
+const END_CONDITION: Cond = Cond::Any(&[
+    Cond::End,
+    Cond::Kind(TokenKind::Semicolon),
+    Cond::Kind(TokenKind::LeftParen),
+    // Match closing paren after WITH keyword (CTE definition)
+    Cond::Seq(&[
+        Cond::Kw(Keyword::With),
+        Cond::Until(&Cond::Kw(Keyword::With)),
+        Cond::Kind(TokenKind::RightParen),
+    ]),
 ]);
 
 const START_RULE: Rule = Rule(
-    If::Any(&[If::End, If::Kind(TokenKind::Semicolon)]),
+    Cond::Any(&[
+        END_CONDITION,
+        Cond::Seq(&[END_CONDITION, Cond::Kind(TokenKind::Identifier)]),
+    ]),
     &[
-        Then::Kw(Keyword::Select),
-        Then::Kw(Keyword::Insert),
-        Then::Kw(Keyword::Update),
-        Then::Kw(Keyword::Delete),
-        Then::Kw(Keyword::Create),
-        Then::Kw(Keyword::Alter),
-        Then::Kw(Keyword::Drop),
-        Then::Kw(Keyword::Merge),
-        Then::Kw(Keyword::With),
+        Next::Kw(Keyword::Select),
+        Next::Kw(Keyword::Insert),
+        Next::Kw(Keyword::Update),
+        Next::Kw(Keyword::Delete),
+        Next::Kw(Keyword::Create),
+        Next::Kw(Keyword::Alter),
+        Next::Kw(Keyword::Drop),
+        Next::Kw(Keyword::Merge),
+        Next::Kw(Keyword::With),
     ],
 );
 
 const SELECT_RULE: Rule = Rule(
-    If::Kw(Keyword::Select),
-    &[Then::Kw(Keyword::Distinct), Then::Kw(Keyword::All)],
+    Cond::Kw(Keyword::Select),
+    &[Next::Kw(Keyword::Distinct), Next::Kw(Keyword::All)],
 );
 
 const FROM_RULE: Rule = Rule(
-    If::Match(&[
-        If::Kw(Keyword::Select),
-        If::While(&If::Not(&If::Any(&[
-            If::Kw(Keyword::From),
-            If::Kw(Keyword::Select),
+    Cond::Seq(&[
+        Cond::Kw(Keyword::Select),
+        Cond::Many(&Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::From),
+            Cond::Kw(Keyword::Select),
         ]))),
-        If::Any(&[
+        Cond::Any(&[
             SIMPLE_VALUE,
-            If::Match(&[
-                If::Any(&[If::Kw(Keyword::Select), If::Kind(TokenKind::Comma)]),
-                If::Op(OpTag::Mul),
+            Cond::Seq(&[
+                Cond::Any(&[Cond::Kw(Keyword::Select), Cond::Kind(TokenKind::Comma)]),
+                Cond::Op(OpTag::Mul),
             ]),
         ]),
     ]),
-    &[Then::Kw(Keyword::From)],
+    &[Next::Kw(Keyword::From)],
 );
 
 const WHERE_RULE: Rule = Rule(
-    If::Match(&[
-        If::Kw(Keyword::From),
-        If::While(&If::Not(&If::Any(&[
-            If::Kw(Keyword::From),
-            If::Kw(Keyword::Where),
+    Cond::Seq(&[
+        Cond::Kw(Keyword::From),
+        Cond::Many(&Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::From),
+            Cond::Kw(Keyword::Where),
         ]))),
         SIMPLE_VALUE,
     ]),
-    &[Then::Kw(Keyword::Where)],
+    &[Next::Kw(Keyword::Where)],
+);
+
+const ORDER_BY_RULE: Rule = Rule(Cond::Kw(Keyword::Order), &[Next::Kw(Keyword::By)]);
+
+const ORDER_BY_SUGGEST_RULE: Rule = Rule(
+    Cond::Seq(&[
+        Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::Select),
+            Cond::Kw(Keyword::Where),
+            Cond::Kw(Keyword::Group),
+            Cond::Kw(Keyword::Order),
+            Cond::Kw(Keyword::By),
+            Cond::Kw(Keyword::Having),
+            Cond::Kw(Keyword::With),
+            Cond::Op(OpTag::And),
+            Cond::Op(OpTag::Or),
+            Cond::Kind(TokenKind::Dot),
+        ])),
+        SIMPLE_VALUE,
+    ]),
+    &[Next::KwSeq(&[Keyword::Order, Keyword::By])],
+);
+
+const ORDER_BY_DIR_RULE: Rule = Rule(
+    Cond::Seq(&[
+        Cond::Kw(Keyword::Order),
+        Cond::Kw(Keyword::By),
+        Cond::Many(&Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::By),
+            Cond::Kind(TokenKind::Comma),
+            Cond::Kw(Keyword::Asc),
+            Cond::Kw(Keyword::Desc),
+            Cond::Kw(Keyword::Nulls),
+            Cond::Kw(Keyword::Offset),
+            Cond::Kw(Keyword::Fetch),
+            Cond::Kw(Keyword::Limit),
+        ]))),
+        SIMPLE_VALUE,
+    ]),
+    &[
+        Next::Kw(Keyword::Asc),
+        Next::Kw(Keyword::Desc),
+        Next::Kw(Keyword::Nulls),
+    ],
+);
+
+const ORDER_BY_NULLS_PLACEMENT_RULE: Rule = Rule(
+    Cond::Kw(Keyword::Nulls),
+    &[Next::Kw(Keyword::First), Next::Kw(Keyword::Last)],
+);
+
+// Suggest ASC/DESC/NULLS after a column following a comma in ORDER BY
+const ORDER_BY_DIR_AFTER_COMMA_RULE: Rule = Rule(
+    Cond::Seq(&[
+        Cond::Kw(Keyword::Order),
+        Cond::Kw(Keyword::By),
+        Cond::Many(&Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::By),
+            Cond::Kw(Keyword::Offset),
+            Cond::Kw(Keyword::Fetch),
+            Cond::Kw(Keyword::Limit),
+            Cond::Kw(Keyword::Union),
+            Cond::Kw(Keyword::Intersect),
+            Cond::Kw(Keyword::Except),
+        ]))),
+        Cond::Kind(TokenKind::Comma),
+        SIMPLE_VALUE,
+    ]),
+    &[
+        Next::Kw(Keyword::Asc),
+        Next::Kw(Keyword::Desc),
+        Next::Kw(Keyword::Nulls),
+    ],
+);
+
+const ORDER_BY_FOLLOW_RULE: Rule = Rule(
+    Cond::Seq(&[
+        Cond::Kw(Keyword::Order),
+        Cond::Kw(Keyword::By),
+        Cond::Many(&Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::By),
+            Cond::Kw(Keyword::Offset),
+            Cond::Kw(Keyword::Fetch),
+            Cond::Kw(Keyword::Limit),
+            Cond::Kw(Keyword::Union),
+            Cond::Kw(Keyword::Intersect),
+            Cond::Kw(Keyword::Except),
+        ]))),
+        SIMPLE_VALUE,
+    ]),
+    &[Next::Kw(Keyword::Offset), Next::Kw(Keyword::Fetch)],
 );
 
 const LIMIT_RULE: Rule = Rule(
-    If::Match(&[
-        If::Not(&If::Until(&If::Any(&[
-            If::Kw(Keyword::Limit),
-            If::Kw(Keyword::Union),
-            If::Kw(Keyword::Intersect),
-            If::Kw(Keyword::Except),
-            If::Kw(Keyword::Offset),
-            If::Kw(Keyword::Fetch),
-        ]))),
+    Cond::Seq(&[
+        Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::Where),
+            Cond::Kw(Keyword::Group),
+            Cond::Kw(Keyword::Order),
+            Cond::Kw(Keyword::By),
+            Cond::Kw(Keyword::Having),
+            Cond::Kw(Keyword::With),
+            Cond::Op(OpTag::And),
+            Cond::Op(OpTag::Or),
+            Cond::Kind(TokenKind::Dot),
+        ])),
         SIMPLE_VALUE,
     ]),
-    &[Then::Kw(Keyword::Limit)],
+    &[Next::Kw(Keyword::Limit)],
 );
 
-const SUBQUERY_RULE: Rule = Rule(If::Kind(TokenKind::LeftParen), &[Then::Kw(Keyword::Select)]);
+const SUBQUERY_RULE: Rule = Rule(
+    Cond::Kind(TokenKind::LeftParen),
+    &[Next::Kw(Keyword::Select)],
+);
 
-const WITH_CTE_RULE: Rule = Rule(If::Kw(Keyword::With), &[Then::Kw(Keyword::Recursive)]);
+const WITH_CTE_RULE: Rule = Rule(Cond::Kw(Keyword::With), &[Next::Kw(Keyword::Recursive)]);
 
-const ORDER_BY_RULE: Rule = Rule(If::Kw(Keyword::Order), &[Then::Kw(Keyword::By)]);
+const GROUP_BY_RULE: Rule = Rule(Cond::Kw(Keyword::Group), &[Next::Kw(Keyword::By)]);
 
-const GROUP_BY_RULE: Rule = Rule(If::Kw(Keyword::Group), &[Then::Kw(Keyword::By)]);
+const GROUP_BY_SUGGEST_RULE: Rule = Rule(
+    Cond::Seq(&[
+        Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::Select),
+            Cond::Kw(Keyword::Where),
+            Cond::Kw(Keyword::Group),
+            Cond::Kw(Keyword::Order),
+            Cond::Kw(Keyword::By),
+            Cond::Kw(Keyword::Having),
+            Cond::Kw(Keyword::With),
+            Cond::Op(OpTag::And),
+            Cond::Op(OpTag::Or),
+            Cond::Kind(TokenKind::Dot),
+        ])),
+        SIMPLE_VALUE,
+    ]),
+    &[Next::KwSeq(&[Keyword::Group, Keyword::By])],
+);
 
 const JOIN_RULE: Rule = Rule(
-    If::Kw(Keyword::Join),
-    &[Then::Kw(Keyword::On), Then::Kw(Keyword::Using)],
+    Cond::Kw(Keyword::Join),
+    &[Next::Kw(Keyword::On), Next::Kw(Keyword::Using)],
 );
 
-const INNER_JOIN_RULE: Rule = Rule(If::Kw(Keyword::Inner), &[Then::Kw(Keyword::Join)]);
+const INNER_JOIN_RULE: Rule = Rule(Cond::Kw(Keyword::Inner), &[Next::Kw(Keyword::Join)]);
 
 const LEFT_JOIN_RULE: Rule = Rule(
-    If::Kw(Keyword::Left),
-    &[
-        Then::CombinedKw(&[Keyword::Left, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Left, Keyword::Outer, Keyword::Join]),
-    ],
+    Cond::Kw(Keyword::Left),
+    &[Next::Kw(Keyword::Join), Next::Kw(Keyword::Outer)],
 );
 
 const RIGHT_JOIN_RULE: Rule = Rule(
-    If::Kw(Keyword::Right),
-    &[
-        Then::CombinedKw(&[Keyword::Right, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Right, Keyword::Outer, Keyword::Join]),
-    ],
+    Cond::Kw(Keyword::Right),
+    &[Next::Kw(Keyword::Join), Next::Kw(Keyword::Outer)],
 );
 
 const FULL_JOIN_RULE: Rule = Rule(
-    If::Kw(Keyword::Full),
-    &[
-        Then::CombinedKw(&[Keyword::Full, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Full, Keyword::Outer, Keyword::Join]),
-    ],
+    Cond::Kw(Keyword::Full),
+    &[Next::Kw(Keyword::Join), Next::Kw(Keyword::Outer)],
 );
 
-const CROSS_JOIN_RULE: Rule = Rule(If::Kw(Keyword::Cross), &[Then::Kw(Keyword::Join)]);
+const CROSS_JOIN_RULE: Rule = Rule(Cond::Kw(Keyword::Cross), &[Next::Kw(Keyword::Join)]);
 
 // Suggest JOIN keywords after a table in FROM clause
 const JOIN_AFTER_FROM_RULE: Rule = Rule(
-    If::Match(&[
-        If::Kw(Keyword::From),
-        If::While(&If::Not(&If::Any(&[
-            If::Kw(Keyword::From),
-            If::Kw(Keyword::Where),
-            If::Kw(Keyword::Join),
-            If::Kw(Keyword::Inner),
-            If::Kw(Keyword::Left),
-            If::Kw(Keyword::Right),
-            If::Kw(Keyword::Full),
-            If::Kw(Keyword::Cross),
-            If::Kw(Keyword::Natural),
-            If::Kw(Keyword::Group),
-            If::Kw(Keyword::Order),
-            If::Kw(Keyword::Limit),
-            If::Kw(Keyword::Union),
-            If::Kw(Keyword::Intersect),
-            If::Kw(Keyword::Except),
-            If::Kw(Keyword::Offset),
-            If::Kw(Keyword::Fetch),
-        ]))),
-        If::Any(&[
-            If::Kind(TokenKind::Identifier),
-            If::Kind(TokenKind::RightParen),
+    Cond::Seq(&[
+        Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::Where),
+            Cond::Kw(Keyword::Join),
+            Cond::Kw(Keyword::Inner),
+            Cond::Kw(Keyword::Left),
+            Cond::Kw(Keyword::Right),
+            Cond::Kw(Keyword::Full),
+            Cond::Kw(Keyword::Cross),
+            Cond::Kw(Keyword::Natural),
+            Cond::Kw(Keyword::Group),
+            Cond::Kw(Keyword::Order),
+            Cond::Kw(Keyword::By),
+            Cond::Kw(Keyword::Having),
+            Cond::Kw(Keyword::Limit),
+            Cond::Kw(Keyword::With),
+            Cond::Kind(TokenKind::Dot),
+        ])),
+        Cond::Any(&[
+            Cond::Kind(TokenKind::Identifier),
+            Cond::Kind(TokenKind::RightParen),
         ]),
     ]),
     &[
-        Then::CombinedKw(&[Keyword::Inner, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Left, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Right, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Full, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Cross, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Natural, Keyword::Join]),
+        Next::Kw(Keyword::Join),
+        Next::Kw(Keyword::Inner),
+        Next::Kw(Keyword::Left),
+        Next::Kw(Keyword::Right),
+        Next::Kw(Keyword::Full),
+        Next::Kw(Keyword::Cross),
+        Next::Kw(Keyword::Natural),
     ],
 );
 
 // OUTER can follow LEFT, RIGHT, or FULL
 const LEFT_OUTER_JOIN_RULE: Rule = Rule(
-    If::Match(&[If::Kw(Keyword::Left), If::Kw(Keyword::Outer)]),
-    &[Then::Kw(Keyword::Join)],
+    Cond::Seq(&[Cond::Kw(Keyword::Left), Cond::Kw(Keyword::Outer)]),
+    &[Next::Kw(Keyword::Join)],
 );
 
 const RIGHT_OUTER_JOIN_RULE: Rule = Rule(
-    If::Match(&[If::Kw(Keyword::Right), If::Kw(Keyword::Outer)]),
-    &[Then::Kw(Keyword::Join)],
+    Cond::Seq(&[Cond::Kw(Keyword::Right), Cond::Kw(Keyword::Outer)]),
+    &[Next::Kw(Keyword::Join)],
 );
 
 const FULL_OUTER_JOIN_RULE: Rule = Rule(
-    If::Match(&[If::Kw(Keyword::Full), If::Kw(Keyword::Outer)]),
-    &[Then::Kw(Keyword::Join)],
+    Cond::Seq(&[Cond::Kw(Keyword::Full), Cond::Kw(Keyword::Outer)]),
+    &[Next::Kw(Keyword::Join)],
 );
 
 // NATURAL can combine with join types
 const NATURAL_JOIN_RULE: Rule = Rule(
-    If::Kw(Keyword::Natural),
+    Cond::Kw(Keyword::Natural),
     &[
-        Then::Kw(Keyword::Join),
-        Then::CombinedKw(&[Keyword::Natural, Keyword::Left, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Natural, Keyword::Right, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Natural, Keyword::Full, Keyword::Join]),
-        Then::CombinedKw(&[Keyword::Natural, Keyword::Inner, Keyword::Join]),
+        Next::Kw(Keyword::Join),
+        Next::Kw(Keyword::Inner),
+        Next::Kw(Keyword::Left),
+        Next::Kw(Keyword::Right),
+        Next::Kw(Keyword::Full),
     ],
 );
 
-const HAVING_RULE: Rule = Rule(If::Kw(Keyword::Group), &[Then::CombinedKw(&[Keyword::By])]);
+const HAVING_RULE: Rule = Rule(Cond::Kw(Keyword::Group), &[Next::KwSeq(&[Keyword::By])]);
 
 const HAVING_AFTER_GROUP_BY_RULE: Rule = Rule(
-    If::Match(&[
-        If::Kw(Keyword::Group),
-        If::Kw(Keyword::By),
-        If::While(&If::Not(&If::Any(&[
-            If::Kw(Keyword::Order),
-            If::Kw(Keyword::Limit),
-            If::Kw(Keyword::Having),
-            If::Kw(Keyword::Union),
-            If::Kw(Keyword::Intersect),
-            If::Kw(Keyword::Except),
-            If::Kw(Keyword::Offset),
-            If::Kw(Keyword::Fetch),
+    Cond::Seq(&[
+        Cond::Kw(Keyword::Group),
+        Cond::Kw(Keyword::By),
+        Cond::Many(&Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::By),
+            Cond::Kw(Keyword::Group),
+            Cond::Kw(Keyword::Order),
+            Cond::Kw(Keyword::Limit),
+            Cond::Kw(Keyword::Having),
+            Cond::Kw(Keyword::Union),
+            Cond::Kw(Keyword::Intersect),
+            Cond::Kw(Keyword::Except),
+            Cond::Kw(Keyword::Offset),
+            Cond::Kw(Keyword::Fetch),
         ]))),
+        SIMPLE_VALUE,
     ]),
-    &[Then::Kw(Keyword::Having)],
+    &[Next::Kw(Keyword::Having)],
 );
 
-const INSERT_INTO_RULE: Rule = Rule(If::Kw(Keyword::Insert), &[Then::Kw(Keyword::Into)]);
+const INSERT_INTO_RULE: Rule = Rule(Cond::Kw(Keyword::Insert), &[Next::Kw(Keyword::Into)]);
 
 const CREATE_TABLE_RULE: Rule = Rule(
-    If::Kw(Keyword::Create),
+    Cond::Kw(Keyword::Create),
     &[
-        Then::Kw(Keyword::Table),
-        Then::Kw(Keyword::View),
-        Then::Kw(Keyword::Schema),
+        Next::Kw(Keyword::Table),
+        Next::Kw(Keyword::View),
+        Next::Kw(Keyword::Schema),
     ],
 );
 
-const PRIMARY_KEY_RULE: Rule = Rule(
-    If::Kw(Keyword::Primary),
-    &[Then::CombinedKw(&[Keyword::Key])],
-);
+const PRIMARY_KEY_RULE: Rule = Rule(Cond::Kw(Keyword::Primary), &[Next::KwSeq(&[Keyword::Key])]);
 
-const FOREIGN_KEY_RULE: Rule = Rule(
-    If::Kw(Keyword::Foreign),
-    &[Then::CombinedKw(&[Keyword::Key])],
-);
+const FOREIGN_KEY_RULE: Rule = Rule(Cond::Kw(Keyword::Foreign), &[Next::KwSeq(&[Keyword::Key])]);
 
-const SET_OPERATION_ALL_RULE: Rule = Rule(
-    If::Any(&[
-        If::Kw(Keyword::Union),
-        If::Kw(Keyword::Intersect),
-        If::Kw(Keyword::Except),
+// CASE statement rules
+// Suggest WHEN after CASE keyword
+const CASE_WHEN_RULE: Rule = Rule(Cond::Kw(Keyword::Case), &[Next::Kw(Keyword::When)]);
+
+// Suggest THEN after a value following WHEN
+const WHEN_THEN_RULE: Rule = Rule(
+    Cond::Seq(&[
+        Cond::Kw(Keyword::When),
+        Cond::Many(&Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::When),
+            Cond::Kw(Keyword::Then),
+            Cond::Kw(Keyword::Else),
+            Cond::Kw(Keyword::End),
+        ]))),
+        SIMPLE_VALUE,
     ]),
-    &[Then::CombinedKw(&[Keyword::All])],
+    &[Next::Kw(Keyword::Then)],
 );
 
-const SET_OP_RULE: Rule = Rule(
-    If::Match(&[
-        If::Not(&If::Until(&If::Any(&[
-            If::Kw(Keyword::Union),
-            If::Kw(Keyword::Intersect),
-            If::Kw(Keyword::Except),
+// Suggest WHEN, ELSE, END after a value following THEN
+const THEN_FOLLOW_RULE: Rule = Rule(
+    Cond::Seq(&[
+        Cond::Kw(Keyword::Then),
+        Cond::Many(&Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::When),
+            Cond::Kw(Keyword::Then),
+            Cond::Kw(Keyword::Else),
+            Cond::Kw(Keyword::End),
         ]))),
         SIMPLE_VALUE,
     ]),
     &[
-        Then::Kw(Keyword::Union),
-        Then::Kw(Keyword::Intersect),
-        Then::Kw(Keyword::Except),
+        Next::Kw(Keyword::When),
+        Next::Kw(Keyword::Else),
+        Next::Kw(Keyword::End),
     ],
 );
 
-const LIMIT_FOLLOW_RULE: Rule = Rule(
-    If::Kw(Keyword::Limit),
-    &[Then::Kw(Keyword::Offset), Then::Kw(Keyword::Fetch)],
+// Suggest END after a value following ELSE
+const ELSE_END_RULE: Rule = Rule(
+    Cond::Seq(&[
+        Cond::Kw(Keyword::Else),
+        Cond::Many(&Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::Else),
+            Cond::Kw(Keyword::End),
+        ]))),
+        SIMPLE_VALUE,
+    ]),
+    &[Next::Kw(Keyword::End)],
+);
+
+const SET_OPERATION_ALL_RULE: Rule = Rule(
+    Cond::Any(&[
+        Cond::Kw(Keyword::Union),
+        Cond::Kw(Keyword::Intersect),
+        Cond::Kw(Keyword::Except),
+    ]),
+    &[Next::KwSeq(&[Keyword::All])],
+);
+
+const SET_OP_RULE: Rule = Rule(
+    Cond::Seq(&[
+        Cond::Not(&Cond::Any(&[
+            Cond::Kw(Keyword::Select),
+            Cond::Kw(Keyword::Where),
+            Cond::Kw(Keyword::Group),
+            Cond::Kw(Keyword::Order),
+            Cond::Kw(Keyword::Having),
+            Cond::Kw(Keyword::With),
+            Cond::Kind(TokenKind::Comma),
+            Cond::Op(OpTag::And),
+            Cond::Op(OpTag::Or),
+            Cond::Kind(TokenKind::Dot),
+        ])),
+        SIMPLE_VALUE,
+    ]),
+    &[
+        Next::Kw(Keyword::Union),
+        Next::Kw(Keyword::Intersect),
+        Next::Kw(Keyword::Except),
+    ],
 );
 
 #[cfg(test)]
@@ -295,11 +472,91 @@ mod tests {
 
     #[test]
     fn start_rule() {
+        // Should match at the start
         assert_matches(true, START_RULE, "");
         assert_matches(false, START_RULE, "SELECT");
+
+        // Should match after semicolon
         assert_matches(true, START_RULE, ";");
-        assert_matches(false, START_RULE, ";SE");
-        assert_matches(false, START_RULE, "FROM");
+        assert_matches(true, START_RULE, ";SE");
+
+        // Should match after CTE definition
+        assert_matches(true, START_RULE, "WITH cte (SELECT a FROM b) ");
+        assert_matches(true, START_RULE, "WITH cte (SELECT a FROM b) S");
+
+        // Should match after multiple CTEs
+        assert_matches(
+            true,
+            START_RULE,
+            "WITH cte1 (SELECT a FROM b), cte2 (SELECT c FROM d) ",
+        );
+
+        // Should match after nested subquery within CTE
+        assert_matches(
+            true,
+            START_RULE,
+            "WITH cte (SELECT a FROM (SELECT b FROM c)) ",
+        );
+
+        // Should NOT match after table subqueries (not a CTE context)
+        assert_matches(false, START_RULE, "SELECT * FROM (SELECT a FROM b) ");
+        assert_matches(false, START_RULE, "SELECT * FROM (SELECT a FROM b) t ");
+
+        // Should NOT match after WHERE clause subqueries
+        assert_matches(
+            false,
+            START_RULE,
+            "SELECT * FROM t WHERE id IN (SELECT id FROM users) ",
+        );
+    }
+
+    #[test]
+    fn qualified_column_exclusion() {
+        // After qualified columns (table.column), should NOT suggest clause keywords
+        // Should suggest operators/AND/OR instead
+
+        // Should NOT suggest LIMIT after qualified column
+        assert_matches(
+            false,
+            LIMIT_RULE,
+            "SELECT data FROM ingest WHERE ingest.data ",
+        );
+
+        // Should NOT suggest ORDER BY after qualified column
+        assert_matches(
+            false,
+            ORDER_BY_SUGGEST_RULE,
+            "SELECT data FROM ingest WHERE ingest.data ",
+        );
+
+        // Should NOT suggest GROUP BY after qualified column
+        assert_matches(
+            false,
+            GROUP_BY_SUGGEST_RULE,
+            "SELECT data FROM ingest WHERE ingest.data ",
+        );
+
+        // Should NOT suggest JOIN after qualified column
+        assert_matches(
+            false,
+            JOIN_AFTER_FROM_RULE,
+            "SELECT data FROM ingest WHERE ingest.data ",
+        );
+
+        // Should NOT suggest set operations after qualified column
+        assert_matches(
+            false,
+            SET_OP_RULE,
+            "SELECT data FROM ingest WHERE ingest.data ",
+        );
+
+        // But unqualified columns should still work
+        assert_matches(true, LIMIT_RULE, "SELECT data FROM ingest WHERE data = 1 ");
+        assert_matches(
+            true,
+            ORDER_BY_SUGGEST_RULE,
+            "SELECT data FROM ingest WHERE data = 1 ",
+        );
     }
 
     #[test]
@@ -344,23 +601,18 @@ mod tests {
         let rule = LIMIT_RULE;
 
         assert_matches(true, rule, "SELECT a FROM users ");
+        assert_matches(false, rule, "SELECT a FROM users WHERE");
+        assert_matches(false, rule, "SELECT a FROM users WHERE ");
+        assert_matches(false, rule, "SELECT a FROM users WHERE id");
+        assert_matches(false, rule, "SELECT a FROM users WHERE id =");
+        assert_matches(true, rule, "SELECT a FROM users WHERE id = 1 ");
         assert_matches(true, rule, "SELECT a FROM users WHERE name = 'John' ");
-        assert_matches(true, rule, "SELECT a FROM users GROUP BY id ");
-        assert_matches(
-            true,
-            rule,
-            "SELECT a FROM users GROUP BY id HAVING count > 1 ",
-        );
-        assert_matches(true, rule, "SELECT a FROM users ORDER BY name ");
+        assert_matches(false, rule, "SELECT a FROM users WHERE name = 'John' AND");
         assert_matches(
             false,
             rule,
-            "SELECT a FROM users UNION SELECT b FROM others ",
+            "SELECT a FROM users WHERE name = 'John' AND age",
         );
-        assert_matches(false, rule, "SELECT a FROM users LIMIT ");
-        assert_matches(false, rule, "SELECT a FROM users LIMIT 10");
-        assert_matches(false, rule, "SELECT a FROM users OFFSET ");
-        assert_matches(false, rule, "SELECT a FROM users OFFSET 5 ");
     }
 
     #[test]
@@ -393,12 +645,108 @@ mod tests {
     }
 
     #[test]
+    fn order_by_suggest_rule() {
+        let rule = ORDER_BY_SUGGEST_RULE;
+
+        // Should suggest ORDER BY after complete SELECT/FROM/WHERE clauses
+        assert_matches(true, rule, "SELECT a FROM users ");
+        assert_matches(true, rule, "SELECT a FROM users WHERE id = 1 ");
+        assert_matches(true, rule, "SELECT a FROM users WHERE name = 'John' ");
+
+        // Should NOT suggest after incomplete clauses
+        assert_matches(false, rule, "SELECT ");
+        assert_matches(false, rule, "SELECT a");
+        assert_matches(false, rule, "SELECT a, ");
+        assert_matches(false, rule, "SELECT a FROM users WHERE");
+        assert_matches(false, rule, "SELECT a FROM users WHERE ");
+        assert_matches(false, rule, "SELECT a FROM users WHERE id");
+        assert_matches(false, rule, "SELECT a FROM users WHERE id =");
+        assert_matches(false, rule, "SELECT a FROM users WHERE name = 'John' AND");
+        assert_matches(
+            false,
+            rule,
+            "SELECT a FROM users WHERE name = 'John' AND age",
+        );
+
+        // Should NOT suggest after clause keywords
+        assert_matches(false, rule, "SELECT a FROM users GROUP");
+        assert_matches(false, rule, "SELECT a FROM users ORDER");
+        assert_matches(false, rule, "SELECT a FROM users HAVING");
+
+        // Should NOT suggest after GROUP BY (BY keyword is excluded to prevent suggesting after ORDER BY)
+        assert_matches(false, rule, "SELECT COUNT(*) FROM users GROUP BY name ");
+
+        // Should NOT suggest after ORDER BY is already used
+        assert_matches(false, rule, "SELECT a FROM users ORDER BY name ");
+    }
+
+    #[test]
     fn group_by_rule() {
         assert_matches(true, GROUP_BY_RULE, "GROUP ");
         assert_matches(false, GROUP_BY_RULE, "GROUP BY");
         assert_matches(false, GROUP_BY_RULE, "");
         assert_matches(false, GROUP_BY_RULE, "SELECT");
         assert_matches(false, GROUP_BY_RULE, "BY");
+    }
+
+    #[test]
+    fn group_by_suggest_rule() {
+        let rule = GROUP_BY_SUGGEST_RULE;
+
+        // Should suggest GROUP BY after complete SELECT/FROM/WHERE clauses
+        assert_matches(true, rule, "SELECT a FROM users ");
+        assert_matches(true, rule, "SELECT a FROM users WHERE id = 1 ");
+        assert_matches(true, rule, "SELECT a FROM users WHERE name = 'John' ");
+
+        // Should NOT suggest after incomplete clauses
+        assert_matches(false, rule, "SELECT ");
+        assert_matches(false, rule, "SELECT a");
+        assert_matches(false, rule, "SELECT a, ");
+        assert_matches(false, rule, "SELECT a FROM users WHERE");
+        assert_matches(false, rule, "SELECT a FROM users WHERE ");
+        assert_matches(false, rule, "SELECT a FROM users WHERE id");
+        assert_matches(false, rule, "SELECT a FROM users WHERE id =");
+        assert_matches(false, rule, "SELECT a FROM users WHERE name = 'John' AND");
+        assert_matches(
+            false,
+            rule,
+            "SELECT a FROM users WHERE name = 'John' AND age",
+        );
+
+        // Should NOT suggest after GROUP/ORDER/HAVING keywords
+        assert_matches(false, rule, "SELECT a FROM users GROUP");
+        assert_matches(false, rule, "SELECT a FROM users ORDER");
+        assert_matches(false, rule, "SELECT a FROM users HAVING");
+    }
+
+    #[test]
+    fn having_after_group_by_rule() {
+        let rule = HAVING_AFTER_GROUP_BY_RULE;
+
+        // Should suggest HAVING after GROUP BY with column
+        assert_matches(true, rule, "SELECT COUNT(*) FROM users GROUP BY name ");
+        assert_matches(true, rule, "SELECT a FROM users GROUP BY col1, col2 ");
+
+        // Should NOT suggest immediately after GROUP BY keywords
+        assert_matches(false, rule, "SELECT a FROM users GROUP");
+        assert_matches(false, rule, "SELECT a FROM users GROUP ");
+        assert_matches(false, rule, "SELECT a FROM users GROUP BY");
+        assert_matches(false, rule, "SELECT a FROM users GROUP BY ");
+
+        // Should NOT suggest after HAVING is already used
+        assert_matches(
+            false,
+            rule,
+            "SELECT a FROM users GROUP BY name HAVING COUNT(*) > 1 ",
+        );
+
+        // Should NOT suggest after ORDER BY or LIMIT
+        assert_matches(
+            false,
+            rule,
+            "SELECT a FROM users GROUP BY name ORDER BY name ",
+        );
+        assert_matches(false, rule, "SELECT a FROM users GROUP BY name LIMIT 10 ");
     }
 
     #[test]
@@ -419,22 +767,28 @@ mod tests {
 
     #[test]
     fn left_join_rule() {
+        // Should suggest both JOIN and OUTER after LEFT
         assert_matches(true, LEFT_JOIN_RULE, "LEFT ");
         assert_matches(false, LEFT_JOIN_RULE, "LEFT JOIN");
+        assert_matches(false, LEFT_JOIN_RULE, "LEFT OUTER");
         assert_matches(false, LEFT_JOIN_RULE, "");
     }
 
     #[test]
     fn right_join_rule() {
+        // Should suggest both JOIN and OUTER after RIGHT
         assert_matches(true, RIGHT_JOIN_RULE, "RIGHT ");
         assert_matches(false, RIGHT_JOIN_RULE, "RIGHT JOIN");
+        assert_matches(false, RIGHT_JOIN_RULE, "RIGHT OUTER");
         assert_matches(false, RIGHT_JOIN_RULE, "");
     }
 
     #[test]
     fn full_join_rule() {
+        // Should suggest both JOIN and OUTER after FULL
         assert_matches(true, FULL_JOIN_RULE, "FULL ");
         assert_matches(false, FULL_JOIN_RULE, "FULL JOIN");
+        assert_matches(false, FULL_JOIN_RULE, "FULL OUTER");
         assert_matches(false, FULL_JOIN_RULE, "");
     }
 
@@ -496,19 +850,54 @@ mod tests {
     }
 
     #[test]
-    fn join_after_from_rule() {
-        assert_matches(true, JOIN_AFTER_FROM_RULE, "SELECT * FROM users ");
-        assert_matches(true, JOIN_AFTER_FROM_RULE, "SELECT * FROM table1 ");
+    fn set_op_rule() {
+        let rule = SET_OP_RULE;
+
+        // Should suggest set operations after a complete SELECT statement
+        assert_matches(true, rule, "SELECT a FROM users ");
+        assert_matches(true, rule, "SELECT a FROM users WHERE id = 1 ");
+        assert_matches(true, rule, "SELECT a FROM users ORDER BY name ");
+
+        // Should NOT suggest after incomplete clauses
+        assert_matches(false, rule, "SELECT a FROM users WHERE");
+        assert_matches(false, rule, "SELECT a FROM users WHERE ");
+        assert_matches(false, rule, "SELECT a FROM users WHERE id");
+        assert_matches(false, rule, "SELECT a FROM users WHERE id =");
+        assert_matches(false, rule, "SELECT a FROM users WHERE name = 'John' AND");
         assert_matches(
-            true,
-            JOIN_AFTER_FROM_RULE,
-            "SELECT * FROM (SELECT id FROM t) ",
+            false,
+            rule,
+            "SELECT a FROM users WHERE name = 'John' AND age",
         );
-        assert_matches(false, JOIN_AFTER_FROM_RULE, "SELECT * FROM users WHERE");
-        assert_matches(false, JOIN_AFTER_FROM_RULE, "SELECT * FROM users JOIN");
-        assert_matches(false, JOIN_AFTER_FROM_RULE, "SELECT * FROM users LEFT");
-        assert_matches(false, JOIN_AFTER_FROM_RULE, "SELECT * ");
-        assert_matches(false, JOIN_AFTER_FROM_RULE, "");
+
+        // Should NOT suggest in the middle of SELECT list
+        assert_matches(false, rule, "SELECT ");
+        assert_matches(false, rule, "SELECT a");
+        assert_matches(false, rule, "SELECT a, ");
+    }
+
+    #[test]
+    fn join_after_from_rule() {
+        let rule = JOIN_AFTER_FROM_RULE;
+
+        // Should suggest JOIN types after table name in FROM clause
+        assert_matches(true, rule, "SELECT * FROM users ");
+        assert_matches(true, rule, "SELECT * FROM table1 ");
+        assert_matches(true, rule, "SELECT * FROM (SELECT id FROM t) ");
+
+        // Should suggest JOIN after a table with alias
+        assert_matches(true, rule, "SELECT * FROM users u ");
+
+        // Should NOT suggest after WHERE or other clauses
+        assert_matches(false, rule, "SELECT * FROM users WHERE");
+        assert_matches(false, rule, "SELECT * FROM users WHERE ");
+        assert_matches(false, rule, "SELECT * ");
+        assert_matches(false, rule, "");
+
+        // Should NOT suggest if already have JOIN keyword
+        assert_matches(false, rule, "SELECT * FROM users JOIN");
+        assert_matches(false, rule, "SELECT * FROM users INNER");
+        assert_matches(false, rule, "SELECT * FROM users LEFT");
     }
 
     #[test]
@@ -559,6 +948,7 @@ mod tests {
 
     #[test]
     fn natural_join_rule() {
+        // Should suggest JOIN types after NATURAL
         assert_matches(true, NATURAL_JOIN_RULE, "SELECT * FROM users NATURAL ");
         assert_matches(false, NATURAL_JOIN_RULE, "SELECT * FROM users NATURAL JOIN");
         assert_matches(
@@ -566,21 +956,277 @@ mod tests {
             NATURAL_JOIN_RULE,
             "SELECT * FROM users NATURAL INNER",
         );
+        assert_matches(false, NATURAL_JOIN_RULE, "SELECT * FROM users NATURAL LEFT");
         assert_matches(false, NATURAL_JOIN_RULE, "");
     }
 
-    fn assert_matches(matches: bool, rule: Rule, sql: &str) {
+    #[test]
+    fn order_by_dir_rule() {
+        let rule = ORDER_BY_DIR_RULE;
+
+        // Should suggest ASC, DESC, NULLS after ORDER BY columnname
+        assert_matches(true, rule, "SELECT a FROM users ORDER BY name ");
+        assert_matches(true, rule, "SELECT a FROM users ORDER BY id ");
+        assert_matches(true, rule, "SELECT a, b FROM users ORDER BY a ");
+
+        // Should NOT suggest after ASC/DESC/NULLS is already used
+        assert_matches(false, rule, "SELECT a FROM users ORDER BY name ASC ");
+        assert_matches(false, rule, "SELECT a FROM users ORDER BY name DESC ");
+        assert_matches(false, rule, "SELECT a FROM users ORDER BY name NULLS ");
+
+        // Should NOT suggest before BY
+        assert_matches(false, rule, "SELECT a FROM users ORDER ");
+        assert_matches(false, rule, "SELECT a FROM users ORDER BY ");
+
+        // Should NOT match columns after commas (that's ORDER_BY_DIR_AFTER_COMMA_RULE's job)
+        assert_matches(false, rule, "SELECT a FROM users ORDER BY name ASC, id ");
+    }
+
+    #[test]
+    fn order_by_dir_after_comma_rule() {
+        let rule = ORDER_BY_DIR_AFTER_COMMA_RULE;
+
+        // Should suggest ASC, DESC, NULLS after column following comma in ORDER BY
+        assert_matches(true, rule, "SELECT a FROM users ORDER BY name ASC, id ");
+        assert_matches(true, rule, "SELECT a FROM users ORDER BY a, b ");
+        assert_matches(true, rule, "SELECT a FROM users ORDER BY a DESC, b ASC, c ");
+
+        // Should NOT suggest after first column (that's ORDER_BY_DIR_RULE's job)
+        assert_matches(false, rule, "SELECT a FROM users ORDER BY name ");
+
+        // Should NOT suggest after ASC/DESC/NULLS following the comma
+        assert_matches(
+            false,
+            rule,
+            "SELECT a FROM users ORDER BY name ASC, id ASC ",
+        );
+        assert_matches(false, rule, "SELECT a FROM users ORDER BY name, id DESC ");
+
+        // Should NOT suggest after commas in SELECT list or WHERE clause
+        assert_matches(false, rule, "SELECT a, b ");
+        assert_matches(false, rule, "SELECT a, b FROM users");
+        assert_matches(false, rule, "SELECT a FROM users WHERE id IN (1, 2 ");
+    }
+
+    #[test]
+    fn subquery_tests() {
+        // Test that LIMIT_RULE works in subqueries
+        assert_matches(true, LIMIT_RULE, "SELECT * FROM (SELECT a FROM users ");
+        assert_matches(
+            true,
+            LIMIT_RULE,
+            "SELECT * FROM (SELECT a FROM users WHERE id = 1 ",
+        );
+
+        // Test that ORDER_BY_SUGGEST_RULE works in subqueries
+        assert_matches(
+            true,
+            ORDER_BY_SUGGEST_RULE,
+            "SELECT * FROM (SELECT a FROM users ",
+        );
+        assert_matches(
+            true,
+            ORDER_BY_SUGGEST_RULE,
+            "SELECT * FROM (SELECT a FROM users WHERE id = 1 ",
+        );
+
+        // Test that ORDER_BY_DIR_RULE works in subqueries
+        assert_matches(
+            true,
+            ORDER_BY_DIR_RULE,
+            "SELECT * FROM (SELECT a FROM users ORDER BY name ",
+        );
+        assert_matches(
+            false,
+            ORDER_BY_DIR_RULE,
+            "SELECT * FROM (SELECT a FROM users ORDER BY name ASC ",
+        );
+
+        // Test that ORDER_BY_DIR_AFTER_COMMA_RULE works in subqueries
+        assert_matches(
+            true,
+            ORDER_BY_DIR_AFTER_COMMA_RULE,
+            "SELECT * FROM (SELECT a FROM users ORDER BY name ASC, id ",
+        );
+
+        // Test that GROUP_BY_SUGGEST_RULE works in subqueries
+        assert_matches(
+            true,
+            GROUP_BY_SUGGEST_RULE,
+            "SELECT * FROM (SELECT COUNT(*) FROM users ",
+        );
+
+        // Test that SET_OP_RULE works in subqueries
+        assert_matches(true, SET_OP_RULE, "SELECT * FROM (SELECT a FROM users ");
+        assert_matches(
+            true,
+            SET_OP_RULE,
+            "SELECT * FROM (SELECT a FROM users ORDER BY name ",
+        );
+
+        // Test that JOIN_AFTER_FROM_RULE works in subqueries
+        assert_matches(
+            true,
+            JOIN_AFTER_FROM_RULE,
+            "SELECT * FROM (SELECT * FROM users ",
+        );
+
+        // Test that outer query rules match after closing paren of subquery
+        // (The closing paren acts like a table name for the outer query)
+        assert_matches(true, LIMIT_RULE, "SELECT * FROM (SELECT a FROM users) ");
+        assert_matches(
+            true,
+            ORDER_BY_SUGGEST_RULE,
+            "SELECT * FROM (SELECT a FROM users) ",
+        );
+        assert_matches(
+            true,
+            JOIN_AFTER_FROM_RULE,
+            "SELECT * FROM (SELECT a FROM users) ",
+        );
+        assert_matches(true, SET_OP_RULE, "SELECT * FROM (SELECT a FROM users) ");
+
+        // ORDER_BY_DIR_RULE SHOULD match after closing paren if there's ORDER BY before it
+        // This handles cases like: ORDER BY (expression) or ORDER BY (subquery_column)
+        assert_matches(
+            true,
+            ORDER_BY_DIR_RULE,
+            "SELECT * FROM (SELECT a FROM users ORDER BY name) ",
+        );
+
+        // Test nested ORDER BY - inner query with ORDER BY
+        assert_matches(
+            true,
+            ORDER_BY_DIR_RULE,
+            "SELECT * FROM t ORDER BY (SELECT name FROM users ",
+        );
+    }
+
+    #[test]
+    fn case_when_rule() {
+        let rule = CASE_WHEN_RULE;
+
+        // Should suggest WHEN after CASE
+        assert_matches(true, rule, "SELECT CASE ");
+        assert_matches(true, rule, "SELECT a, CASE ");
+        assert_matches(true, rule, "SELECT a FROM users WHERE status = CASE ");
+
+        // Should NOT suggest after WHEN is already used
+        assert_matches(false, rule, "SELECT CASE WHEN ");
+        assert_matches(false, rule, "SELECT CASE WHEN a = 1 ");
+    }
+
+    #[test]
+    fn when_then_rule() {
+        let rule = WHEN_THEN_RULE;
+
+        // Should suggest THEN after WHEN with a value
+        assert_matches(true, rule, "SELECT CASE WHEN a = 1 ");
+        assert_matches(true, rule, "SELECT CASE WHEN status = 'active' ");
+        assert_matches(true, rule, "SELECT CASE WHEN (a > 0) ");
+        // Single column is valid for boolean columns
+        assert_matches(true, rule, "SELECT CASE WHEN is_active ");
+
+        // Should NOT suggest before value is provided
+        assert_matches(false, rule, "SELECT CASE WHEN ");
+        // Should NOT suggest in the middle of an expression
+        assert_matches(false, rule, "SELECT CASE WHEN a =");
+
+        // Should NOT suggest after THEN is already used
+        assert_matches(false, rule, "SELECT CASE WHEN a = 1 THEN ");
+        assert_matches(false, rule, "SELECT CASE WHEN a = 1 THEN result ");
+    }
+
+    #[test]
+    fn then_follow_rule() {
+        let rule = THEN_FOLLOW_RULE;
+
+        // Should suggest WHEN, ELSE, END after THEN with a value
+        assert_matches(true, rule, "SELECT CASE WHEN a = 1 THEN result ");
+        assert_matches(true, rule, "SELECT CASE WHEN a = 1 THEN 'yes' ");
+        assert_matches(true, rule, "SELECT CASE WHEN a = 1 THEN (SELECT x FROM t) ");
+
+        // Should NOT suggest before value is provided
+        assert_matches(false, rule, "SELECT CASE WHEN a = 1 THEN ");
+
+        // Should work with multiple WHEN clauses
+        assert_matches(
+            true,
+            rule,
+            "SELECT CASE WHEN a = 1 THEN 'one' WHEN a = 2 THEN 'two' ",
+        );
+    }
+
+    #[test]
+    fn else_end_rule() {
+        let rule = ELSE_END_RULE;
+
+        // Should suggest END after ELSE with a value
+        assert_matches(true, rule, "SELECT CASE WHEN a = 1 THEN 'yes' ELSE 'no' ");
+        assert_matches(true, rule, "SELECT CASE WHEN a = 1 THEN result ELSE other ");
+        assert_matches(
+            true,
+            rule,
+            "SELECT CASE WHEN a = 1 THEN (SELECT x FROM t) ELSE (SELECT y FROM t) ",
+        );
+
+        // Should NOT suggest before value is provided
+        assert_matches(false, rule, "SELECT CASE WHEN a = 1 THEN result ELSE ");
+
+        // Should NOT suggest after END is already used
+        assert_matches(
+            false,
+            rule,
+            "SELECT CASE WHEN a = 1 THEN 'yes' ELSE 'no' END ",
+        );
+    }
+
+    #[test]
+    fn case_statement_full_flow() {
+        // Test complete CASE statement flow
+        // Simple CASE with single WHEN
+        assert_matches(true, CASE_WHEN_RULE, "SELECT CASE ");
+        assert_matches(true, WHEN_THEN_RULE, "SELECT CASE WHEN status = 'active' ");
+        assert_matches(
+            true,
+            THEN_FOLLOW_RULE,
+            "SELECT CASE WHEN status = 'active' THEN 1 ",
+        );
+        assert_matches(
+            true,
+            ELSE_END_RULE,
+            "SELECT CASE WHEN status = 'active' THEN 1 ELSE 0 ",
+        );
+
+        // CASE with multiple WHEN clauses
+        assert_matches(true, THEN_FOLLOW_RULE, "SELECT CASE WHEN a = 1 THEN 'one' ");
+        assert_matches(
+            true,
+            WHEN_THEN_RULE,
+            "SELECT CASE WHEN a = 1 THEN 'one' WHEN a = 2 ",
+        );
+        assert_matches(
+            true,
+            THEN_FOLLOW_RULE,
+            "SELECT CASE WHEN a = 1 THEN 'one' WHEN a = 2 THEN 'two' ",
+        );
+
+        // CASE in different contexts
+        assert_matches(true, CASE_WHEN_RULE, "SELECT a, CASE ");
+        assert_matches(true, CASE_WHEN_RULE, "SELECT a FROM users WHERE id = CASE ");
+        assert_matches(true, CASE_WHEN_RULE, "SELECT a FROM users ORDER BY CASE ");
+    }
+
+    fn assert_matches(expected: bool, rule: Rule, sql: &str) {
         let tokens = ansi_tokens(sql);
         let kinds = tokens.iter().map(|t| t.kind).collect::<Vec<TokenKind>>();
         let kinds = &kinds[0..kinds.len().saturating_sub(1)]; // ignore the last token (EOF)
-        let result = rule
-            .0
-            .match_consume(kinds, kinds.len().saturating_sub(1), Direction::Backward)
-            .0;
+        let result = rule.0.scan_from(kinds, Dir::Bwd, kinds.len()).0;
+
         assert_eq!(
-            result, matches,
-            "SQL: {:?}, expected match: {}, got: {}",
-            sql, matches, result
+            result, expected,
+            "\n\tevaluated to ({}) expected ({})\n\tinput: {:?}\n\trule {:?}",
+            result, expected, sql, rule,
         );
     }
 }

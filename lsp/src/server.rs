@@ -19,13 +19,19 @@ pub struct LspServer<E> {
 
 impl<E: CompletionProvider> LspServer<E> {
     pub fn new(engines: E) -> Self {
-        let trigger_characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,; \n\t";
+        let mut trigger_characters = vec![];
+        trigger_characters.extend(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,"
+                .chars()
+                .map(|c| c.to_string()),
+        );
+        trigger_characters.push(" ".to_string());
         Self {
             engines,
             documents: Arc::new(Mutex::new(HashMap::new())),
             capabilities: json!({
                 "completionProvider": {
-                    "triggerCharacters": trigger_characters.chars().collect::<Vec<char>>(),
+                    "triggerCharacters": trigger_characters,
                 },
                 "textDocumentSync": {
                     "openClose": true,

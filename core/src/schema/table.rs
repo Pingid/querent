@@ -4,4 +4,19 @@
 pub struct Table {
     pub table_name: String,
     pub schema_name: Option<String>,
+    pub database_name: Option<String>,
+    pub table_type: Option<TableType>,
+}
+
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "lowercase")
+)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum TableType {
+    #[default]
+    Table,
+    View,
 }

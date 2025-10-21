@@ -32,6 +32,8 @@ impl SchemaCacheBuilder {
         self.0.add_table(schema::Table {
             table_name: name.to_string(),
             schema_name: Some(schema.to_string()),
+            database_name: None,
+            table_type: None,
         });
         for c in cols {
             self.0.add_column(schema::Column {

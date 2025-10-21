@@ -64,7 +64,7 @@ pub struct DialectSpec {
     pub keywords: &'static phf::Map<&'static str, Keyword>,
     pub operators: &'static phf::Map<&'static str, Operator>,
     pub style_rules: StyleRules,
-    pub follow_rules: &'static [RuleSet],
+    pub follow_rules: &'static [Rules],
 }
 
 impl DialectSpec {
@@ -114,7 +114,7 @@ impl DialectSpec {
     }
 
     pub fn resolve_follow_rules(&self, tokens: &[TokenKind]) -> impl Iterator<Item = Vec<Keyword>> {
-        resolve_follow_rules(self.follow_rules, tokens)
+        resolve_next(self.follow_rules, tokens)
     }
 }
 
