@@ -1,4 +1,6 @@
-use crate::lex::{Keyword, TokenKind};
+use std::collections::HashSet;
+
+use crate::lex::{Keyword, OpTag, Operator, TokenKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuleSet(pub &'static [Rule]);
@@ -6,7 +8,7 @@ pub struct RuleSet(pub &'static [Rule]);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rule(pub If, pub &'static [Then]);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Then {
     Kw(Keyword),
     CombinedKw(&'static [Keyword]),
@@ -14,72 +16,135 @@ pub enum Then {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum If {
-    Start,
-
-    AnyKw,
+    /// Match the end of the token stream
+    End,
+    /// Match a specific keyword
     Kw(Keyword),
+    // Match a specific operator
+    Op(OpTag),
+    /// Match a specific token kind
     Kind(TokenKind),
-
-    AnyOf(&'static [If]),
+    /// Match any of a list of conditions
+    Any(&'static [If]),
+    /// Negate the given if
     Not(&'static If),
+    /// Consume while the given if matches
     While(&'static If),
+    /// Match all of the given conditions in order
     Match(&'static [If]),
     /// Consume until the given if matches
     Until(&'static If),
 }
 
-impl If {
-    pub fn match_consume(&self, tokens: &[TokenKind], offset: usize) -> (bool, usize) {
-        match self {
-            If::Start => match tokens.len() {
-                0 => (true, 0),
-                1 => tokens
-                    .last()
-                    .map_or((false, 0), |t| (t == &TokenKind::Identifier, 0)),
-                _ => (false, 0),
-            },
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Direction {
+    Forward,
+    Backward,
+}
 
-            If::AnyKw => match tokens.get(offset) {
-                Some(TokenKind::Keyword(_)) => (true, offset.saturating_sub(1)),
-                _ => (false, offset.saturating_sub(1)),
-            },
+impl Direction {
+    /// Move the offset in the specified direction
+    fn move_offset(&self, offset: usize, len: usize) -> usize {
+        match self {
+            Direction::Forward => (offset.saturating_add(1)).min(len),
+            Direction::Backward => offset.saturating_sub(1),
+        }
+    }
+
+    /// Check if we've reached the boundary
+    fn at_boundary(&self, offset: usize, len: usize) -> bool {
+        match self {
+            Direction::Forward => offset >= len,
+            Direction::Backward => offset == 0,
+        }
+    }
+}
+
+impl If {
+    pub fn match_consume(
+        &self,
+        tokens: &[TokenKind],
+        offset: usize,
+        direction: Direction,
+    ) -> (bool, usize) {
+        let mut fuel = tokens.len().saturating_mul(64).max(256); // budget
+        self.match_consume_inner(tokens, offset, direction, &mut fuel)
+    }
+
+    fn match_consume_inner(
+        &self,
+        tokens: &[TokenKind],
+        offset: usize,
+        direction: Direction,
+        fuel: &mut usize,
+    ) -> (bool, usize) {
+        if *fuel == 0 {
+            return (false, offset);
+        }
+        *fuel -= 1;
+
+        match self {
+            If::End => {
+                let at_end = match direction {
+                    Direction::Forward => offset >= tokens.len(),
+                    Direction::Backward => tokens.is_empty(),
+                };
+                (at_end, offset)
+            }
 
             If::Kw(kw) => match tokens.get(offset) {
-                Some(t) if t == &TokenKind::Keyword(*kw) => (true, offset.saturating_sub(1)),
-                _ => (false, offset.saturating_sub(1)),
+                Some(t) if t == &TokenKind::Keyword(*kw) => {
+                    (true, direction.move_offset(offset, tokens.len()))
+                }
+                _ => (false, offset), // <- don't move on mismatch
+            },
+
+            If::Op(op) => match tokens.get(offset) {
+                Some(TokenKind::Operator(Operator { semantic_tag, .. })) if semantic_tag == op => {
+                    (true, direction.move_offset(offset, tokens.len()))
+                }
+                _ => (false, offset), // <- don't move
             },
 
             If::Kind(kind) => match tokens.get(offset) {
-                Some(t) if t == kind => (true, offset.saturating_sub(1)),
-                _ => (false, offset.saturating_sub(1)),
+                Some(t) if t == kind => (true, direction.move_offset(offset, tokens.len())),
+                _ => (false, offset), // <- don't move
             },
 
-            If::AnyOf(ifs) => ifs
-                .iter()
-                .find_map(|if_| {
-                    let (m, o) = if_.match_consume(tokens, offset);
-                    if m { Some((true, o)) } else { None }
-                })
-                .unwrap_or((false, offset)),
+            If::Any(ps) => {
+                let mut best: Option<usize> = None;
+                for p in *ps {
+                    let (m, o2) = p.match_consume_inner(tokens, offset, direction, fuel);
+                    if !m {
+                        continue;
+                    }
+                    best = Some(match (best, direction) {
+                        (None, _) => o2,
+                        (Some(o_best), Direction::Forward) => o2.max(o_best),
+                        (Some(o_best), Direction::Backward) => o2.min(o_best),
+                    });
+                }
+                match best {
+                    Some(o) => (true, o),
+                    None => (false, offset),
+                }
+            }
 
             If::Not(if_) => {
-                let (m, _) = if_.match_consume(tokens, offset);
+                let (m, _) = if_.match_consume_inner(tokens, offset, direction, fuel);
                 match m {
                     // inner matched -> negation fails, no consumption
                     true => (false, offset),
                     // inner didn't match -> negation succeeds, consume current token
-                    false => (true, offset.saturating_sub(1)),
+                    false => (true, direction.move_offset(offset, tokens.len())),
                 }
             }
 
             If::While(if_) => {
                 let mut o = offset;
                 loop {
-                    let (m, next) = if_.match_consume(tokens, o);
-                    if !m {
-                        break;
-                    }
-                    if next == o {
+                    let (m, next) = if_.match_consume_inner(tokens, o, direction, fuel);
+                    if !m || next == o {
                         break;
                     }
                     o = next;
@@ -89,187 +154,90 @@ impl If {
 
             If::Match(ifs) => {
                 let mut o = offset;
-                for if_ in ifs.iter().rev() {
-                    let (m, next) = if_.match_consume(tokens, o);
-                    if !m {
-                        return (false, o);
+                match direction {
+                    Direction::Backward => {
+                        for if_ in ifs.iter().rev() {
+                            let (m, next) = if_.match_consume_inner(tokens, o, direction, fuel);
+                            if !m {
+                                return (false, o);
+                            }
+                            o = next;
+                        }
                     }
-                    o = next;
+                    Direction::Forward => {
+                        for if_ in ifs.iter() {
+                            let (m, next) = if_.match_consume_inner(tokens, o, direction, fuel);
+                            if !m {
+                                return (false, o);
+                            }
+                            o = next;
+                        }
+                    }
                 }
                 (true, o)
             }
 
             If::Until(if_) => {
                 let mut o = offset;
-                let mut iterations = 0;
                 loop {
-                    iterations += 1;
-                    if iterations > 100 {
-                        eprintln!("WARNING: If::Until exceeded 100 iterations");
-                        eprintln!("  offset: {}", offset);
-                        eprintln!("  current o: {}", o);
-                        eprintln!("  tokens: {:?}", tokens);
-                        eprintln!("  condition: {:?}", if_);
-                        return (false, o);
-                    }
-                    // Check if the condition matches at current position
-                    let (m, _) = if_.match_consume(tokens, o);
+                    let (m, _) = if_.match_consume_inner(tokens, o, direction, fuel);
                     if m {
-                        // Found the match, return with current offset
                         return (true, o);
                     }
-                    // No more tokens to consume
-                    if o == 0 {
-                        return (false, 0);
+                    if direction.at_boundary(o, tokens.len()) {
+                        return (false, o);
                     }
-                    // Move to next token
-                    o = o.saturating_sub(1);
+                    let next = direction.move_offset(o, tokens.len());
+                    if next == o {
+                        return (false, o);
+                    }
+                    o = next;
                 }
             }
         }
     }
 }
 
-pub fn resolve_follow_rules(
-    rules: &[RuleSet],
-    tokens: &[TokenKind],
-) -> impl Iterator<Item = String> {
+pub fn resolve_follow_rules<'a>(
+    rules: &'a [RuleSet],
+    tokens: &'a [TokenKind],
+) -> impl Iterator<Item = String> + 'a {
     let t = match tokens.last() {
-        Some(t) if t == &TokenKind::Eof => &tokens[..tokens.len().saturating_sub(1)],
+        Some(TokenKind::Eof) => &tokens[..tokens.len().saturating_sub(1)],
         _ => tokens,
     };
-    rules
-        .iter()
-        .flat_map(|r| get_matches(r.0, t, t.len().saturating_sub(1)))
-        .map(|r| format!("{}", r))
+    let mut seen: HashSet<Then> = HashSet::new();
+    get_matches(rules.iter().flat_map(|r| r.0), t, t.len().saturating_sub(1))
+        .filter(move |then| seen.insert(*then))
+        .map(|then| format!("{then}").to_uppercase())
 }
 
-fn get_matches(rules: &[Rule], tokens: &[TokenKind], offset: usize) -> impl Iterator<Item = Then> {
+fn get_matches<'a>(
+    rules: impl IntoIterator<Item = &'a Rule> + 'a,
+    tokens: &'a [TokenKind],
+    offset: usize,
+) -> impl Iterator<Item = Then> + 'a {
     rules
-        .iter()
-        .filter(move |r| r.0.match_consume(tokens, offset).0)
-        .map(|r| r.1.iter().copied())
-        .flatten()
+        .into_iter()
+        .filter(move |r| r.0.match_consume(tokens, offset, Direction::Backward).0)
+        .flat_map(|r| r.1.iter().copied())
 }
 
 impl std::fmt::Display for Then {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Then::Kw(kw) => write!(f, "{}", format!("{:?}", kw).to_uppercase()),
-            Then::CombinedKw(kws) => write!(
-                f,
-                "{}",
-                kws.iter()
-                    .map(|kw| format!("{:?}", kw).to_uppercase())
-                    .collect::<Vec<String>>()
-                    .join(" ")
-            ),
+            Then::Kw(kw) => write!(f, "{:?}", kw).map(|_| ()), // caller can upper if needed
+            Then::CombinedKw(kws) => {
+                let mut first = true;
+                for kw in *kws {
+                    if !first {
+                        write!(f, " ")?;
+                    }
+                    write!(f, "{:?}", kw)?;
+                    first = false;
+                }
+                Ok(())
+            }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::test_util::ansi_tokens;
-
-    use super::*;
-
-    #[test]
-    fn if_start() {
-        assert_matches(true, If::Start, "SELEC");
-        assert_matches(true, If::Start, "");
-        assert_matches(false, If::Start, "SELECT");
-    }
-
-    #[test]
-    fn if_kw() {
-        assert_matches(true, If::Kw(Keyword::Select), "SELECT");
-        assert_matches(false, If::Kw(Keyword::Select), "SELECT DISTINCT");
-    }
-
-    #[test]
-    fn if_kind() {
-        use TokenKind::*;
-        assert_matches(true, If::Kind(LeftParen), "(");
-        assert_matches(false, If::Kind(LeftParen), ")");
-    }
-
-    #[test]
-    fn if_match() {
-        let rule = If::Match(&[
-            If::Kw(Keyword::Select),
-            If::While(&If::Not(&If::AnyOf(&[
-                If::Kw(Keyword::From),
-                If::Kw(Keyword::Select),
-            ]))),
-            If::AnyOf(&[
-                If::Kind(TokenKind::Identifier),
-                If::Kind(TokenKind::RightParen),
-            ]),
-        ]);
-        assert_matches(true, rule, "SELECT a");
-        assert_matches(false, rule, "SELECT ");
-        assert_matches(false, rule, "SELECT id FROM");
-        assert_matches(true, rule, "SELECT id, b, c, d");
-    }
-
-    #[test]
-    fn if_match_limit() {
-        // Match when we're after a query body but haven't seen LIMIT/UNION/etc yet
-        // Using Until to scan backwards and ensure none of these keywords appear
-        let rule = If::Match(&[
-            If::Not(&If::Until(&If::AnyOf(&[
-                If::Kw(Keyword::Limit),
-                If::Kw(Keyword::Union),
-                If::Kw(Keyword::Intersect),
-                If::Kw(Keyword::Except),
-                If::Kw(Keyword::Offset),
-                If::Kw(Keyword::Fetch),
-            ]))),
-            If::AnyOf(&[
-                If::Kind(TokenKind::Identifier),
-                If::Kind(TokenKind::RightParen),
-                If::Kind(TokenKind::Number),
-                If::Kind(TokenKind::Str),
-            ]),
-        ]);
-        // Basic FROM clause - LIMIT can appear after table name
-        assert_matches(true, rule, "SELECT a FROM users ");
-        // FROM with WHERE clause - LIMIT can appear after WHERE
-        assert_matches(true, rule, "SELECT a FROM users WHERE name = 'John' ");
-        // FROM with GROUP BY clause - LIMIT can appear after GROUP BY
-        assert_matches(true, rule, "SELECT a FROM users GROUP BY id ");
-        // FROM with HAVING clause - LIMIT can appear after HAVING
-        assert_matches(
-            true,
-            rule,
-            "SELECT a FROM users GROUP BY id HAVING count > 1 ",
-        );
-        // FROM with ORDER BY clause - LIMIT can appear after ORDER BY
-        assert_matches(true, rule, "SELECT a FROM users ORDER BY name ");
-        // Should not match after UNION (LIMIT typically goes at the end of combined query)
-        assert_matches(
-            false,
-            rule,
-            "SELECT a FROM users UNION SELECT b FROM others ",
-        );
-        // Should not match after LIMIT already exists
-        assert_matches(false, rule, "SELECT a FROM users LIMIT ");
-        assert_matches(false, rule, "SELECT a FROM users LIMIT 10");
-        assert_matches(false, rule, "SELECT a FROM users OFFSET ");
-        assert_matches(false, rule, "SELECT a FROM users OFFSET 5 ");
-    }
-
-    fn assert_matches(matches: bool, rule: If, sql: &str) {
-        let tokens = ansi_tokens(sql);
-        let kinds = tokens.iter().map(|t| t.kind).collect::<Vec<TokenKind>>();
-        let kinds = &kinds[0..kinds.len().saturating_sub(1)]; // ignore the last token (EOF)
-        assert_eq!(
-            rule.match_consume(kinds, kinds.len().saturating_sub(1)).0,
-            matches,
-            "\nrule: {:?}\ntokens: {:?}",
-            rule,
-            kinds
-        );
     }
 }

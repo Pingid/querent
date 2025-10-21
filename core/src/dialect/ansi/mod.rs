@@ -1,9 +1,6 @@
 use crate::{
-    dialect::{
-        CaseFold, CommentStyle, DialectSpec, DialectSpecProvider, If, Rule, RuleSet, StyleRules,
-        Then,
-    },
-    lex::{Keyword, QuoteStyle, TokenKind},
+    dialect::{CaseFold, CommentStyle, DialectSpec, DialectSpecProvider, StyleRules},
+    lex::QuoteStyle,
 };
 
 // Include the generated ANSI keywords
@@ -12,6 +9,9 @@ use keyword::KEYWORDS;
 
 mod operator;
 use operator::OP_TABLE;
+
+mod rule;
+pub use rule::ANSI_RULE_SET;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Ansi {
@@ -43,84 +43,8 @@ pub static SPEC: DialectSpec = DialectSpec {
         comments: &[CommentStyle::DoubleDash, CommentStyle::SlashStar],
         quotes: &[QuoteStyle::Double],
     },
-    follow_rules: &[ANSI_RULE_SETS],
+    follow_rules: &[ANSI_RULE_SET],
 };
-
-pub static ANSI_RULE_SETS: RuleSet = RuleSet(&[
-    Rule(
-        If::Start,
-        &[
-            Then::Kw(Keyword::Select),
-            Then::Kw(Keyword::Insert),
-            Then::Kw(Keyword::Update),
-            Then::Kw(Keyword::Delete),
-            Then::Kw(Keyword::Create),
-            Then::Kw(Keyword::Alter),
-            Then::Kw(Keyword::Drop),
-            Then::Kw(Keyword::Merge),
-            Then::Kw(Keyword::With),
-        ],
-    ),
-    // - Select -
-    Rule(If::Kw(Keyword::Select), &[Then::Kw(Keyword::Distinct)]),
-    Rule(If::Kw(Keyword::Select), &[Then::Kw(Keyword::All)]),
-    // - From -
-    Rule(
-        If::Match(&[
-            If::Kw(Keyword::Select),
-            If::While(&If::Not(&If::AnyOf(&[
-                If::Kw(Keyword::From),
-                If::Kw(Keyword::Select),
-            ]))),
-            If::AnyOf(&[
-                If::Kind(TokenKind::Identifier),
-                If::Kind(TokenKind::RightParen),
-            ]),
-        ]),
-        &[Then::Kw(Keyword::From)],
-    ),
-    // - Where -
-    Rule(
-        If::Match(&[
-            If::Kw(Keyword::From),
-            If::While(&If::Not(&If::AnyOf(&[
-                If::Kw(Keyword::From),
-                If::Kw(Keyword::Where),
-            ]))),
-            If::AnyOf(&[
-                If::Kind(TokenKind::Identifier),
-                If::Kind(TokenKind::RightParen),
-            ]),
-        ]),
-        &[Then::Kw(Keyword::Where)],
-    ),
-    // - Limit -
-    Rule(
-        If::Match(&[
-            If::Not(&If::Until(&If::AnyOf(&[
-                If::Kw(Keyword::Limit),
-                If::Kw(Keyword::Union),
-                If::Kw(Keyword::Intersect),
-                If::Kw(Keyword::Except),
-                If::Kw(Keyword::Offset),
-                If::Kw(Keyword::Fetch),
-            ]))),
-            If::AnyOf(&[
-                If::Kind(TokenKind::Identifier),
-                If::Kind(TokenKind::RightParen),
-                If::Kind(TokenKind::Number),
-                If::Kind(TokenKind::Str),
-            ]),
-        ]),
-        &[Then::Kw(Keyword::Limit)],
-    ),
-    // - Subqueries -
-    Rule(If::Kind(TokenKind::LeftParen), &[Then::Kw(Keyword::Select)]),
-    // — WITH CTE —
-    Rule(If::Kw(Keyword::With), &[Then::Kw(Keyword::Recursive)]),
-    // ORDER BY
-    Rule(If::Kw(Keyword::Order), &[Then::Kw(Keyword::By)]),
-]);
 
 // — Statement starters —
 

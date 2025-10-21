@@ -8,10 +8,14 @@ use crate::{
 };
 
 pub fn with_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {
-    let pos = sql_with_caret.find('^').expect("missing ^");
-    let (before, after_with_caret) = sql_with_caret.split_at(pos);
-    let s = [before, &after_with_caret[1..]].concat(); // allocates once
-    (Cow::Owned(s), pos)
+    let pos = sql_with_caret.find('^');
+    if let Some(pos) = pos {
+        let (before, after_with_caret) = sql_with_caret.split_at(pos);
+        let s = [before, &after_with_caret[1..]].concat(); // allocates once
+        (Cow::Owned(s), pos)
+    } else {
+        (Cow::Borrowed(sql_with_caret), sql_with_caret.len())
+    }
 }
 
 pub fn ansi_tokens<'a>(sql: &'a str) -> Vec<Token<'a>> {
@@ -127,6 +131,13 @@ impl CompletionTestResult {
             );
         }
         assert_eq!(expected, labels[..N], "\n query: {:?}", self.query);
+    }
+
+    pub fn assert_labels_contains<const N: usize>(&self, expected: [&str; N]) {
+        let labels = self.labels();
+        for label in expected {
+            assert!(labels.contains(&label), "label {} should be present", label);
+        }
     }
 
     pub fn assert_empty(&self) {

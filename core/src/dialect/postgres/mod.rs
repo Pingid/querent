@@ -1,6 +1,6 @@
 use crate::{
     dialect::{
-        CaseFold, CommentStyle, DialectSpec, DialectSpecProvider, StyleRules, ansi::ANSI_RULE_SETS,
+        CaseFold, CommentStyle, DialectSpec, DialectSpecProvider, StyleRules, ansi::ANSI_RULE_SET,
     },
     lex::QuoteStyle,
 };
@@ -42,5 +42,5 @@ pub static SPEC: DialectSpec = DialectSpec {
         comments: &[CommentStyle::DoubleDash, CommentStyle::SlashStar],
         quotes: &[QuoteStyle::Double],
     },
-    follow_rules: &[ANSI_RULE_SETS],
+    follow_rules: &[ANSI_RULE_SET],
 };

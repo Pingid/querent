@@ -46,10 +46,6 @@ impl Content {
         self.text.to_string()
     }
 
-    pub fn current_statement(&self) -> String {
-        get_statement_at_cursor(&self.text, self.cursor)
-    }
-
     fn get_offset(&self, location: impl Into<Location>) -> usize {
         match location.into() {
             Location::Offset(offset) => offset,
@@ -84,33 +80,4 @@ impl From<(usize, usize)> for Location {
     fn from((line, col): (usize, usize)) -> Self {
         Location::LineCol(line, col)
     }
-}
-
-/// Get sql statement text at cursor
-fn get_statement_at_cursor(rope: &Rope, cursor: usize) -> String {
-    let n = rope.len_chars();
-
-    // find start (char after previous ';')
-    let mut start = 0usize;
-    let mut i = cursor;
-    while i > 0 {
-        if rope.char(i - 1) == ';' {
-            start = i;
-            break;
-        }
-        i -= 1;
-    }
-
-    // find end (char before next ';')
-    let mut end = n;
-    let mut i = cursor;
-    while i < n {
-        if rope.char(i) == ';' {
-            end = i;
-            break;
-        }
-        i += 1;
-    }
-
-    rope.slice(start..end).to_string()
 }
