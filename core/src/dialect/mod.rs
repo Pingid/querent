@@ -113,7 +113,7 @@ impl DialectSpec {
         }
     }
 
-    pub fn resolve_follow_rules(&self, tokens: &[TokenKind]) -> impl Iterator<Item = String> {
+    pub fn resolve_follow_rules(&self, tokens: &[TokenKind]) -> impl Iterator<Item = Vec<Keyword>> {
         resolve_follow_rules(self.follow_rules, tokens)
     }
 }

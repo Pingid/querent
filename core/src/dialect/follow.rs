@@ -201,7 +201,7 @@ impl If {
 pub fn resolve_follow_rules<'a>(
     rules: &'a [RuleSet],
     tokens: &'a [TokenKind],
-) -> impl Iterator<Item = String> + 'a {
+) -> impl Iterator<Item = Vec<Keyword>> + 'a {
     let t = match tokens.last() {
         Some(TokenKind::Eof) => &tokens[..tokens.len().saturating_sub(1)],
         _ => tokens,
@@ -209,7 +209,10 @@ pub fn resolve_follow_rules<'a>(
     let mut seen: HashSet<Then> = HashSet::new();
     get_matches(rules.iter().flat_map(|r| r.0), t, t.len().saturating_sub(1))
         .filter(move |then| seen.insert(*then))
-        .map(|then| format!("{then}").to_uppercase())
+        .map(|then| match then {
+            Then::Kw(kw) => vec![kw],
+            Then::CombinedKw(kws) => kws.to_vec(),
+        })
 }
 
 fn get_matches<'a>(
@@ -221,23 +224,4 @@ fn get_matches<'a>(
         .into_iter()
         .filter(move |r| r.0.match_consume(tokens, offset, Direction::Backward).0)
         .flat_map(|r| r.1.iter().copied())
-}
-
-impl std::fmt::Display for Then {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Then::Kw(kw) => write!(f, "{:?}", kw).map(|_| ()), // caller can upper if needed
-            Then::CombinedKw(kws) => {
-                let mut first = true;
-                for kw in *kws {
-                    if !first {
-                        write!(f, " ")?;
-                    }
-                    write!(f, "{:?}", kw)?;
-                    first = false;
-                }
-                Ok(())
-            }
-        }
-    }
 }
