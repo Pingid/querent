@@ -124,8 +124,9 @@ fn completion_from_engine(
 
     let kind = match &completion.kind {
         querent_core::complete::CompletionKind::Keyword => lsp_types::CompletionItemKind::KEYWORD,
-        querent_core::complete::CompletionKind::Table(_) => lsp_types::CompletionItemKind::CLASS,
-        querent_core::complete::CompletionKind::Column(_) => lsp_types::CompletionItemKind::FIELD,
+        querent_core::complete::CompletionKind::Table => lsp_types::CompletionItemKind::CLASS,
+        querent_core::complete::CompletionKind::Column => lsp_types::CompletionItemKind::FIELD,
+        querent_core::complete::CompletionKind::Schema => lsp_types::CompletionItemKind::MODULE,
         querent_core::complete::CompletionKind::Function => lsp_types::CompletionItemKind::FUNCTION,
         querent_core::complete::CompletionKind::Operator => lsp_types::CompletionItemKind::OPERATOR,
     };
@@ -136,6 +137,7 @@ fn completion_from_engine(
         filter_text: completion.filter_text,
         kind: Some(kind),
         sort_text: Some(format!("{:05}", index)),
+        detail: completion.detail,
         text_edit: Some(lsp_types::CompletionTextEdit::Edit(lsp_types::TextEdit {
             range: lsp_types::Range {
                 start: lsp_types::Position {

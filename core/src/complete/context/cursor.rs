@@ -16,7 +16,15 @@ pub struct Cursor {
     /// The current keyword token (if cursor is on/after a keyword)
     pub current_keyword: Option<Keyword>,
     /// For qualified names (e.g., table.column), the qualifier before the dot
-    pub qualifier: Option<String>,
+    pub qualifier: Option<Vec<String>>,
+}
+
+impl Cursor {
+    pub fn preceding_matches<const N: usize>(&self, other: [TokenKind; N]) -> bool {
+        self.preceding[self.preceding.len().saturating_sub(N)..]
+            .iter()
+            .eq(other.iter())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,19 +40,13 @@ pub enum Location {
     /// SELECT a^
     Ident,
     /// SELECT^
-    Keyword,
+    Keyword(Keyword),
     /// SELECT * FROM (^
     Paren,
     /// SELECT 1^
     Literal,
     /// SELECT a, ^
     Space(Box<Location>),
-}
-
-impl Location {
-    pub fn is_spaced(&self, other: &Location) -> bool {
-        matches!(self, Location::Space(inner) if **inner == *other)
-    }
 }
 
 pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: usize) -> Cursor {
@@ -90,11 +92,12 @@ pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: us
     };
 
     let token = &tokens[token_i];
+
     let location = match token.kind {
         TokenKind::Comma => maybe_spaced(Location::Comma),
         TokenKind::Dot => maybe_spaced(Location::Dot),
         TokenKind::Operator(op) => maybe_spaced(Location::Operator(op.semantic_tag)),
-        TokenKind::Keyword(_) => maybe_spaced(Location::Keyword),
+        TokenKind::Keyword(kw) => maybe_spaced(Location::Keyword(kw)),
         TokenKind::Identifier | TokenKind::IdentifierQuoted(_) => maybe_spaced(Location::Ident),
         TokenKind::LeftParen => maybe_spaced(Location::Paren),
         TokenKind::Number | TokenKind::Float | TokenKind::Str => maybe_spaced(Location::Literal),
@@ -131,16 +134,25 @@ pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: us
     };
 
     // Extract qualifier if we're after a dot
-    let qualifier = if matches!(token.kind, TokenKind::Dot) && token_i > 0 {
-        // Look for the identifier before the dot
-        let prev_token = &tokens[token_i - 1];
-        match prev_token.kind {
-            TokenKind::Identifier => Some(prev_token.text.to_string()),
-            TokenKind::IdentifierQuoted(q) => Some(q.strip_quotes(prev_token.text).to_string()),
-            _ => None,
+    let qualifier = match matches!(token.kind, TokenKind::Dot) && token_i > 0 {
+        false => None,
+        true => {
+            let mut i = token_i;
+            let mut parts = Vec::new();
+            while matches!(tokens[i].kind, TokenKind::Dot) && i > 0 {
+                let prev_token = &tokens[i - 1];
+                match prev_token.kind {
+                    TokenKind::Identifier => parts.push(prev_token.text.to_string()),
+                    TokenKind::IdentifierQuoted(q) => {
+                        parts.push(q.strip_quotes(prev_token.text).to_string())
+                    }
+                    _ => break,
+                }
+                i = i.saturating_sub(2);
+            }
+            parts.reverse();
+            Some(parts)
         }
-    } else {
-        None
     };
 
     Cursor {
@@ -207,9 +219,12 @@ mod tests {
     #[test]
     fn keyword() {
         let text = ansi_detect_cursor("SELECT^ FROM users");
-        assert_eq!(text.location, Location::Keyword);
+        assert_eq!(text.location, Location::Keyword(Keyword::Select));
         let text = ansi_detect_cursor("SELECT ^ FROM users");
-        assert_eq!(text.location, Location::Space(Box::new(Location::Keyword)));
+        assert_eq!(
+            text.location,
+            Location::Space(Box::new(Location::Keyword(Keyword::Select)))
+        );
     }
 
     #[test]

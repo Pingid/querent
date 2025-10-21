@@ -1,4 +1,4 @@
-use crate::ast::{self};
+use crate::ast::{self, QualifiedName};
 use crate::span::Loc;
 
 use super::*;
@@ -132,9 +132,8 @@ impl<'txt> ScopeBuilder<'txt> {
                 .map(|a| self.span_string(&a.span))
                 .unwrap_or_else(|| self.projection_name(&item.expr));
 
-            let qualifier = self.projection_qualifier(&item.expr);
-
-            scope.insert_column(name, self.column_origin(scope, &item.expr), qualifier, None);
+            let qualifier = self.get_qualifier_from_expr(&item.expr);
+            scope.insert_column(name, self.column_origin(scope, &item.expr), qualifier);
         }
     }
 
@@ -154,7 +153,7 @@ impl<'txt> ScopeBuilder<'txt> {
                 if let ast::Expr::Name(_name) = &expr.item {
                     // Get the column name and qualifier
                     let col_name = self.projection_name(expr);
-                    let qualifier = self.projection_qualifier(expr);
+                    let qualifier = self.get_qualifier_from_expr(expr);
                     let origin = self.column_origin(scope, expr);
 
                     let id = ColumnId(scope.grouped.len() as u32);
@@ -163,7 +162,6 @@ impl<'txt> ScopeBuilder<'txt> {
                         name: col_name,
                         origin,
                         qualifier,
-                        ty: None,
                     });
                 }
             }
@@ -190,7 +188,7 @@ impl<'txt> ScopeBuilder<'txt> {
             if let ast::Expr::Name(_name) = &expr.item {
                 // Get the column name and qualifier
                 let col_name = self.projection_name(expr);
-                let qualifier = self.projection_qualifier(expr);
+                let qualifier = self.get_qualifier_from_expr(expr);
                 let origin = self.column_origin(scope, expr);
 
                 let id = ColumnId(scope.ordered.len() as u32);
@@ -199,7 +197,6 @@ impl<'txt> ScopeBuilder<'txt> {
                     name: col_name,
                     origin,
                     qualifier,
-                    ty: None,
                 });
             }
         }
@@ -225,25 +222,35 @@ impl<'txt> ScopeBuilder<'txt> {
 
     fn projection_name(&self, expr: &Loc<ast::Expr>) -> String {
         match &expr.item {
-            ast::Expr::Name(name) => name
-                .parts
-                .items
-                .last()
-                .map(|part| self.span_string(&part.span))
-                .unwrap_or_default(),
+            ast::Expr::Name(name) => self.get_name(name),
             _ => self.span_string(&expr.span),
         }
     }
 
-    fn projection_qualifier(&self, expr: &Loc<ast::Expr>) -> Option<String> {
+    fn get_qualifier_from_expr(&self, expr: &Loc<ast::Expr>) -> Qualifier {
         match &expr.item {
-            ast::Expr::Name(name) if name.parts.items.len() >= 2 => {
-                // For qualified names like "users.name", return "users"
-                // Only take the first part as the qualifier
-                Some(self.span_string(&name.parts.items[0].span))
-            }
-            _ => None,
+            ast::Expr::Name(name) => self.get_qualifier(name),
+            _ => Qualifier::default(),
         }
+    }
+
+    fn get_qualifier(&self, name: &QualifiedName) -> Qualifier {
+        Qualifier::from(
+            name.parts
+                .items
+                .iter()
+                .take(name.parts.items.len().saturating_sub(1))
+                .map(|part| self.span_string(&part.span))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    fn get_name(&self, name: &QualifiedName) -> String {
+        name.parts
+            .items
+            .last()
+            .map(|part| self.span_string(&part.span))
+            .unwrap_or_default()
     }
 
     fn column_origin(&self, scope: &Scope, expr: &Loc<ast::Expr>) -> Origin {
@@ -261,69 +268,32 @@ impl<'txt> ScopeBuilder<'txt> {
             return Origin::UnresolvedIdent(NamePath(vec![]));
         };
 
+        let qualifier = self.get_qualifier(name);
+        let relation = qualifier
+            .table
+            .as_ref()
+            .and_then(|table| scope.by_name.get(table).copied())
+            .or_else(|| {
+                (scope.relations.len() == 1)
+                    .then(|| scope.relations.keys().next().copied())
+                    .flatten()
+            });
+
         // Check for star expression
         if let Some(last) = name.parts.items.last()
             && matches!(last.item, ast::NamePart::Star)
         {
-            let relation = if name.parts.items.len() > 1 {
-                let col = &name.parts.items[name.parts.items.len().saturating_sub(1)];
-                scope.relation(self.span_str(&col.span))
-            } else {
-                // Unqualified star: *
-                (scope.relations.len() == 1)
-                    .then(|| scope.relations.keys().next().copied())
-                    .flatten()
-            };
             return Origin::Star { relation };
         }
 
-        // Try to resolve column reference to a specific table
-        let parts: Vec<&str> = name
-            .parts
-            .items
-            .iter()
-            .map(|p| self.span_str(&p.span))
-            .collect();
-
-        match parts.len() {
-            1 => {
-                // Unqualified column name - try to find which relation it belongs to
-                let col_name = parts[0];
-
-                // If there's only one relation in scope, assume the column comes from it
-                if scope.relations.len() == 1
-                    && let Some((&rel_id, _)) = scope.relations.iter().next()
-                {
-                    return Origin::BaseColumn {
-                        relation: rel_id,
-                        name: col_name.to_string(),
-                    };
-                }
-
-                // Fall back to unresolved
-                Origin::UnresolvedIdent(self.name_path(name))
-            }
-            2 => {
-                // Qualified column name: table.column or schema.column
-                let qualifier = parts[0];
-                let col_name = parts[1];
-
-                // Try to find the relation by name
-                if let Some(rel_id) = scope.relation(qualifier) {
-                    return Origin::BaseColumn {
-                        relation: rel_id,
-                        name: col_name.to_string(),
-                    };
-                }
-
-                // Fall back to unresolved
-                Origin::UnresolvedIdent(self.name_path(name))
-            }
-            _ => {
-                // More complex qualified names - keep as unresolved for now
-                Origin::UnresolvedIdent(self.name_path(name))
-            }
+        if let Some(relation) = relation {
+            return Origin::BaseColumn {
+                relation: relation,
+                name: self.get_name(name),
+            };
         }
+
+        Origin::UnresolvedIdent(self.name_path(name))
     }
 }
 

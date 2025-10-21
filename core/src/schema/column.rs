@@ -2,7 +2,7 @@ use crate::schema;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS), ts(optional_fields))]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Column {
     pub column_name: String,
     pub table_name: Option<String>,

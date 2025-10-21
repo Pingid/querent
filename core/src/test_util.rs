@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::{
-    complete::{CompletionBuilder, CompletionKind, Completions, Context},
+    complete::{CompletionBuilder, Completions, Context},
     dialect::{Ansi, DialectSpec, DialectSpecProvider},
     lex::{Token, lex},
     schema,
@@ -48,18 +48,15 @@ impl SchemaCacheBuilder {
 #[derive(Debug)]
 pub struct CompletionTest {
     input: String,
-    cursor: usize,
     schema: schema::Cache,
     spec: Option<DialectSpec>,
 }
 
 impl CompletionTest {
     pub fn from_input(input: &str) -> Self {
-        let (input, cursor) = with_caret_cursor(input);
         Self {
             spec: None,
             input: input.to_string(),
-            cursor,
             schema: schema::Cache::default(),
         }
     }
@@ -78,27 +75,85 @@ impl CompletionTest {
         )
     }
 
-    pub fn run_with(self, complete: impl Fn(&Context<'_>, &mut CompletionBuilder)) -> Completions {
+    pub fn run_with(
+        self,
+        complete: impl Fn(&Context<'_>, &mut CompletionBuilder),
+    ) -> CompletionTestResult {
+        let (input, cursor) = with_caret_cursor(&self.input);
         let spec = self.spec.unwrap_or_else(|| Ansi::default().spec.clone());
-        let ctx = Context::build(&spec, &self.schema, &self.input, self.cursor).unwrap();
+        let ctx = Context::build(&spec, &self.schema, &input, cursor).unwrap();
         let mut builder = CompletionBuilder::new();
         complete(&ctx, &mut builder);
-        builder.build(&ctx)
+        CompletionTestResult {
+            query: input.to_string(),
+            completions: builder.build(&ctx),
+        }
     }
 }
 
-pub trait CompletionTestExt {
-    fn assert_col<const N: usize>(&self, expected: [&str; N]);
+#[derive(Debug)]
+pub struct CompletionTestResult {
+    query: String,
+    completions: Completions,
 }
 
-impl CompletionTestExt for Completions {
-    fn assert_col<const N: usize>(&self, expected: [&str; N]) {
-        let labels: Vec<_> = self
+impl CompletionTestResult {
+    pub fn labels(&self) -> Vec<&str> {
+        self.completions
             .items
             .iter()
-            .filter(|c| matches!(c.kind, CompletionKind::Column(_)))
             .map(|c| c.label.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(labels, expected);
+            .collect()
+    }
+    pub fn assert_complete<const N: usize>(&self, expected: &str) {
+        let completion = &self.completions.items[N];
+        let replace = completion.replace;
+        let next = format!(
+            "{}{}{}",
+            &self.query[..replace.start],
+            completion.insert_text,
+            &self.query[replace.end..]
+        );
+        assert_eq!(next, expected);
+    }
+    pub fn assert_labels<const N: usize>(&self, expected: [&str; N]) {
+        let labels = self.labels();
+        if labels.len() < N {
+            panic!(
+                "\nquery: {:?}\nexpected atleast {} labels, got {}",
+                self.query,
+                N,
+                labels.len()
+            );
+        }
+        assert_eq!(expected, labels[..N], "\n query: {:?}", self.query);
+    }
+
+    pub fn assert_empty(&self) {
+        assert!(
+            self.completions.items.len() == 0,
+            "\nquery: {:?}\nexpected no completions, got {:?}",
+            self.query,
+            self.labels()
+        );
+    }
+
+    pub fn assert_not_empty(&self) {
+        assert!(
+            self.completions.items.len() > 0,
+            "\nquery: {:?}\nexpected completions, got none",
+            self.query
+        );
+    }
+
+    pub fn assert_missing_labels<const N: usize>(&self, expected: [&str; N]) {
+        let labels = self.labels();
+        for label in expected {
+            assert!(
+                !labels.contains(&label),
+                "label {} should be missing",
+                label
+            );
+        }
     }
 }

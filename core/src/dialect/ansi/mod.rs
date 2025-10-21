@@ -64,6 +64,7 @@ pub static ANSI_RULE_SETS: RuleSet = RuleSet(&[
     // - Select -
     Rule(If::Kw(Keyword::Select), &[Then::Kw(Keyword::Distinct)]),
     Rule(If::Kw(Keyword::Select), &[Then::Kw(Keyword::All)]),
+    // - From -
     Rule(
         If::Match(&[
             If::Kw(Keyword::Select),
@@ -77,6 +78,41 @@ pub static ANSI_RULE_SETS: RuleSet = RuleSet(&[
             ]),
         ]),
         &[Then::Kw(Keyword::From)],
+    ),
+    // - Where -
+    Rule(
+        If::Match(&[
+            If::Kw(Keyword::From),
+            If::While(&If::Not(&If::AnyOf(&[
+                If::Kw(Keyword::From),
+                If::Kw(Keyword::Where),
+            ]))),
+            If::AnyOf(&[
+                If::Kind(TokenKind::Identifier),
+                If::Kind(TokenKind::RightParen),
+            ]),
+        ]),
+        &[Then::Kw(Keyword::Where)],
+    ),
+    // - Limit -
+    Rule(
+        If::Match(&[
+            If::Not(&If::Until(&If::AnyOf(&[
+                If::Kw(Keyword::Limit),
+                If::Kw(Keyword::Union),
+                If::Kw(Keyword::Intersect),
+                If::Kw(Keyword::Except),
+                If::Kw(Keyword::Offset),
+                If::Kw(Keyword::Fetch),
+            ]))),
+            If::AnyOf(&[
+                If::Kind(TokenKind::Identifier),
+                If::Kind(TokenKind::RightParen),
+                If::Kind(TokenKind::Number),
+                If::Kind(TokenKind::Str),
+            ]),
+        ]),
+        &[Then::Kw(Keyword::Limit)],
     ),
     // - Subqueries -
     Rule(If::Kind(TokenKind::LeftParen), &[Then::Kw(Keyword::Select)]),

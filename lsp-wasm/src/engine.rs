@@ -76,7 +76,7 @@ impl CompletionProvider for EngineProvider {
         doc: &querent_core::doc::Content,
     ) -> Vec<querent_core::complete::Completion> {
         if let Some(engine) = self.engines.borrow().get(&uri) {
-            engine.complete(doc)
+            engine.complete(doc).items
         } else {
             vec![]
         }

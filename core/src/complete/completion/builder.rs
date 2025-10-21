@@ -1,22 +1,25 @@
 use crate::complete::Completions;
 
 use super::super::context::Context;
-use super::ranker::{DefaultRanker, DefaultScorer, Ranker};
-use super::{Completion, CompletionKind};
+use super::Completion;
+use super::ranker::{DefaultRanker, Ranker};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompletionBuilder {
-    pub items: Vec<PossibleCompletion>,
+    pub items: Vec<CompletionWithScore>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PossibleCompletion {
-    pub label: String,
-    pub insert_text: String,
-    pub filter_text: Option<String>,
-    pub kind: CompletionKind,
-    pub commit_characters: Vec<char>,
+pub struct CompletionWithScore {
+    pub completion: Completion,
     pub score: i8,
+}
+
+impl std::ops::Deref for CompletionWithScore {
+    type Target = Completion;
+    fn deref(&self) -> &Self::Target {
+        &self.completion
+    }
 }
 
 impl CompletionBuilder {
@@ -24,22 +27,26 @@ impl CompletionBuilder {
         Self { items: vec![] }
     }
 
-    pub fn add(&mut self, item: PossibleCompletion) {
-        self.items.push(item);
+    pub fn add(&mut self, item: Completion, score: i8) {
+        self.items.push(CompletionWithScore {
+            completion: item,
+            score,
+        });
     }
 
     pub fn build(self, ctx: &Context) -> Completions {
-        let ranked = DefaultRanker::new(DefaultScorer).rank(&ctx.cursor.fragment, self.items);
+        let ranked = DefaultRanker::default().rank(&ctx.cursor.fragment, self.items);
         Completions {
             items: ranked
                 .into_iter()
-                .map(|item| Completion {
-                    label: item.label,
-                    insert_text: item.insert_text,
-                    filter_text: item.filter_text,
-                    kind: item.kind,
+                .map(|CompletionWithScore { completion, .. }| Completion {
+                    label: completion.label,
+                    insert_text: completion.insert_text,
+                    filter_text: completion.filter_text,
+                    kind: completion.kind,
                     replace: ctx.cursor.replace,
-                    commit_characters: item.commit_characters,
+                    commit_characters: completion.commit_characters,
+                    detail: completion.detail,
                 })
                 .collect(),
         }

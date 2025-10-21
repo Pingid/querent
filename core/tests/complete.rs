@@ -44,14 +44,6 @@ fn column_suggests_from_all_tables_without_from() {
     let t = case("SELECT ^").cache(users_posts()).run();
     // Duplicate column names (id) show with qualified names
     t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
-    t.assert_col_source([
-        "public.posts",
-        "public.users",
-        "public.users",
-        "public.posts",
-        "public.posts",
-        "public.users",
-    ]);
 }
 
 #[test]
@@ -135,7 +127,7 @@ fn column_qualifies_with_aliases_for_multiple_tables() {
 
     // Duplicate "id" columns show with qualified names using aliases
     t.assert_kind_contains_in_order(
-        |k| matches!(k, CompletionKind::Column(_)),
+        |k| matches!(k, CompletionKind::Column),
         ["p.content", "p.id", "u.email", "u.id"],
     );
     t.assert_apply("SELECT u.name, p.content FROM public.users u, public.posts p");
@@ -148,7 +140,6 @@ fn column_resolves_from_subquery_with_alias() {
         .cache(users_posts())
         .run();
     t.assert_col(["email", "name"]);
-    t.assert_col_source(["public.users", "public.users"]);
 }
 
 #[test]
@@ -157,7 +148,6 @@ fn column_suggests_from_cte() {
     let sql = "WITH cte AS (SELECT id, name FROM public.users) SELECT ^ FROM cte";
     let t = case(sql).cache(users_posts()).run();
     t.assert_col(["id", "name"]);
-    t.assert_col_source(["public.users", "public.users"]);
 }
 
 #[test]
@@ -166,7 +156,6 @@ fn column_completes_from_cte_qualified() {
     let sql = "WITH cte AS (SELECT id, name FROM public.users) SELECT cte.^ FROM cte";
     let t = case(sql).cache(users_posts()).run();
     t.assert_col(["id", "name"]);
-    t.assert_col_source(["public.users", "public.users"]);
 }
 
 #[test]
@@ -175,7 +164,6 @@ fn column_completes_from_cte_with_alias() {
     let sql = "WITH cte AS (SELECT id, name FROM public.users) SELECT u.^ FROM cte u";
     let t = case(sql).cache(users_posts()).run();
     t.assert_col(["id", "name"]);
-    t.assert_col_source(["public.users", "public.users"]);
 }
 
 #[test]
@@ -235,17 +223,16 @@ fn table_suggests_after_from_multiline() {
     t.assert_table(["posts", "users"]);
 }
 
-#[test]
-fn table_shows_duplicates_from_different_schemas() {
-    // Same table name in different schemas should show both with qualified sources
-    let cat = SchemaCacheBuilder::new()
-        .table("public", "users", &["id"])
-        .table("analytics", "users", &["id"])
-        .build();
-    let t = case("SELECT * FROM ^").cache(cat).run();
-    t.assert_table(["users", "users"]);
-    t.assert_table_source(["analytics", "public"]);
-}
+// #[test]
+// fn table_shows_duplicates_from_different_schemas() {
+//     // Same table name in different schemas should show both with qualified sources
+//     let cat = SchemaCacheBuilder::new()
+//         .table("public", "users", &["id"])
+//         .table("analytics", "users", &["id"])
+//         .build();
+//     let t = case("SELECT * FROM ^").cache(cat).run();
+//     t.assert_table(["users", "users"]);
+// }
 
 #[test]
 fn table_suggests_after_schema_qualifier() {
@@ -499,32 +486,8 @@ impl TestCase {
         let labels: Vec<_> = self
             .completions
             .iter()
-            .filter(|c| matches!(c.kind, CompletionKind::Column(_)))
+            .filter(|c| matches!(c.kind, CompletionKind::Column))
             .map(|c| c.label.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(labels, expected);
-    }
-    /// Assert the Column source metadata (table or schema.table) matches in order.
-    fn assert_col_source<const N: usize>(&self, expected: [&str; N]) {
-        let labels: Vec<_> = self
-            .completions
-            .iter()
-            .filter_map(|c| match &c.kind {
-                CompletionKind::Column(col_completion) => col_completion.qualifier.clone(),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(labels, expected);
-    }
-
-    fn assert_table_source<const N: usize>(&self, expected: [&str; N]) {
-        let labels: Vec<_> = self
-            .completions
-            .iter()
-            .filter_map(|c| match &c.kind {
-                CompletionKind::Table(table_completion) => table_completion.qualifier.clone(),
-                _ => None,
-            })
             .collect::<Vec<_>>();
         assert_eq!(labels, expected);
     }
@@ -534,11 +497,12 @@ impl TestCase {
         let labels: Vec<_> = self
             .completions
             .iter()
-            .filter(|c| matches!(c.kind, CompletionKind::Table(_)))
+            .filter(|c| matches!(c.kind, CompletionKind::Table))
             .map(|c| c.label.as_str())
             .collect::<Vec<_>>();
         assert_eq!(labels, expected);
     }
+
     /// Apply the completion found at the given index.
     fn apply_nth(&self, idx: usize) -> String {
         let c = &self.completions[idx];

@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use crate::schema;
-
 mod builder;
 pub use builder::build_scope;
 mod resolve;
 pub use resolve::*;
+
+use crate::schema;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Scope {
@@ -15,8 +15,6 @@ pub struct Scope {
     pub relations: HashMap<RelationId, RelationBinding>,
     /// Output columns of the innermost SELECT list (post-aliasing).
     pub projected: Vec<BoundColumn>,
-    /// WITH bindings accessible to this query block (name -> RelationId).
-    pub ctes: HashMap<String, RelationId>,
     /// Columns referenced in the GROUP BY clause.
     pub grouped: Vec<BoundColumn>,
     /// Columns referenced in the ORDER BY clause.
@@ -60,14 +58,12 @@ impl Scope {
         &mut self,
         name: String,
         origin: Origin,
-        qualifier: Option<String>,
-        ty: Option<schema::DataType>,
+        qualifier: Qualifier,
     ) -> ColumnId {
         let id = ColumnId(self.projected.len() as u32);
         self.projected.push(BoundColumn {
             id,
             name,
-            ty,
             origin,
             qualifier,
         });
@@ -102,11 +98,9 @@ pub enum RelationKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoundColumn {
     pub id: ColumnId,
-    pub name: String, // visible name (incl. alias)
-    pub ty: Option<schema::DataType>,
+    pub name: String,   // visible name (incl. alias)
     pub origin: Origin, // lineage
-    /// The qualifier used in the source (e.g., "users" in "users.name")
-    pub qualifier: Option<String>,
+    pub qualifier: Qualifier,
 }
 
 /// Where a column ultimately comes from; enables lineage & re-type.
@@ -141,27 +135,8 @@ pub enum Literal {
     Null,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NamePath(pub Vec<String>);
-
-impl NamePath {
-    pub fn table_name(&self) -> Option<&String> {
-        let size = self.0.len();
-        if size >= 1 {
-            Some(&self.0[size - 1])
-        } else {
-            None
-        }
-    }
-    pub fn schema_name(&self) -> Option<&String> {
-        let size = self.0.len();
-        if size >= 2 {
-            Some(&self.0[size - 2])
-        } else {
-            None
-        }
-    }
-}
 
 impl<I, S> From<I> for NamePath
 where
@@ -170,5 +145,56 @@ where
 {
     fn from(iter: I) -> Self {
         Self(iter.into_iter().map(|s| s.into()).collect())
+    }
+}
+
+/// The qualifier used in the source (e.g., "users" in "users.name")
+#[derive(Debug, Default, Clone, PartialEq, Hash, Eq)]
+pub struct Qualifier {
+    pub schema: Option<String>,
+    pub table: Option<String>,
+}
+
+impl Qualifier {
+    pub fn is_empty(&self) -> bool {
+        self.schema.is_none() && self.table.is_none()
+    }
+}
+
+impl From<Vec<String>> for Qualifier {
+    fn from(qualifier: Vec<String>) -> Self {
+        let mut q = qualifier;
+        let table = q.pop();
+        let schema = q.pop();
+        Self {
+            schema: schema,
+            table: table,
+        }
+    }
+}
+
+impl From<&Vec<String>> for Qualifier {
+    fn from(qualifier: &Vec<String>) -> Self {
+        Qualifier::from(qualifier.clone())
+    }
+}
+
+impl From<&schema::Column> for Qualifier {
+    fn from(col: &schema::Column) -> Self {
+        Self {
+            schema: col.schema_name.clone(),
+            table: col.table_name.clone(),
+        }
+    }
+}
+
+impl ToString for Qualifier {
+    fn to_string(&self) -> String {
+        match (self.schema.as_ref(), self.table.as_ref()) {
+            (Some(schema), Some(table)) => format!("{}.{}", schema, table),
+            (Some(schema), None) => schema.to_string(),
+            (None, Some(table)) => table.to_string(),
+            (None, None) => String::new(),
+        }
     }
 }

@@ -4,7 +4,6 @@ pub fn keywords() -> Vec<String> {
     let mut keywords = ansi::keywords();
     keywords.extend(
         [
-            "LIMIT",
             "LATERAL",
             "RETURNING",
             "CONFLICT",

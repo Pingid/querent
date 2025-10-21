@@ -24,6 +24,8 @@ pub enum If {
     Not(&'static If),
     While(&'static If),
     Match(&'static [If]),
+    /// Consume until the given if matches
+    Until(&'static If),
 }
 
 impl If {
@@ -95,6 +97,34 @@ impl If {
                     o = next;
                 }
                 (true, o)
+            }
+
+            If::Until(if_) => {
+                let mut o = offset;
+                let mut iterations = 0;
+                loop {
+                    iterations += 1;
+                    if iterations > 100 {
+                        eprintln!("WARNING: If::Until exceeded 100 iterations");
+                        eprintln!("  offset: {}", offset);
+                        eprintln!("  current o: {}", o);
+                        eprintln!("  tokens: {:?}", tokens);
+                        eprintln!("  condition: {:?}", if_);
+                        return (false, o);
+                    }
+                    // Check if the condition matches at current position
+                    let (m, _) = if_.match_consume(tokens, o);
+                    if m {
+                        // Found the match, return with current offset
+                        return (true, o);
+                    }
+                    // No more tokens to consume
+                    if o == 0 {
+                        return (false, 0);
+                    }
+                    // Move to next token
+                    o = o.saturating_sub(1);
+                }
             }
         }
     }
@@ -181,6 +211,53 @@ mod tests {
         assert_matches(false, rule, "SELECT ");
         assert_matches(false, rule, "SELECT id FROM");
         assert_matches(true, rule, "SELECT id, b, c, d");
+    }
+
+    #[test]
+    fn if_match_limit() {
+        // Match when we're after a query body but haven't seen LIMIT/UNION/etc yet
+        // Using Until to scan backwards and ensure none of these keywords appear
+        let rule = If::Match(&[
+            If::Not(&If::Until(&If::AnyOf(&[
+                If::Kw(Keyword::Limit),
+                If::Kw(Keyword::Union),
+                If::Kw(Keyword::Intersect),
+                If::Kw(Keyword::Except),
+                If::Kw(Keyword::Offset),
+                If::Kw(Keyword::Fetch),
+            ]))),
+            If::AnyOf(&[
+                If::Kind(TokenKind::Identifier),
+                If::Kind(TokenKind::RightParen),
+                If::Kind(TokenKind::Number),
+                If::Kind(TokenKind::Str),
+            ]),
+        ]);
+        // Basic FROM clause - LIMIT can appear after table name
+        assert_matches(true, rule, "SELECT a FROM users ");
+        // FROM with WHERE clause - LIMIT can appear after WHERE
+        assert_matches(true, rule, "SELECT a FROM users WHERE name = 'John' ");
+        // FROM with GROUP BY clause - LIMIT can appear after GROUP BY
+        assert_matches(true, rule, "SELECT a FROM users GROUP BY id ");
+        // FROM with HAVING clause - LIMIT can appear after HAVING
+        assert_matches(
+            true,
+            rule,
+            "SELECT a FROM users GROUP BY id HAVING count > 1 ",
+        );
+        // FROM with ORDER BY clause - LIMIT can appear after ORDER BY
+        assert_matches(true, rule, "SELECT a FROM users ORDER BY name ");
+        // Should not match after UNION (LIMIT typically goes at the end of combined query)
+        assert_matches(
+            false,
+            rule,
+            "SELECT a FROM users UNION SELECT b FROM others ",
+        );
+        // Should not match after LIMIT already exists
+        assert_matches(false, rule, "SELECT a FROM users LIMIT ");
+        assert_matches(false, rule, "SELECT a FROM users LIMIT 10");
+        assert_matches(false, rule, "SELECT a FROM users OFFSET ");
+        assert_matches(false, rule, "SELECT a FROM users OFFSET 5 ");
     }
 
     fn assert_matches(matches: bool, rule: If, sql: &str) {

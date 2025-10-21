@@ -1,157 +1,169 @@
-use crate::complete::{CompletionBuilder, CompletionKind, PossibleCompletion, TableCompletion};
+use crate::lex::{Keyword, TokenKind};
+
+use crate::complete::context::{ClauseKind, Context, Location, RelationKind, ScopeResolve};
+use crate::complete::{Completion, CompletionBuilder, CompletionKind};
 use crate::schema;
 
-use super::super::context;
-
-pub fn complete(ctx: &context::Context, builder: &mut CompletionBuilder) {
-    if !supports(ctx) {
+pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
+    if !should_complete(ctx) {
         return;
     }
 
-    // If we have a qualifier (e.g., "public.^"), only suggest tables from that schema
-    if let Some(qualifier) = &ctx.cursor.qualifier {
-        let schema_tables = list_tables(ctx.schema, qualifier);
+    let mut tables = Vec::new();
 
-        for name in schema_tables {
-            let table = get_table(ctx.schema, &name, qualifier);
-
-            builder.add(PossibleCompletion {
-                label: name.clone(),
-                insert_text: name.clone(),
-                filter_text: Some(name.clone()),
-                kind: CompletionKind::Table(TableCompletion {
-                    qualifier: Some(qualifier.clone()),
-                    table,
-                }),
-                commit_characters: vec![' ', ',', '\n'],
-                score: 0,
-            });
-        }
-    }
-
-    // Get all schemas and tables from cache
-    let schemas = list_schemas(ctx.schema);
-    let mut tables: Vec<(String, String)> = Vec::new(); // (table_name, schema)
-
-    for schema in &schemas {
-        let schema_tables = list_tables(ctx.schema, schema);
-        for table in schema_tables {
-            tables.push((table, schema.clone()));
-        }
-    }
-
-    // If after a comma, filter out tables already in FROM
-    let tables = if matches!(&ctx.cursor.location, context::Location::Space(inner) if matches!(**inner, context::Location::Comma))
-    {
-        let existing_tables: Vec<String> = ctx
-            .scope
-            .relations
-            .values()
-            .filter_map(|rel| match &rel.kind {
-                crate::complete::context::RelationKind::Base(path) => {
-                    path.0.last().map(|s| s.to_string())
-                }
-                _ => None,
-            })
-            .collect();
-
-        tables
-            .into_iter()
-            .filter(|(name, _)| !existing_tables.contains(name))
-            .collect()
-    } else {
-        tables
-    };
-
-    // Convert to completions
-
-    for (name, schema) in tables {
-        let table = get_table(ctx.schema, &name, &schema);
-
-        let qualifier = if schema.is_empty() {
-            None
-        } else {
-            Some(schema)
-        };
-
-        builder.add(PossibleCompletion {
-            label: name.clone(),
-            insert_text: name.clone(),
-            filter_text: Some(name.clone()),
-            kind: CompletionKind::Table(TableCompletion { qualifier, table }),
-            commit_characters: vec![' ', ',', '\n'],
+    // Add all tables from the schema
+    for table in ctx.schema.get_tables() {
+        tables.push(AvailableTable {
+            name: table.table_name.clone(),
             score: 0,
+            kind: AvailableTableKind::Table(table.clone()),
         });
+    }
+
+    // Add all CTEs
+    for cte in ctx.scope.get_cte_names() {
+        tables.push(AvailableTable {
+            name: cte,
+            score: 0,
+            kind: AvailableTableKind::Cte,
+        });
+    }
+
+    // Rank tables used in the SELECT list higher
+    let projected = ctx.scope.resolve_projected_columns(ctx.schema);
+
+    for t in &mut tables {
+        if projected.iter().any(|p| match &p.source_alias {
+            Some(alias) => alias == &t.name,
+            None => p.source.table_name() == Some(&t.name),
+        }) {
+            t.score += 20;
+        }
+    }
+
+    // Rank tables already used in the FROM clause lower
+    for t in &mut tables {
+        if ctx.scope.relations.iter().any(|(_, r)| match &r.kind {
+            RelationKind::Base(path) => path.0.contains(&t.name),
+            _ => false,
+        }) {
+            t.score -= 30;
+        }
+    }
+
+    for t in tables {
+        let detail = detail(&t);
+        // println!("table: {:#?}, score: {}", &t, t.score);
+        builder.add(
+            Completion::new(
+                CompletionKind::Table,
+                t.name,
+                ctx.cursor.replace,
+                None,
+                Some(detail),
+            ),
+            t.score,
+        );
     }
 }
 
-fn supports(ctx: &context::Context) -> bool {
-    // Provide completions in FROM clause
-    if !matches!(ctx.clause, context::ClauseKind::From) {
-        return false;
-    }
-
-    match &ctx.cursor.location {
-        // After FROM keyword or after comma (e.g., "FROM users, ^")
-        context::Location::Space(inner) => matches!(
-            **inner,
-            context::Location::Keyword | context::Location::Comma
-        ),
-        // After schema qualifier dot (e.g., "FROM public.^")
-        context::Location::Dot => ctx.cursor.qualifier.is_some(),
+fn should_complete(ctx: &Context<'_>) -> bool {
+    match ctx.clause {
+        ClauseKind::From => match &ctx.cursor.location {
+            Location::Space(inner) => {
+                matches!(**inner, Location::Keyword(Keyword::From) | Location::Comma)
+            }
+            Location::Ident
+                if ctx.cursor.preceding_matches([
+                    TokenKind::Keyword(Keyword::From),
+                    TokenKind::Identifier,
+                ]) =>
+            {
+                true
+            }
+            _ => false,
+        },
         _ => false,
     }
 }
 
-// ============================================================================
-// Cache Helper Functions
-// ============================================================================
-
-/// List all schemas from the cache
-fn list_schemas(cache: &schema::Cache) -> Vec<String> {
-    let mut schemas: Vec<String> = cache
-        .get_tables()
-        .iter()
-        .filter_map(|t| t.schema_name.clone())
-        .collect();
-    schemas.sort();
-    schemas.dedup();
-    schemas
+#[derive(Debug, Clone, PartialEq)]
+struct AvailableTable {
+    name: String,
+    score: i8,
+    kind: AvailableTableKind,
 }
 
-/// List all tables in a schema from the cache
-fn list_tables(cache: &schema::Cache, schema: &str) -> Vec<String> {
-    if schema.is_empty() {
-        // If schema is empty, return all tables
-        cache
-            .get_tables()
-            .iter()
-            .map(|t| t.table_name.clone())
-            .collect()
-    } else {
-        cache
-            .get_tables()
-            .iter()
-            .filter(|t| t.schema_name.as_deref() == Some(schema))
-            .map(|t| t.table_name.clone())
-            .collect()
+#[derive(Debug, Clone, PartialEq)]
+pub enum AvailableTableKind {
+    Table(schema::Table),
+    Cte,
+}
+
+fn detail(table: &AvailableTable) -> String {
+    match &table.kind {
+        AvailableTableKind::Table(t) => {
+            let qualified = match &t.schema_name {
+                Some(schema) => format!("{}.{}", schema, &t.table_name),
+                None => t.table_name.clone(),
+            };
+            let tp = match table.kind {
+                AvailableTableKind::Table(_) => "table",
+                AvailableTableKind::Cte => "cte",
+            };
+            format!("{} ({})", qualified, tp)
+        }
+        AvailableTableKind::Cte => format!("{} (cte)", table.name),
     }
 }
 
-/// Get a specific table from the cache
-fn get_table(cache: &schema::Cache, table: &str, schema: &str) -> Option<schema::Table> {
-    if schema.is_empty() {
-        // If schema is empty, search all schemas for the table
-        cache
-            .get_tables()
-            .iter()
-            .find(|t| t.table_name == table)
-            .cloned()
-    } else {
-        cache
-            .get_tables()
-            .iter()
-            .find(|t| t.table_name == table && t.schema_name.as_deref() == Some(schema))
-            .cloned()
+#[cfg(test)]
+mod tests {
+    use crate::test_util::{CompletionTest, CompletionTestResult};
+
+    use super::*;
+
+    #[test]
+    fn completes_at_appropriate_locations() {
+        case("SELECT email FROM^").assert_empty();
+        case("SELECT email FROM ^").assert_not_empty();
+        case("SELECT email FROM u^").assert_not_empty();
+        case("SELECT email FROM user ^").assert_empty();
+        case("SELECT email FROM user, ^").assert_not_empty();
+
+        case("SELECT email FROM user t ^").assert_empty();
+        case("SELECT email FROM user as t ^").assert_empty();
+        case("SELECT email FROM user t, ^").assert_not_empty();
+        case("SELECT email FROM user as t, ^").assert_not_empty();
+    }
+
+    #[test]
+    fn completes_tables() {
+        let t = case("SELECT * FROM ^");
+        t.assert_labels(["posts", "users"]);
+    }
+
+    #[test]
+    fn ranks_tables_by_projected_columns() {
+        let t = case("SELECT email FROM ^");
+        t.assert_labels(["users", "posts"]);
+    }
+
+    #[test]
+    fn ranks_already_used_tables_lower() {
+        let t = case("SELECT email FROM users u, ^");
+        t.assert_labels(["posts", "users"]);
+    }
+
+    #[test]
+    fn completes_ctes() {
+        let t = case("WITH cte AS (SELECT email FROM users) SELECT * FROM ^");
+        t.assert_labels(["cte", "posts", "users"]);
+    }
+
+    fn case(input: &str) -> CompletionTestResult {
+        CompletionTest::from_input(input)
+            .with_users_posts()
+            .run_with(complete)
     }
 }

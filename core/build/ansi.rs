@@ -55,6 +55,7 @@ pub fn keywords() -> Vec<String> {
         "ROW",
         "WINDOW",
         "FILTER",
+        "LIMIT",
         "OFFSET",
         "FETCH",
         "FIRST",
