@@ -1,8 +1,7 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use querent_core::dialect::DialectSpecProvider;
+use querent_core::dialect::postgres;
 use std::time::Duration;
 
-use querent_core::dialect::Postgres;
 use querent_core::lex::{TokenKind, lex};
 use querent_core::parse::Parser;
 
@@ -21,8 +20,7 @@ fn fetch_queries_text() -> String {
 }
 
 fn split_statements_pg(input: &str) -> Vec<&str> {
-    let dialect = Postgres::default();
-    let spec = dialect.get_spec();
+    let spec = &postgres::SPEC;
     let tokens = lex(spec, input);
 
     let mut stmts = Vec::new();
@@ -82,8 +80,7 @@ fn bench_tpcds(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(total_bytes as u64));
     group.bench_function(BenchmarkId::new("tokenize_all", "pg"), |b| {
         b.iter(|| {
-            let dialect = Postgres::default();
-            let spec = dialect.get_spec();
+            let spec = &postgres::SPEC;
             for q in &stmts {
                 let _ = lex(spec, q);
             }
@@ -94,8 +91,7 @@ fn bench_tpcds(c: &mut Criterion) {
     group.throughput(Throughput::Elements(total_queries));
     group.bench_function(BenchmarkId::new("parse_all", "pg"), |b| {
         b.iter(|| {
-            let dialect = Postgres::default();
-            let spec = dialect.get_spec();
+            let spec = &postgres::SPEC;
             for q in &stmts {
                 let tokens = lex(spec, q);
                 let mut parser = Parser::new(&tokens);
@@ -109,8 +105,7 @@ fn bench_tpcds(c: &mut Criterion) {
         b.iter_batched(
             || stmts.clone(),
             |cases| {
-                let dialect = Postgres::default();
-                let spec = dialect.get_spec();
+                let spec = &postgres::SPEC;
                 for q in cases {
                     let tokens = lex(spec, q);
                     let mut parser = Parser::new(&tokens);

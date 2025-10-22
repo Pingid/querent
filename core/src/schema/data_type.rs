@@ -21,6 +21,7 @@ pub enum DataType {
     Bytes,
     Uuid,
     Null,
+    Any,
     #[default]
     Unknown,
 }
@@ -89,6 +90,9 @@ impl<'de> serde::Deserialize<'de> for DataType {
             // Null
             "null" => DataType::Null,
 
+            // Any
+            "any" => DataType::Any,
+
             // Default to Unknown for unrecognized types
             _ => DataType::Unknown,
         })
@@ -113,6 +117,7 @@ impl ToString for DataType {
             DataType::Bytes => "bytes".to_string(),
             DataType::Uuid => "uuid".to_string(),
             DataType::Null => "null".to_string(),
+            DataType::Any => "any".to_string(),
             DataType::Unknown => "unknown".to_string(),
         }
     }

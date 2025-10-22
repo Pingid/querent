@@ -5,6 +5,16 @@ use std::path::PathBuf;
 use querent_core::schema;
 use ts_rs::TS;
 
+// Define Queries here so we can use TS::decl() on it
+#[derive(ts_rs::TS)]
+#[ts(optional_fields)]
+#[allow(dead_code)]
+struct Queries {
+    pub functions: Option<String>,
+    pub tables: Option<String>,
+    pub columns: Option<String>,
+}
+
 fn main() {
     let to_export = [
         schema::Cache::decl(),
@@ -13,6 +23,7 @@ fn main() {
         schema::Column::decl(),
         schema::Function::decl(),
         schema::FunctionType::decl(),
+        Queries::decl(),
     ];
 
     let all = to_export

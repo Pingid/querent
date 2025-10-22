@@ -1,12 +1,11 @@
 use proptest::prelude::*;
-use querent_core::dialect::{Ansi, DialectSpecProvider};
+use querent_core::dialect::ansi;
 use querent_core::lex::{Keyword, Token, TokenKind, lex};
 
 #[test]
 fn basic_select_line() {
-    let d = Ansi::default();
-    let s = d.get_spec();
     let input = "SELECT name, * FROM users WHERE age > 18 AND name = 'John'";
+    let s = &ansi::SPEC;
     let toks = lex(s, input);
     let expected = [
         TokenKind::Keyword(Keyword::Select),
@@ -174,14 +173,12 @@ proptest! {
 }
 
 pub fn ansi_tokens<'a>(input: &'a str) -> Vec<Token<'a>> {
-    let d = Ansi::default();
-    let s = d.get_spec();
+    let s = &ansi::SPEC;
     lex(s, input)
 }
 
 pub fn ansi_token_kinds(input: &str) -> Vec<TokenKind> {
-    let d = Ansi::default();
-    let s = d.get_spec();
+    let s = &ansi::SPEC;
     lex(s, input)
         .into_iter()
         .map(|t| t.kind)

@@ -1,16 +1,16 @@
 use crate::{
-    dialect::{
-        CaseFold, CommentStyle, DialectSpec, DialectSpecProvider, StyleRules, ansi::ANSI_RULE_SET,
-    },
+    dialect::{CaseFold, CommentStyle, DialectSpec, StyleRules, ansi},
     lex::QuoteStyle,
 };
 
-// Include the generated Postgres keywords
 mod keyword;
 use keyword::KEYWORDS;
 
 mod operator;
 use operator::OP_TABLE;
+
+mod queries;
+pub use queries::*;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Postgres {
@@ -20,12 +20,6 @@ pub struct Postgres {
 impl Default for Postgres {
     fn default() -> Self {
         Self { spec: &SPEC }
-    }
-}
-
-impl DialectSpecProvider for Postgres {
-    fn get_spec(&self) -> &'static DialectSpec {
-        &SPEC
     }
 }
 
@@ -42,5 +36,5 @@ pub static SPEC: DialectSpec = DialectSpec {
         comments: &[CommentStyle::DoubleDash, CommentStyle::SlashStar],
         quotes: &[QuoteStyle::Double],
     },
-    follow_rules: &[ANSI_RULE_SET],
+    follow_rules: &[ansi::RULES],
 };

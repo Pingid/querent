@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     complete::{CompletionBuilder, Completions, Context},
-    dialect::{Ansi, DialectSpec, DialectSpecProvider},
+    dialect::{DialectSpec, ansi},
     lex::{Token, lex},
     schema,
 };
@@ -19,8 +19,7 @@ pub fn with_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {
 }
 
 pub fn ansi_tokens<'a>(sql: &'a str) -> Vec<Token<'a>> {
-    let dialect = Ansi::default();
-    lex(dialect.get_spec(), sql)
+    lex(&ansi::SPEC, sql)
 }
 
 pub struct SchemaCacheBuilder(schema::Cache);
@@ -86,8 +85,12 @@ impl CompletionTest {
         complete: impl Fn(&Context<'_>, &mut CompletionBuilder),
     ) -> CompletionTestResult {
         let (input, cursor) = with_caret_cursor(&self.input);
-        let spec = self.spec.unwrap_or_else(|| Ansi::default().spec.clone());
-        let ctx = Context::build(&spec, &self.schema, &input, cursor).unwrap();
+        let spec = self.spec.as_ref();
+        let ctx = match spec {
+            Some(spec) => Context::build(spec, &self.schema, &input, cursor),
+            None => Context::build(&ansi::SPEC, &self.schema, &input, cursor),
+        }
+        .unwrap();
         let mut builder = CompletionBuilder::new();
         complete(&ctx, &mut builder);
         CompletionTestResult {

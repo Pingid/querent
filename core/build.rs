@@ -8,8 +8,10 @@ mod build;
 fn main() {
     gen_keyword_file("ansi", build::ansi::keywords());
     gen_keyword_file("postgres", build::postgres::keywords());
+    gen_keyword_file("sqlite", build::sqlite::keywords());
     gen_operator_file("ansi", build::ansi::operators());
     gen_operator_file("postgres", build::postgres::operators());
+    gen_operator_file("sqlite", build::sqlite::operators());
 }
 
 fn gen_operator_file(

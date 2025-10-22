@@ -7,6 +7,7 @@ pub struct Function {
     pub function_name: String,
     pub parameter_types: Vec<schema::DataType>,
     pub function_type: FunctionType,
+    pub return_type: schema::DataType,
     pub description: Option<String>,
     pub schema_name: Option<String>,
     pub database_name: Option<String>,

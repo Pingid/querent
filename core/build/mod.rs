@@ -1,5 +1,6 @@
 pub mod ansi;
 pub mod postgres;
+pub mod sqlite;
 
 pub fn generate_keyword_map(keywords: Vec<String>) -> String {
     let mut builder = phf_codegen::Map::new();

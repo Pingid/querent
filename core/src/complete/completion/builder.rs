@@ -39,7 +39,7 @@ impl CompletionBuilder {
         Completions {
             items: ranked
                 .into_iter()
-                .take(100)
+                // .take(100)
                 .map(|CompletionWithScore { completion, .. }| Completion {
                     label: completion.label,
                     insert_text: completion.insert_text,

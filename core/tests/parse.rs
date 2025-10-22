@@ -1,6 +1,6 @@
 use querent_core::{
     ast,
-    dialect::{Ansi, DialectSpec, DialectSpecProvider, Postgres},
+    dialect::{DialectSpec, ansi, postgres, sqlite},
     lex::lex,
     parse::Parser,
 };
@@ -11,19 +11,17 @@ use common::ast::AstDisplay;
 // ---------------- Test: Statement ----------------
 #[test]
 fn statement_partial_and_query() {
-    let dialect = Ansi::default();
-    let spec = dialect.get_spec();
-    let ast = statement("", spec);
+    let ast = statement("", &ansi::SPEC);
     assert!(matches!(ast, ast::Statement::Partial(_)));
-    let ast = statement("SEL", spec);
+    let ast = statement("SEL", &ansi::SPEC);
     assert!(matches!(ast, ast::Statement::Partial(_)));
-    let ast = statement("SELECT", spec);
+    let ast = statement("SELECT", &ansi::SPEC);
     assert!(matches!(ast, ast::Statement::Query(_)));
 }
 
 #[test]
 fn ans_complete() {
-    // panic!("{:#?}", statement("SELECT *", &ansi_compliant_specs()[0]));
+    // panic!("{:#?}", statement("SELECT *", ANSI_COMPLIANT_SPECS[0]));
     let inputs = [
         // Literals & expressions
         "SELECT 1",
@@ -67,7 +65,7 @@ fn ans_complete() {
         // CTEs
         "WITH cte AS (SELECT id FROM users) SELECT * FROM cte",
     ];
-    assert_display_match(&inputs, &ansi_compliant_specs());
+    assert_display_match(&inputs, ANSI_COMPLIANT_SPECS);
 }
 
 #[test]
@@ -79,7 +77,7 @@ fn ansi_partial() {
         "SELECT  FROM t",
         "SELECT a FROM t WHERE a BETWEEN ",
     ];
-    assert_display_match(&matching, &ansi_compliant_specs());
+    assert_display_match(&matching, ANSI_COMPLIANT_SPECS);
 
     let inputs = [
         ("SELECT a. FROM t ", "SELECT a FROM t"),
@@ -87,7 +85,7 @@ fn ansi_partial() {
         // Subqueries & set ops
         ("SELECT * FROM (SELECT", "SELECT * FROM (SELECT )"),
     ];
-    assert_display_match_pairs(&inputs, &ansi_compliant_specs());
+    assert_display_match_pairs(&inputs, ANSI_COMPLIANT_SPECS);
 }
 
 #[test]
@@ -119,9 +117,7 @@ fn pg_complete() {
         // WINDOW name + FILTER
         "SELECT dept, SUM(salary) FILTER (WHERE active) OVER w AS active_sum, SUM(salary) OVER w AS total_sum FROM emp WINDOW w AS (PARTITION BY dept ORDER BY hired_at)",
     ];
-    let d = Postgres::default();
-    let spec = d.get_spec();
-    assert_display_match(&inputs, std::slice::from_ref(spec));
+    assert_display_match(&inputs, &[&postgres::SPEC]);
 }
 
 // ---------------- Test utils ----------------
@@ -131,7 +127,7 @@ fn statement(sql: &str, s: &DialectSpec) -> ast::Statement {
     parser.parse_statement().unwrap().item
 }
 
-fn assert_display_match(inputs: &[&str], specs: &[DialectSpec]) {
+fn assert_display_match(inputs: &[&str], specs: &[&DialectSpec]) {
     for spec in specs {
         for input in inputs {
             let s = statement(input, spec);
@@ -146,7 +142,7 @@ fn assert_display_match(inputs: &[&str], specs: &[DialectSpec]) {
     }
 }
 
-fn assert_display_match_pairs(inputs: &[(&str, &str)], specs: &[DialectSpec]) {
+fn assert_display_match_pairs(inputs: &[(&str, &str)], specs: &[&DialectSpec]) {
     for spec in specs {
         for (input, expected) in inputs {
             let s = statement(input, spec);
@@ -161,11 +157,8 @@ fn assert_display_match_pairs(inputs: &[(&str, &str)], specs: &[DialectSpec]) {
     }
 }
 
-fn ansi_compliant_specs() -> Vec<DialectSpec> {
-    let ansi = Ansi::default();
-    let pg = Postgres::default();
-    vec![ansi.get_spec().clone(), pg.get_spec().clone()]
-}
+const ANSI_COMPLIANT_SPECS: &[&'static DialectSpec] =
+    &[&ansi::SPEC, &postgres::SPEC, &sqlite::SPEC];
 
 fn fmt<T: AstDisplay>(input: &str, display: &T) -> String {
     display.display(input)

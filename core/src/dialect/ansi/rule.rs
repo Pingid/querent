@@ -12,7 +12,7 @@ const SIMPLE_VALUE: Cond = Cond::Any(&[
 #[cfg(test)]
 use crate::dialect::follow::Dir;
 
-pub const ANSI_RULE_SET: Rules = Rules(&[
+pub const RULES: Rules = Rules(&[
     START_RULE,
     SELECT_RULE,
     FROM_RULE,

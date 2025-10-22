@@ -1,5 +1,5 @@
 use crate::{
-    dialect::{CaseFold, CommentStyle, DialectSpec, StyleRules},
+    dialect::{CaseFold, CommentStyle, DialectSpec, StyleRules, ansi::RULES},
     lex::QuoteStyle,
 };
 
@@ -9,21 +9,18 @@ use keyword::KEYWORDS;
 mod operator;
 use operator::OP_TABLE;
 
-mod functions;
-pub use functions::FUNCTIONS;
+mod queries;
+pub use queries::*;
 
-mod rule;
-pub use rule::RULES;
-
-/// The global ANSI dialect spec — no runtime alloc, no cloning.
+/// The global SQLite dialect spec — no runtime alloc, no cloning.
 pub static SPEC: DialectSpec = DialectSpec {
-    name: "ansi",
+    name: "sqlite",
     keywords: &KEYWORDS,
     operators: &OP_TABLE,
     style_rules: StyleRules {
         keywords_case_insensitive: true,
         word_ops_case_insensitive: true,
-        unquoted_identifier_fold: CaseFold::Upper,
+        unquoted_identifier_fold: CaseFold::Preserve, // SQLite preserves case
         quoted_identifiers_case_sensitive: true,
         comments: &[CommentStyle::DoubleDash, CommentStyle::SlashStar],
         quotes: &[QuoteStyle::Double],

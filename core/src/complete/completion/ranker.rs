@@ -33,9 +33,9 @@ impl<S: Comparator> DefaultRanker<S> {
 
 impl<S: Comparator> Ranker for DefaultRanker<S> {
     fn rank(&self, needle: &str, mut items: Vec<CompletionWithScore>) -> Vec<CompletionWithScore> {
-        items.dedup_by(|a, b| a.label == b.label);
         let needle = needle.to_string();
         items.sort_by(|a, b| self.comparator.compare(a, b, &needle));
+        items.dedup_by(|a, b| a.insert_text == b.insert_text);
         items
     }
 }
@@ -51,6 +51,8 @@ impl Comparator for DefaultComparator {
         // Sort by kind descending
         kind_order(&b.kind)
             .cmp(&kind_order(&a.kind))
+            // Sort label preceding with "_" to the end
+            .then_with(|| a.label.starts_with("_").cmp(&b.label.starts_with("_")))
             // Sort by text
             .then_with(|| compare_text(a, b, needle))
             // Sort by score descending

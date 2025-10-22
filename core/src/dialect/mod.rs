@@ -1,44 +1,61 @@
-use crate::lex::{Keyword, Operator, QuoteStyle, TokenKind};
+use crate::{
+    lex::{Keyword, Operator, QuoteStyle, TokenKind},
+    schema::{DataType, FunctionType},
+};
 
 mod follow;
 pub use follow::*;
 
-mod ansi;
-pub use ansi::Ansi;
+pub mod ansi;
+pub mod postgres;
+pub mod sqlite;
 
-mod postgres;
-pub use postgres::Postgres;
-
-pub trait DialectSpecProvider {
-    fn get_spec(&self) -> &'static DialectSpec;
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 pub enum DialectKind {
-    Ansi(ansi::Ansi),
-    Postgres(postgres::Postgres),
-}
-
-impl Default for DialectKind {
-    fn default() -> Self {
-        DialectKind::Ansi(ansi::Ansi::default())
-    }
+    #[default]
+    Ansi,
+    Sqlite,
+    Postgres,
 }
 
 impl DialectKind {
     pub fn name(&self) -> &'static str {
         match self {
-            DialectKind::Ansi(_) => "ansi",
-            DialectKind::Postgres(_) => "postgres",
+            DialectKind::Ansi => "ansi",
+            DialectKind::Postgres => "postgres",
+            DialectKind::Sqlite => "sqlite",
         }
     }
-}
 
-impl DialectSpecProvider for DialectKind {
-    fn get_spec(&self) -> &'static DialectSpec {
+    pub fn spec(&self) -> &'static DialectSpec {
         match self {
-            DialectKind::Ansi(d) => d.get_spec(),
-            DialectKind::Postgres(d) => d.get_spec(),
+            DialectKind::Ansi => &ansi::SPEC,
+            DialectKind::Postgres => &postgres::SPEC,
+            DialectKind::Sqlite => &sqlite::SPEC,
+        }
+    }
+
+    pub fn functions_query(&self) -> Option<&'static str> {
+        match self {
+            DialectKind::Ansi => None,
+            DialectKind::Postgres => Some(&postgres::QUERY_FUNCTIONS),
+            DialectKind::Sqlite => None,
+        }
+    }
+
+    pub fn tables_query(&self) -> Option<&'static str> {
+        match self {
+            DialectKind::Ansi => None,
+            DialectKind::Postgres => Some(&postgres::QUERY_TABLES),
+            DialectKind::Sqlite => Some(&sqlite::QUERY_TABLES),
+        }
+    }
+
+    pub fn columns_query(&self) -> Option<&'static str> {
+        match self {
+            DialectKind::Ansi => None,
+            DialectKind::Postgres => Some(&postgres::QUERY_COLUMNS),
+            DialectKind::Sqlite => Some(&sqlite::QUERY_COLUMNS),
         }
     }
 }
@@ -46,8 +63,9 @@ impl DialectSpecProvider for DialectKind {
 impl From<&str> for DialectKind {
     fn from(s: &str) -> Self {
         match s {
-            "postgres" | "pg" => DialectKind::Postgres(postgres::Postgres::default()),
-            _ => DialectKind::Ansi(ansi::Ansi::default()),
+            "postgres" | "pg" => DialectKind::Postgres,
+            "sqlite" => DialectKind::Sqlite,
+            _ => DialectKind::Ansi,
         }
     }
 }
@@ -146,4 +164,13 @@ pub enum CommentStyle {
     DoubleDash,
     SlashStar,
     Hash,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DialectFunction {
+    pub function_name: &'static str,
+    pub parameter_types: &'static [DataType],
+    pub function_type: FunctionType,
+    pub return_type: DataType,
+    pub description: &'static str,
 }
