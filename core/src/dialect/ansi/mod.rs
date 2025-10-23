@@ -7,10 +7,10 @@ mod keyword;
 use keyword::KEYWORDS;
 
 mod operator;
-use operator::OP_TABLE;
+use operator::OPERATORS;
 
 mod functions;
-pub use functions::FUNCTIONS;
+pub(crate) use functions::FUNCTIONS;
 
 mod rule;
 pub use rule::RULES;
@@ -19,7 +19,8 @@ pub use rule::RULES;
 pub static SPEC: DialectSpec = DialectSpec {
     name: "ansi",
     keywords: &KEYWORDS,
-    operators: &OP_TABLE,
+    operators: &OPERATORS,
+    functions: &FUNCTIONS,
     style_rules: StyleRules {
         keywords_case_insensitive: true,
         word_ops_case_insensitive: true,

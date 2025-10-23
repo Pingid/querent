@@ -2,7 +2,7 @@ use crate::lex::{Keyword, OpTag, Token, TokenKind};
 use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Cursor {
+pub struct Cursor<'txt> {
     /// The current position of the cursor.
     pub position: usize,
     /// The location of the cursor.
@@ -16,10 +16,10 @@ pub struct Cursor {
     /// The current keyword token (if cursor is on/after a keyword)
     pub current_keyword: Option<Keyword>,
     /// For qualified names (e.g., table.column), the qualifier before the dot
-    pub qualifier: Option<Vec<String>>,
+    pub qualifier: Option<Vec<&'txt str>>,
 }
 
-impl Cursor {
+impl<'txt> Cursor<'txt> {
     pub fn preceding_matches<const N: usize>(&self, other: [TokenKind; N]) -> bool {
         self.preceding[self.preceding.len().saturating_sub(N)..]
             .iter()
@@ -49,7 +49,11 @@ pub enum Location {
     Space(Box<Location>),
 }
 
-pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: usize) -> Cursor {
+pub fn detect_cursor<'txt>(
+    text: &'txt str,
+    tokens: &[Token<'txt>],
+    position: usize,
+) -> Cursor<'txt> {
     if tokens.len() <= 1 {
         return Cursor {
             position,
@@ -142,10 +146,8 @@ pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: us
             while matches!(tokens[i].kind, TokenKind::Dot) && i > 0 {
                 let prev_token = &tokens[i - 1];
                 match prev_token.kind {
-                    TokenKind::Identifier => parts.push(prev_token.text.to_string()),
-                    TokenKind::IdentifierQuoted(q) => {
-                        parts.push(q.strip_quotes(prev_token.text).to_string())
-                    }
+                    TokenKind::Identifier => parts.push(prev_token.text),
+                    TokenKind::IdentifierQuoted(q) => parts.push(q.strip_quotes(prev_token.text)),
                     _ => break,
                 }
                 i = i.saturating_sub(2);
@@ -168,7 +170,7 @@ pub fn detect_cursor<'txt>(text: &'txt str, tokens: &[Token<'txt>], position: us
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::{ansi_tokens, with_caret_cursor};
+    use crate::test_util::{ansi_tokens, get_caret_cursor};
 
     use super::*;
 
@@ -235,9 +237,10 @@ mod tests {
         assert_eq!(text.replace, Span::new(8, 11));
     }
 
-    fn ansi_detect_cursor(sql: &str) -> Cursor {
-        let (text, pos) = with_caret_cursor(sql);
-        let tokens = ansi_tokens(&text);
-        detect_cursor(&text, &tokens, pos)
+    fn ansi_detect_cursor(sql: &str) -> Cursor<'static> {
+        let (text, pos) = get_caret_cursor(sql);
+        let text_static: &'static str = Box::leak(text.to_string().into_boxed_str());
+        let tokens = ansi_tokens(text_static);
+        detect_cursor(text_static, &tokens, pos)
     }
 }

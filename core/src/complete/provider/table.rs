@@ -23,7 +23,7 @@ pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
     // Add all CTEs
     for cte in ctx.scope.get_cte_names() {
         tables.push(AvailableTable {
-            name: cte,
+            name: cte.to_string(),
             score: 0,
             kind: AvailableTableKind::Cte,
         });
@@ -44,7 +44,7 @@ pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
     // Rank tables already used in the FROM clause lower
     for t in &mut tables {
         if ctx.scope.relations.iter().any(|(_, r)| match &r.kind {
-            RelationKind::Base(path) => path.0.contains(&t.name),
+            RelationKind::Base(path) => path.0.contains(&t.name.as_str()),
             _ => false,
         }) {
             t.score -= 30;

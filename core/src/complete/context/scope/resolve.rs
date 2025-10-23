@@ -1,23 +1,32 @@
 use super::{BoundColumn, Literal, Origin, Qualifier, RelationKind, Scope};
 use crate::schema;
 
-pub trait ScopeResolve {
-    fn resolve_projected_columns<'a>(&self, schema: &'a schema::Cache) -> Vec<ResolvedColumn<'a>>;
-    fn resolve_available_columns<'a>(&self, schema: &'a schema::Cache) -> Vec<ResolvedColumn<'a>>;
-    fn get_cte_names(&self) -> Vec<String>;
+pub trait ScopeResolve<'txt, 'schema> {
+    fn resolve_projected_columns(
+        &self,
+        schema: &'schema schema::Cache,
+    ) -> Vec<ResolvedColumn<'txt, 'schema>>;
+    fn resolve_available_columns(
+        &self,
+        schema: &'schema schema::Cache,
+    ) -> Vec<ResolvedColumn<'txt, 'schema>>;
+    fn get_cte_names(&self) -> Vec<&'txt str>;
 }
 
-impl ScopeResolve for Scope {
-    fn get_cte_names(&self) -> Vec<String> {
+impl<'txt, 'schema> ScopeResolve<'txt, 'schema> for Scope<'txt> {
+    fn get_cte_names(&self) -> Vec<&'txt str> {
         self.relations
             .values()
             .filter_map(|r| match &r.kind {
-                RelationKind::Cte(_) => r.alias.clone(),
+                RelationKind::Cte(_) => r.alias,
                 _ => None,
             })
             .collect::<Vec<_>>()
     }
-    fn resolve_projected_columns<'a>(&self, schema: &'a schema::Cache) -> Vec<ResolvedColumn<'a>> {
+    fn resolve_projected_columns(
+        &self,
+        schema: &'schema schema::Cache,
+    ) -> Vec<ResolvedColumn<'txt, 'schema>> {
         let mut cols = Vec::new();
         for column in &self.projected {
             cols.extend(get_resolved_columns_for_bound_column(self, schema, column));
@@ -25,7 +34,10 @@ impl ScopeResolve for Scope {
         cols
     }
 
-    fn resolve_available_columns<'a>(&self, schema: &'a schema::Cache) -> Vec<ResolvedColumn<'a>> {
+    fn resolve_available_columns(
+        &self,
+        schema: &'schema schema::Cache,
+    ) -> Vec<ResolvedColumn<'txt, 'schema>> {
         let mut cols = Vec::new();
         for relation in self.relations.values() {
             match &relation.kind {
@@ -35,7 +47,7 @@ impl ScopeResolve for Scope {
                         ResolvedColumn {
                             name: x.column_name.clone(),
                             source: ResolvedColumnSource::Schema(x),
-                            source_alias: relation.alias.clone(),
+                            source_alias: relation.alias,
                             qualifier: qualifier.clone(),
                         }
                     }))
@@ -45,7 +57,7 @@ impl ScopeResolve for Scope {
                         .resolve_projected_columns(schema)
                         .into_iter()
                         .map(|mut x| {
-                            x.source_alias = relation.alias.clone();
+                            x.source_alias = relation.alias;
                             x
                         }),
                 ),
@@ -54,7 +66,7 @@ impl ScopeResolve for Scope {
                         .resolve_projected_columns(schema)
                         .into_iter()
                         .map(|mut x| {
-                            x.source_alias = relation.alias.clone();
+                            x.source_alias = relation.alias;
                             x
                         })
                         .collect::<Vec<_>>();
@@ -67,11 +79,11 @@ impl ScopeResolve for Scope {
     }
 }
 
-fn get_resolved_columns_for_bound_column<'a>(
-    scope: &Scope,
-    schema: &'a schema::Cache,
-    column: &BoundColumn,
-) -> Vec<ResolvedColumn<'a>> {
+fn get_resolved_columns_for_bound_column<'txt, 'schema>(
+    scope: &Scope<'txt>,
+    schema: &'schema schema::Cache,
+    column: &BoundColumn<'txt>,
+) -> Vec<ResolvedColumn<'txt, 'schema>> {
     let mut cols = Vec::new();
     match &column.origin {
         Origin::BaseColumn { relation, name } => {
@@ -79,19 +91,19 @@ fn get_resolved_columns_for_bound_column<'a>(
                 match &relation.kind {
                     RelationKind::Base(path) => {
                         let qualifier = Qualifier::from(&path.0);
-                        match find_column_in_schema(schema, &qualifier, Some(&name)) {
+                        match find_column_in_schema(schema, &qualifier, Some(name)) {
                             Some(c) => {
                                 cols.push(ResolvedColumn {
-                                    name: column.name.clone(),
+                                    name: column.name.to_string(),
                                     source: ResolvedColumnSource::Schema(c),
-                                    source_alias: relation.alias.clone(),
+                                    source_alias: relation.alias,
                                     qualifier: qualifier.clone(),
                                 });
                             }
                             None => cols.push(ResolvedColumn {
-                                name: column.name.clone(),
+                                name: column.name.to_string(),
                                 source: ResolvedColumnSource::Unresolved(qualifier.clone()),
-                                source_alias: relation.alias.clone(),
+                                source_alias: relation.alias,
                                 qualifier: qualifier.clone(),
                             }),
                         }
@@ -100,11 +112,11 @@ fn get_resolved_columns_for_bound_column<'a>(
                     RelationKind::Subquery(scope) => {
                         let projected = scope.resolve_projected_columns(schema);
 
-                        let found: Vec<ResolvedColumn<'_>> = projected
+                        let found: Vec<ResolvedColumn<'txt, 'schema>> = projected
                             .into_iter()
                             .filter(|c| c.name == *name)
                             .map(|mut x| {
-                                x.source_alias = relation.alias.clone();
+                                x.source_alias = relation.alias;
                                 x.qualifier = column.qualifier.clone();
                                 x
                             })
@@ -117,12 +129,12 @@ fn get_resolved_columns_for_bound_column<'a>(
         }
         Origin::UnresolvedIdent(path) => {
             let qualifier = column.qualifier.clone();
-            let colum_name = path.0.last();
+            let colum_name = path.0.last().copied();
             let found = find_columns_in_schema(schema, &qualifier, colum_name).collect::<Vec<_>>();
 
             if found.is_empty() {
                 cols.push(ResolvedColumn {
-                    name: column.name.clone(),
+                    name: column.name.to_string(),
                     source: ResolvedColumnSource::Unresolved(qualifier.clone()),
                     source_alias: None,
                     qualifier: qualifier.clone(),
@@ -155,7 +167,7 @@ fn get_resolved_columns_for_bound_column<'a>(
                     RelationKind::Cte(scope) => {
                         let projected = scope.resolve_projected_columns(schema);
                         cols.extend(projected.into_iter().map(|mut x| {
-                            x.source_alias = relation.alias.clone();
+                            x.source_alias = relation.alias;
                             // x.qualifier = Qualifier::default();
                             x
                         }))
@@ -173,7 +185,7 @@ fn get_resolved_columns_for_bound_column<'a>(
                 Literal::Null => schema::DataType::Null,
             };
             cols.push(ResolvedColumn {
-                name: column.name.clone(),
+                name: column.name.to_string(),
                 source: ResolvedColumnSource::Literal { ty },
                 source_alias: None,
                 qualifier: Qualifier::default(),
@@ -186,7 +198,7 @@ fn get_resolved_columns_for_bound_column<'a>(
 fn find_columns_in_schema<'a>(
     schema: &'a schema::Cache,
     path: &Qualifier,
-    name: Option<&String>,
+    name: Option<&str>,
 ) -> impl Iterator<Item = &'a schema::Column> {
     schema
         .get_columns()
@@ -197,7 +209,7 @@ fn find_columns_in_schema<'a>(
 fn find_column_in_schema<'a>(
     schema: &'a schema::Cache,
     path: &Qualifier,
-    name: Option<&String>,
+    name: Option<&str>,
 ) -> Option<&'a schema::Column> {
     schema
         .get_columns()
@@ -205,19 +217,19 @@ fn find_column_in_schema<'a>(
         .find(move |c| matches_path(c, path, name))
 }
 
-fn matches_path(c: &schema::Column, path: &Qualifier, name: Option<&String>) -> bool {
-    if let Some(t) = path.table.as_ref()
-        && c.table_name.as_ref().map_or(true, |c| c != t)
+fn matches_path(c: &schema::Column, path: &Qualifier, name: Option<&str>) -> bool {
+    if let Some(t) = path.table
+        && c.table_name.as_ref().map_or(true, |c| c.as_str() != t)
     {
         return false;
     }
-    if let Some(t) = path.schema.as_ref()
-        && c.schema_name.as_ref().map_or(true, |c| c != t)
+    if let Some(t) = path.schema
+        && c.schema_name.as_ref().map_or(true, |c| c.as_str() != t)
     {
         return false;
     }
     if let Some(n) = name
-        && c.column_name != *n
+        && c.column_name != n
     {
         return false;
     }
@@ -225,40 +237,40 @@ fn matches_path(c: &schema::Column, path: &Qualifier, name: Option<&String>) -> 
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
-pub struct ResolvedColumn<'a> {
+pub struct ResolvedColumn<'txt, 'schema> {
     pub name: String,
-    pub source: ResolvedColumnSource<'a>,
-    pub source_alias: Option<String>,
-    pub qualifier: Qualifier,
+    pub source: ResolvedColumnSource<'txt, 'schema>,
+    pub source_alias: Option<&'txt str>,
+    pub qualifier: Qualifier<'txt>,
 }
 
-impl ResolvedColumn<'_> {
+impl<'txt, 'schema> ResolvedColumn<'txt, 'schema> {
     pub fn matches_source_name(&self, source_name: &String) -> bool {
         self.source_name().map_or(false, |x| x == source_name)
     }
 
-    pub fn source_name(&self) -> Option<&String> {
-        self.source_alias.as_ref().or_else(|| match &self.source {
-            ResolvedColumnSource::Schema(c) => c.table_name.as_ref(),
+    pub fn source_name(&self) -> Option<&str> {
+        self.source_alias.or_else(|| match &self.source {
+            ResolvedColumnSource::Schema(c) => c.table_name.as_ref().map(|s| s.as_str()),
             ResolvedColumnSource::Literal { .. } => None,
-            ResolvedColumnSource::Unresolved(qualifier) => qualifier.table.as_ref(),
+            ResolvedColumnSource::Unresolved(qualifier) => qualifier.table,
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
-pub enum ResolvedColumnSource<'a> {
-    Schema(&'a schema::Column),
+pub enum ResolvedColumnSource<'txt, 'schema> {
+    Schema(&'schema schema::Column),
     Literal { ty: schema::DataType },
-    Unresolved(Qualifier),
+    Unresolved(Qualifier<'txt>),
 }
 
-impl ResolvedColumnSource<'_> {
-    pub fn table_name(&self) -> Option<&String> {
+impl<'txt, 'schema> ResolvedColumnSource<'txt, 'schema> {
+    pub fn table_name(&self) -> Option<&str> {
         match self {
-            ResolvedColumnSource::Schema(c) => c.table_name.as_ref(),
+            ResolvedColumnSource::Schema(c) => c.table_name.as_ref().map(|s| s.as_str()),
             ResolvedColumnSource::Literal { .. } => None,
-            ResolvedColumnSource::Unresolved(qualifier) => qualifier.table.as_ref(),
+            ResolvedColumnSource::Unresolved(qualifier) => qualifier.table,
         }
     }
 }

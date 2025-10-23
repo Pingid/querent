@@ -8,36 +8,47 @@ pub use resolve::*;
 use crate::schema;
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Scope {
+pub struct Scope<'a> {
     /// By alias or relation name -> RelationId (for quick lookup).
-    pub by_name: HashMap<String, RelationId>,
+    pub by_name: HashMap<&'a str, RelationId>,
     /// All bound relations.
-    pub relations: HashMap<RelationId, RelationBinding>,
+    pub relations: HashMap<RelationId, RelationBinding<'a>>,
     /// Output columns of the innermost SELECT list (post-aliasing).
-    pub projected: Vec<BoundColumn>,
+    pub projected: Vec<BoundColumn<'a>>,
     /// Columns referenced in the GROUP BY clause.
-    pub grouped: Vec<BoundColumn>,
+    pub grouped: Vec<BoundColumn<'a>>,
     /// Columns referenced in the ORDER BY clause.
-    pub ordered: Vec<BoundColumn>,
+    pub ordered: Vec<BoundColumn<'a>>,
 }
 
 /// Accessor methods for Scope.
-impl Scope {
+impl Scope<'_> {
     pub fn relation(&self, name: &str) -> Option<RelationId> {
         self.by_name.get(name).copied()
     }
 }
 
 /// Builder methods for Scope.
-impl Scope {
-    pub fn insert_relation(&mut self, kind: RelationKind, alias: Option<String>) -> RelationId {
+impl<'a> Scope<'a> {
+    pub fn insert_relation(
+        &mut self,
+        kind: RelationKind<'a>,
+        alias: Option<&'a str>,
+    ) -> RelationId {
         let id = RelationId(self.relations.len() as u32);
+
+        if let RelationKind::Base(path) = &kind
+            && let Some(name) = path.0.last()
+        {
+            self.by_name.insert(*name, id);
+        }
+
         self.relations.insert(
             id,
             RelationBinding {
                 id,
-                kind: kind.clone(),
-                alias: alias.clone(),
+                kind: kind,
+                alias: alias,
                 columns: Vec::new(),
             },
         );
@@ -46,19 +57,14 @@ impl Scope {
             self.by_name.insert(a, id);
         }
 
-        if let RelationKind::Base(path) = &kind
-            && let Some(name) = path.0.last()
-        {
-            self.by_name.insert(name.clone(), id);
-        }
         id
     }
 
     pub fn insert_column(
         &mut self,
-        name: String,
-        origin: Origin,
-        qualifier: Qualifier,
+        name: &'a str,
+        origin: Origin<'a>,
+        qualifier: Qualifier<'a>,
     ) -> ColumnId {
         let id = ColumnId(self.projected.len() as u32);
         self.projected.push(BoundColumn {
@@ -80,38 +86,38 @@ pub struct ColumnId(u32);
 
 /// One bound relation in scope (FROM item or WITH binding).
 #[derive(Debug, Clone, PartialEq)]
-pub struct RelationBinding {
+pub struct RelationBinding<'a> {
     pub id: RelationId,
-    pub kind: RelationKind,
-    pub alias: Option<String>,
-    pub columns: Vec<BoundColumn>,
+    pub kind: RelationKind<'a>,
+    pub alias: Option<&'a str>,
+    pub columns: Vec<BoundColumn<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum RelationKind {
-    Base(NamePath),       // e.g. schema.table
-    Cte(Box<Scope>),      // CTE with its scope
-    Subquery(Box<Scope>), // keep for lazy expansion or rebuild
+pub enum RelationKind<'a> {
+    Base(NamePath<'a>),       // e.g. schema.table
+    Cte(Box<Scope<'a>>),      // CTE with its scope
+    Subquery(Box<Scope<'a>>), // keep for lazy expansion or rebuild
 }
 
 /// Column visible in a relation binding or projection output.
 #[derive(Debug, Clone, PartialEq)]
-pub struct BoundColumn {
+pub struct BoundColumn<'a> {
     pub id: ColumnId,
-    pub name: String,   // visible name (incl. alias)
-    pub origin: Origin, // lineage
-    pub qualifier: Qualifier,
+    pub name: &'a str,      // visible name (incl. alias)
+    pub origin: Origin<'a>, // lineage
+    pub qualifier: Qualifier<'a>,
 }
 
 /// Where a column ultimately comes from; enables lineage & re-type.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Origin {
-    UnresolvedIdent(NamePath),
+pub enum Origin<'a> {
+    UnresolvedIdent(NamePath<'a>),
     Constant(Literal),
     /// Directly from a base table column.
     BaseColumn {
         relation: RelationId,
-        name: String, // base column name
+        name: &'a str, // base column name
     },
     /// From another bound column (used for SELECT passthrough, CTEs).
     // FromColumn(ColumnId),
@@ -136,33 +142,29 @@ pub enum Literal {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct NamePath(pub Vec<String>);
+pub struct NamePath<'a>(pub Vec<&'a str>);
 
-impl<I, S> From<I> for NamePath
-where
-    I: IntoIterator<Item = S>,
-    S: Into<String>,
-{
-    fn from(iter: I) -> Self {
-        Self(iter.into_iter().map(|s| s.into()).collect())
+impl<'a> From<Vec<&'a str>> for NamePath<'a> {
+    fn from(path: Vec<&'a str>) -> Self {
+        NamePath(path)
     }
 }
 
 /// The qualifier used in the source (e.g., "users" in "users.name")
 #[derive(Debug, Default, Clone, PartialEq, Hash, Eq)]
-pub struct Qualifier {
-    pub schema: Option<String>,
-    pub table: Option<String>,
+pub struct Qualifier<'a> {
+    pub schema: Option<&'a str>,
+    pub table: Option<&'a str>,
 }
 
-impl Qualifier {
+impl Qualifier<'_> {
     pub fn is_empty(&self) -> bool {
         self.schema.is_none() && self.table.is_none()
     }
 }
 
-impl From<Vec<String>> for Qualifier {
-    fn from(qualifier: Vec<String>) -> Self {
+impl<'a> From<Vec<&'a str>> for Qualifier<'a> {
+    fn from(qualifier: Vec<&'a str>) -> Self {
         let mut q = qualifier;
         let table = q.pop();
         let schema = q.pop();
@@ -173,22 +175,22 @@ impl From<Vec<String>> for Qualifier {
     }
 }
 
-impl From<&Vec<String>> for Qualifier {
-    fn from(qualifier: &Vec<String>) -> Self {
-        Qualifier::from(qualifier.clone())
-    }
-}
-
-impl From<&schema::Column> for Qualifier {
-    fn from(col: &schema::Column) -> Self {
+impl<'a> From<&'a schema::Column> for Qualifier<'a> {
+    fn from(col: &'a schema::Column) -> Self {
         Self {
-            schema: col.schema_name.clone(),
-            table: col.table_name.clone(),
+            schema: col.schema_name.as_ref().map(|x| x.as_str()),
+            table: col.table_name.as_ref().map(|x| x.as_str()),
         }
     }
 }
 
-impl ToString for Qualifier {
+impl<'a> From<&Vec<&'a str>> for Qualifier<'a> {
+    fn from(qualifier: &Vec<&'a str>) -> Self {
+        Qualifier::from(qualifier.clone())
+    }
+}
+
+impl ToString for Qualifier<'_> {
     fn to_string(&self) -> String {
         match (self.schema.as_ref(), self.table.as_ref()) {
             (Some(schema), Some(table)) => format!("{}.{}", schema, table),

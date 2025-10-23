@@ -81,6 +81,7 @@ pub struct DialectSpec {
     pub name: &'static str,
     pub keywords: &'static phf::Map<&'static str, Keyword>,
     pub operators: &'static phf::Map<&'static str, Operator>,
+    pub functions: &'static phf::Map<&'static str, DialectFunction>,
     pub style_rules: StyleRules,
     pub follow_rules: &'static [Rules],
 }

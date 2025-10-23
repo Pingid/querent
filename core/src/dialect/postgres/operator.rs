@@ -2,7 +2,7 @@
 
 use crate::lex::{Assoc, Fixity, OpTag, Operator};
 
-pub(crate) static OP_TABLE: phf::Map<&'static str, Operator> = ::phf::Map {
+pub(crate) static OPERATORS: phf::Map<&'static str, Operator> = ::phf::Map {
     key: 16263683158343804936,
     disps: &[
         (0, 0),

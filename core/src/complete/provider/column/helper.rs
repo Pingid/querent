@@ -3,29 +3,29 @@ use crate::complete::context::{Qualifier, ResolvedColumn, ResolvedColumnSource, 
 use crate::schema;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct AvailableColumn {
+pub struct AvailableColumn<'txt, 'schema> {
     name: String,
     score: i8,
-    source_alias: Option<String>,
-    qualifier: Qualifier,
-    source: AvailableColumnSource,
+    source_alias: Option<&'txt str>,
+    qualifier: Qualifier<'txt>,
+    source: AvailableColumnSource<'schema>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum AvailableColumnSource {
-    Schema(schema::Column),
+pub enum AvailableColumnSource<'schema> {
+    Schema(&'schema schema::Column),
     Unresolved { ty: Option<schema::DataType> },
 }
 
-impl From<ResolvedColumn<'_>> for AvailableColumn {
-    fn from(col: ResolvedColumn<'_>) -> Self {
+impl<'txt, 'schema> From<ResolvedColumn<'txt, 'schema>> for AvailableColumn<'txt, 'schema> {
+    fn from(col: ResolvedColumn<'txt, 'schema>) -> Self {
         match col.source {
             ResolvedColumnSource::Schema(c) => Self {
                 name: col.name,
                 score: 0,
                 source_alias: col.source_alias,
                 qualifier: col.qualifier,
-                source: AvailableColumnSource::Schema(c.clone()),
+                source: AvailableColumnSource::Schema(c),
             },
             ResolvedColumnSource::Literal { ty } => Self {
                 name: col.name,
@@ -47,19 +47,19 @@ impl From<ResolvedColumn<'_>> for AvailableColumn {
     }
 }
 
-impl From<schema::Column> for AvailableColumn {
-    fn from(col: schema::Column) -> Self {
+impl<'txt, 'schema> From<&'schema schema::Column> for AvailableColumn<'txt, 'schema> {
+    fn from(col: &'schema schema::Column) -> Self {
         Self {
             score: 0,
             name: col.column_name.clone(),
             source_alias: None,
             qualifier: Qualifier::default(),
-            source: AvailableColumnSource::Schema(col.clone()),
+            source: AvailableColumnSource::Schema(col),
         }
     }
 }
 
-impl AvailableColumn {
+impl<'txt, 'schema> AvailableColumn<'txt, 'schema> {
     pub fn name(&self) -> &String {
         &self.name
     }
@@ -72,39 +72,32 @@ impl AvailableColumn {
         self.score += by;
     }
 
-    pub fn schema_name(&self) -> Option<&String> {
-        self.qualifier.schema.as_ref()
+    pub fn schema_name(&self) -> Option<&'txt str> {
+        self.qualifier.schema
     }
 
     /// Alias or else qualifier or else schema table name
     pub fn source_name(&self) -> Option<String> {
         self.source_alias
-            .as_ref()
-            .map(|x| x.clone())
-            .or_else(|| self.qualifier.table.as_ref().map(|x| x.clone()))
+            .map(|x| x.to_string())
+            .or_else(|| self.qualifier.table.map(|x| x.to_string()))
             .or_else(|| match &self.source {
-                AvailableColumnSource::Schema(c) => c.table_name.as_ref().map(|x| x.clone()),
+                AvailableColumnSource::Schema(c) => c.table_name.clone(),
                 AvailableColumnSource::Unresolved { .. } => None,
             })
     }
 
-    /// Check if the column source name matches the other column source name
-    pub fn same_source(&self, other: &ResolvedColumn<'_>) -> bool {
-        self.source_name()
-            .map_or(false, |x| other.matches_source_name(&x))
-    }
-
     /// Check if the column qualifier matches the other qualifier
-    pub fn matches_qualifier(&self, qualifier: &Option<Vec<String>>) -> bool {
+    pub fn matches_qualifier(&self, qualifier: &Option<Vec<&'txt str>>) -> bool {
         let Some(qualifier) = qualifier else {
             return true;
         };
         match qualifier.len() {
             0 => true,
-            1 => Some(&qualifier[0]) == self.source_name().as_ref(),
+            1 => Some(qualifier[0].to_string()) == self.source_name(),
             _ => {
-                Some(&qualifier[0]) == self.source_name().as_ref()
-                    && Some(&qualifier[1]) == self.schema_name()
+                Some(qualifier[0].to_string()) == self.source_name()
+                    && Some(qualifier[1]) == self.schema_name()
             }
         }
     }
@@ -113,7 +106,7 @@ impl AvailableColumn {
     pub fn detail(&self) -> String {
         match &self.source {
             AvailableColumnSource::Schema(c) => {
-                detail(&Qualifier::from(c), &c.column_name, &Some(c.data_type))
+                detail(&Qualifier::from(*c), &c.column_name, &Some(c.data_type))
             }
             AvailableColumnSource::Unresolved { ty } => detail(&self.qualifier, &self.name, &ty),
         }
@@ -133,7 +126,7 @@ fn detail(qualifier: &Qualifier, name: &str, ty: &Option<schema::DataType>) -> S
     }
 }
 
-pub fn get_scope_available_columns(ctx: &Context<'_>) -> Vec<AvailableColumn> {
+pub fn get_scope_available_columns<'txt>(ctx: &Context<'txt>) -> Vec<AvailableColumn<'txt, 'txt>> {
     let mut cols = Vec::new();
 
     // Find all exposed columns from CTE's, FROM tables/subqueries, etc.
@@ -142,7 +135,7 @@ pub fn get_scope_available_columns(ctx: &Context<'_>) -> Vec<AvailableColumn> {
     // If no columns are available, add all columns from the schema.
     if available.is_empty() {
         for col in ctx.schema.get_columns().iter() {
-            cols.push(AvailableColumn::from(col.clone()));
+            cols.push(AvailableColumn::from(col));
         }
     }
 

@@ -7,7 +7,7 @@ mod keyword;
 use keyword::KEYWORDS;
 
 mod operator;
-use operator::OP_TABLE;
+use operator::OPERATORS;
 
 mod queries;
 pub use queries::*;
@@ -27,7 +27,8 @@ impl Default for Postgres {
 pub static SPEC: DialectSpec = DialectSpec {
     name: "postgres",
     keywords: &KEYWORDS,
-    operators: &OP_TABLE,
+    operators: &OPERATORS,
+    functions: &ansi::FUNCTIONS,
     style_rules: StyleRules {
         keywords_case_insensitive: true,
         word_ops_case_insensitive: true,

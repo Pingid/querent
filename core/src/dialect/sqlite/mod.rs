@@ -1,5 +1,5 @@
 use crate::{
-    dialect::{CaseFold, CommentStyle, DialectSpec, StyleRules, ansi::RULES},
+    dialect::{CaseFold, CommentStyle, DialectSpec, StyleRules, ansi},
     lex::QuoteStyle,
 };
 
@@ -7,7 +7,7 @@ mod keyword;
 use keyword::KEYWORDS;
 
 mod operator;
-use operator::OP_TABLE;
+use operator::OPERATORS;
 
 mod queries;
 pub use queries::*;
@@ -16,7 +16,8 @@ pub use queries::*;
 pub static SPEC: DialectSpec = DialectSpec {
     name: "sqlite",
     keywords: &KEYWORDS,
-    operators: &OP_TABLE,
+    operators: &OPERATORS,
+    functions: &ansi::FUNCTIONS,
     style_rules: StyleRules {
         keywords_case_insensitive: true,
         word_ops_case_insensitive: true,
@@ -25,5 +26,5 @@ pub static SPEC: DialectSpec = DialectSpec {
         comments: &[CommentStyle::DoubleDash, CommentStyle::SlashStar],
         quotes: &[QuoteStyle::Double],
     },
-    follow_rules: &[RULES],
+    follow_rules: &[ansi::RULES],
 };

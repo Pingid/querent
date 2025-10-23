@@ -49,7 +49,7 @@ pub fn detect_clause_kind<'txt>(tokens: &[Token<'txt>], position: usize) -> Clau
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::{ansi_tokens, with_caret_cursor};
+    use crate::test_util::{ansi_tokens, get_caret_cursor};
 
     use super::*;
 
@@ -95,7 +95,7 @@ mod tests {
     }
 
     fn ansi_detect_clause_kind(sql: &str) -> ClauseKind {
-        let (text, pos) = with_caret_cursor(sql);
+        let (text, pos) = get_caret_cursor(sql);
         let tokens = ansi_tokens(&text);
         detect_clause_kind(&tokens, pos)
     }

@@ -7,7 +7,7 @@ use crate::{
     schema,
 };
 
-pub fn with_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {
+pub fn get_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {
     let pos = sql_with_caret.find('^');
     if let Some(pos) = pos {
         let (before, after_with_caret) = sql_with_caret.split_at(pos);
@@ -16,6 +16,13 @@ pub fn with_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {
     } else {
         (Cow::Borrowed(sql_with_caret), sql_with_caret.len())
     }
+}
+
+// This is a workaround to create 'static lifetimes for testing
+// In reality, we leak memory here but it's fine for tests
+pub fn get_leaky_static_caret_cursor(sql_with_caret: &str) -> (&'static str, usize) {
+    let (text, pos) = get_caret_cursor(sql_with_caret);
+    (Box::leak(text.to_string().into_boxed_str()), pos)
 }
 
 pub fn ansi_tokens<'a>(sql: &'a str) -> Vec<Token<'a>> {
@@ -84,7 +91,7 @@ impl CompletionTest {
         self,
         complete: impl Fn(&Context<'_>, &mut CompletionBuilder),
     ) -> CompletionTestResult {
-        let (input, cursor) = with_caret_cursor(&self.input);
+        let (input, cursor) = get_caret_cursor(&self.input);
         let spec = self.spec.as_ref();
         let ctx = match spec {
             Some(spec) => Context::build(spec, &self.schema, &input, cursor),

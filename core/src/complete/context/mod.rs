@@ -21,8 +21,8 @@ pub struct Context<'a> {
     pub tokens: Vec<Token<'a>>,
     pub schema: &'a schema::Cache,
     pub spec: &'a DialectSpec,
-    pub cursor: Cursor,
-    pub scope: Scope,
+    pub cursor: Cursor<'a>,
+    pub scope: Scope<'a>,
     pub clause: ClauseKind,
 }
 
