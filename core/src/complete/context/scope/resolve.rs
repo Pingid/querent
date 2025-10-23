@@ -234,20 +234,15 @@ pub struct ResolvedColumn<'a> {
 
 impl ResolvedColumn<'_> {
     pub fn matches_source_name(&self, source_name: &String) -> bool {
-        if self
-            .source_alias
-            .as_ref()
-            .map_or(false, |x| x == source_name)
-        {
-            return true;
-        }
-        match &self.source {
-            ResolvedColumnSource::Schema(c) => c.table_name.as_ref() == Some(source_name),
-            ResolvedColumnSource::Literal { .. } => false,
-            ResolvedColumnSource::Unresolved(qualifier) => {
-                qualifier.table.as_ref() == Some(source_name)
-            }
-        }
+        self.source_name().map_or(false, |x| x == source_name)
+    }
+
+    pub fn source_name(&self) -> Option<&String> {
+        self.source_alias.as_ref().or_else(|| match &self.source {
+            ResolvedColumnSource::Schema(c) => c.table_name.as_ref(),
+            ResolvedColumnSource::Literal { .. } => None,
+            ResolvedColumnSource::Unresolved(qualifier) => qualifier.table.as_ref(),
+        })
     }
 }
 

@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::HashSet};
 use strsim::jaro_winkler;
 
 use super::{CompletionKind, CompletionWithScore};
@@ -34,8 +34,12 @@ impl<S: Comparator> DefaultRanker<S> {
 impl<S: Comparator> Ranker for DefaultRanker<S> {
     fn rank(&self, needle: &str, mut items: Vec<CompletionWithScore>) -> Vec<CompletionWithScore> {
         let needle = needle.to_string();
+
         items.sort_by(|a, b| self.comparator.compare(a, b, &needle));
-        items.dedup_by(|a, b| a.insert_text == b.insert_text);
+        items.retain({
+            let mut seen = HashSet::new();
+            move |item| seen.insert(item.insert_text.clone())
+        });
         items
     }
 }

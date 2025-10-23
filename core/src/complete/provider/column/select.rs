@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::complete::provider::column::helper::get_qualified_name;
 use crate::lex::{Keyword, TokenKind};
 
@@ -15,12 +17,21 @@ pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
 
     let projected = ctx.scope.resolve_projected_columns(ctx.schema);
 
+    // Count the number of projected columns for each source name
+    let mut source_counts = HashMap::new();
+    for col in projected.iter() {
+        if let Some(source_name) = col.source_name() {
+            *source_counts.entry(source_name).or_insert(0i8) += 1;
+        }
+    }
+
     // Update scores for columns based on projected columns.
     cols.iter_mut().for_each(|col| {
-        // If the column table matches a projected column table increase score
-        if projected.iter().any(|p| col.same_source(p)) {
-            col.update_score(20);
+        // If the column source name has more than one projected column, decrease score
+        if let Some(count) = source_counts.get(&col.source_name().unwrap_or_default()) {
+            col.update_score(10 * count);
         }
+
         // If the column name matches a projected column name decrease score
         if projected.iter().any(|p| p.name == *col.name()) {
             col.update_score(-1);
