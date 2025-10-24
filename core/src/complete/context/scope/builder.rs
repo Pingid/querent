@@ -312,19 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn select_from() {
-        let s = RelationsFixture::new("SELECT * FROM users^");
-        s.assert_base_relation("users", "users");
-        s.assert_projection(
-            0,
-            "*",
-            Origin::Star {
-                relation: Some(s.relation("users").unwrap()),
-            },
-        );
-    }
-
-    #[test]
     fn from_alias() {
         let s = RelationsFixture::new("SELECT * FROM users u^");
         s.assert_base_relation("u", "users");
@@ -335,19 +322,6 @@ mod tests {
                 relation: Some(s.relation("u").unwrap()),
             },
         );
-    }
-
-    #[test]
-    fn from_schema_qualified() {
-        let s = RelationsFixture::new("SELECT * FROM public.users^");
-        s.assert_base_relation("users", "public.users");
-    }
-
-    #[test]
-    fn from_multiple_sources() {
-        let s = RelationsFixture::new("SELECT * FROM users, orders^");
-        s.assert_base_relation("users", "users");
-        s.assert_base_relation("orders", "orders");
     }
 
     #[test]

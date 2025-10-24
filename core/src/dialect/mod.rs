@@ -1,7 +1,4 @@
-use std::collections::HashSet;
-
-use crate::lex::Cond;
-use crate::lex::Dir;
+use crate::dialect::rule::Next;
 use crate::lex::Keyword;
 use crate::lex::Operator;
 use crate::lex::QuoteStyle;
@@ -11,6 +8,7 @@ use crate::schema::FunctionType;
 
 pub mod ansi;
 pub mod postgres;
+pub mod rule;
 pub mod sqlite;
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -86,7 +84,7 @@ pub struct DialectSpec {
     pub operators: &'static phf::Map<&'static str, Operator>,
     pub functions: &'static phf::Map<&'static str, SpecFunction>,
     pub style_rules: StyleRules,
-    pub follow_rules: &'static [KeywordRules],
+    pub follow_rules: &'static [rule::Rules],
 }
 
 impl DialectSpec {
@@ -135,8 +133,9 @@ impl DialectSpec {
         }
     }
 
-    pub fn resolve_follow_rules(&self, tokens: &[TokenKind]) -> impl Iterator<Item = Vec<Keyword>> {
-        KeywordRules::find_matches(self.follow_rules, tokens)
+    pub fn resolve_follow_rules(&self, tokens: &[TokenKind]) -> impl Iterator<Item = Next> {
+        tracing::debug!("{:#?}", tokens);
+        rule::find_matches(self.follow_rules, tokens)
     }
 }
 
@@ -177,38 +176,4 @@ pub struct SpecFunction {
     pub function_type: FunctionType,
     pub return_type: DataType,
     pub description: &'static str,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct KeywordRules(pub &'static [KeywordRule]);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct KeywordRule(pub Cond, pub &'static [Next]);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Next {
-    Kw(Keyword),
-    KwSeq(&'static [Keyword]),
-}
-
-impl KeywordRules {
-    pub fn find_matches<'a>(
-        rules: &'a [KeywordRules], tokens: &'a [TokenKind],
-    ) -> impl Iterator<Item = Vec<Keyword>> + 'a {
-        let t = match tokens.last() {
-            Some(TokenKind::Eof) => &tokens[..tokens.len().saturating_sub(1)],
-            _ => tokens,
-        };
-        let mut seen: HashSet<Next> = HashSet::new();
-        rules
-            .iter()
-            .flat_map(|r| r.0)
-            .filter(move |r| r.0.matches(t, Dir::Bwd))
-            .flat_map(|r| r.1.iter().copied())
-            .filter(move |then| seen.insert(*then))
-            .map(|then| match then {
-                Next::Kw(kw) => vec![kw],
-                Next::KwSeq(kws) => kws.to_vec(),
-            })
-    }
 }

@@ -258,236 +258,226 @@ mod tests {
         assert_eq!(None, Cond::End.match_from(&t, Dir::Bwd, 1));
     }
 
-    //     #[test]
-    //     fn test_if_kw() {
-    //         let tokens = vec![
-    //             TokenKind::Keyword(Keyword::Select),
-    //             TokenKind::Keyword(Keyword::From),
-    //         ];
+    #[test]
+    fn test_if_kw() {
+        let t = vec![
+            TokenKind::Keyword(Keyword::Select),
+            TokenKind::Keyword(Keyword::From),
+        ];
 
-    //         // Match - Forward
-    //         let (matched, offset) =
-    // Cond::Kw(Keyword::Select).match_from(&tokens, Dir::Fwd, 0);
-    // assert!(matched);         assert_eq!(offset, 1);
+        // Match - Forward
+        assert_eq!(
+            Some(1),
+            Cond::Kw(Keyword::Select).match_from(&t, Dir::Fwd, 0)
+        );
 
-    //         // No match - Forward
-    //         let (matched, offset) =
-    // Cond::Kw(Keyword::Where).match_from(&tokens, Dir::Fwd, 0);
-    // assert!(!matched);         assert_eq!(offset, 0);
+        // No match - Forward
+        assert_eq!(None, Cond::Kw(Keyword::Where).match_from(&t, Dir::Fwd, 0));
 
-    //         // Match - Backward
-    //         let (matched, offset) =
-    // Cond::Kw(Keyword::From).match_from(&tokens, Dir::Bwd, 2);
-    // assert!(matched);         assert_eq!(offset, 1);
+        // Match - Backward
+        assert_eq!(Some(1), Cond::Kw(Keyword::From).match_from(&t, Dir::Bwd, 2));
 
-    //         // No match - Backward
-    //         let (matched, offset) =
-    // Cond::Kw(Keyword::Select).match_from(&tokens, Dir::Bwd, 2);
-    // assert!(!matched);         assert_eq!(offset, 2);
-    //     }
+        // No match - Backward
+        assert_eq!(None, Cond::Kw(Keyword::Select).match_from(&t, Dir::Bwd, 2));
+    }
 
-    //     #[test]
-    //     fn test_if_op() {
-    //         use crate::lex::Assoc;
-    //         use crate::lex::Fixity;
+    #[test]
+    fn test_if_op() {
+        use crate::lex::Assoc;
+        use crate::lex::Fixity;
 
-    //         let tokens = vec![
-    //             TokenKind::Operator(Operator {
-    //                 precedence: 10,
-    //                 assoc: Assoc::Left,
-    //                 semantic_tag: OpTag::Add,
-    //                 fixity: Fixity::Infix,
-    //             }),
-    //             TokenKind::Operator(Operator {
-    //                 precedence: 5,
-    //                 assoc: Assoc::Left,
-    //                 semantic_tag: OpTag::Eq,
-    //                 fixity: Fixity::Infix,
-    //             }),
-    //         ];
+        let t = vec![
+            TokenKind::Operator(Operator {
+                precedence: 10,
+                assoc: Assoc::Left,
+                semantic_tag: OpTag::Add,
+                fixity: Fixity::Infix,
+            }),
+            TokenKind::Operator(Operator {
+                precedence: 5,
+                assoc: Assoc::Left,
+                semantic_tag: OpTag::Eq,
+                fixity: Fixity::Infix,
+            }),
+        ];
 
-    //         // Match - Forward
-    //         let (matched, offset) = Cond::Op(OpTag::Add).match_from(&tokens,
-    // Dir::Fwd, 0);         assert!(matched);
-    //         assert_eq!(offset, 1);
+        // Match - Forward
+        assert_eq!(Some(1), Cond::Op(OpTag::Add).match_from(&t, Dir::Fwd, 0));
 
-    //         // No match - Forward
-    //         let (matched, offset) = Cond::Op(OpTag::Eq).match_from(&tokens,
-    // Dir::Fwd, 0);         assert!(!matched);
-    //         assert_eq!(offset, 0);
+        // No match - Forward
+        assert_eq!(None, Cond::Op(OpTag::Eq).match_from(&t, Dir::Fwd, 0));
 
-    //         // Match - Backward
-    //         let (matched, offset) = Cond::Op(OpTag::Eq).match_from(&tokens,
-    // Dir::Bwd, 2);         assert!(matched);
-    //         assert_eq!(offset, 1);
-    //     }
+        // Match - Backward
+        assert_eq!(Some(1), Cond::Op(OpTag::Eq).match_from(&t, Dir::Bwd, 2));
+    }
 
-    //     #[test]
-    //     fn test_if_kind() {
-    //         let tokens = vec![TokenKind::Identifier, TokenKind::Number,
-    // TokenKind::Str];
+    #[test]
+    fn test_if_kind() {
+        let t = vec![TokenKind::Identifier, TokenKind::Number, TokenKind::Str];
 
-    //         // Match - Forward
-    //         let (matched, offset) =
-    // Cond::Kind(TokenKind::Identifier).match_from(&tokens, Dir::Fwd, 0);
-    //         assert!(matched);
-    //         assert_eq!(offset, 1);
+        // Match - Forward
+        assert_eq!(
+            Some(1),
+            Cond::Kind(TokenKind::Identifier).match_from(&t, Dir::Fwd, 0)
+        );
 
-    //         // No match - Forward
-    //         let (matched, offset) =
-    // Cond::Kind(TokenKind::Number).match_from(&tokens, Dir::Fwd, 0);
-    //         assert!(!matched);
-    //         assert_eq!(offset, 0);
+        // No match - Forward
+        assert_eq!(
+            None,
+            Cond::Kind(TokenKind::Number).match_from(&t, Dir::Fwd, 0)
+        );
 
-    //         // Match - Backward
-    //         let (matched, offset) =
-    // Cond::Kind(TokenKind::Str).match_from(&tokens, Dir::Bwd, 3);
-    // assert! (matched);         assert_eq!(offset, 2);
-    //     }
+        // Match - Backward
+        assert_eq!(
+            Some(2),
+            Cond::Kind(TokenKind::Str).match_from(&t, Dir::Bwd, 3)
+        );
+    }
 
-    //     #[test]
-    //     fn test_if_any() {
-    //         let tokens = vec![TokenKind::Keyword(Keyword::Select),
+    // #[test]
+    // fn test_if_any() {
+    //     let tokens = vec![TokenKind::Keyword(Keyword::Select),
     // TokenKind::Identifier];
 
-    //         // Match first condition
-    //         let any = Cond::Any(&[Cond::Kw(Keyword::Select),
-    // Cond::Kw(Keyword::From)]);         let (matched, offset) =
-    // any.match_from(&tokens, Dir::Fwd, 0);         assert!(matched);
-    //         assert_eq!(offset, 1);
+    //     // Match first condition
+    //     let any = Cond::Any(&[Cond::Kw(Keyword::Select),
+    // Cond::Kw(Keyword::From)]);     let (matched, offset) =
+    // any.match_from(&tokens, Dir::Fwd, 0);     assert!(matched);
+    //     assert_eq!(offset, 1);
 
-    //         // Match second condition
-    //         let any = Cond::Any(&[Cond::Kw(Keyword::From),
-    // Cond::Kind(TokenKind::Identifier)]);         let (matched, offset) =
-    // any.match_from(&tokens, Dir::Fwd, 1);         assert!(matched);
-    //         assert_eq!(offset, 2);
+    //     // Match second condition
+    //     let any = Cond::Any(&[Cond::Kw(Keyword::From),
+    // Cond::Kind(TokenKind::Identifier)]);     let (matched, offset) =
+    // any.match_from(&tokens, Dir::Fwd, 1);     assert!(matched);
+    //     assert_eq!(offset, 2);
 
-    //         // No match
-    //         let any = Cond::Any(&[Cond::Kw(Keyword::Where),
-    // Cond::Kw(Keyword::From)]);         let (matched, offset) =
-    // any.match_from(&tokens, Dir::Fwd, 0);         assert!(!matched);
-    //         assert_eq!(offset, 0);
+    //     // No match
+    //     let any = Cond::Any(&[Cond::Kw(Keyword::Where),
+    // Cond::Kw(Keyword::From)]);     let (matched, offset) =
+    // any.match_from(&tokens, Dir::Fwd, 0);     assert!(!matched);
+    //     assert_eq!(offset, 0);
 
-    //         // Backward direction
-    //         let any = Cond::Any(&[Cond::Kw(Keyword::Where),
-    // Cond::Kind(TokenKind::Identifier)]);         let (matched, offset) =
-    // any.match_from(&tokens, Dir::Bwd, 2);         assert!(matched);
-    //         assert_eq!(offset, 1);
-    //     }
+    //     // Backward direction
+    //     let any = Cond::Any(&[Cond::Kw(Keyword::Where),
+    // Cond::Kind(TokenKind::Identifier)]);     let (matched, offset) =
+    // any.match_from(&tokens, Dir::Bwd, 2);     assert!(matched);
+    //     assert_eq!(offset, 1);
+    // }
 
-    //     #[test]
-    //     fn test_if_not() {
-    //         let tokens = vec![TokenKind::Keyword(Keyword::Select),
+    // #[test]
+    // fn test_if_not() {
+    //     let tokens = vec![TokenKind::Keyword(Keyword::Select),
     // TokenKind::Identifier];
 
-    //         // Inner matches - negation fails
-    //         let not = Cond::Not(&Cond::Kw(Keyword::Select));
-    //         let (matched, offset) = not.match_from(&tokens, Dir::Fwd, 0);
-    //         assert!(!matched);
-    //         assert_eq!(offset, 0);
+    //     // Inner matches - negation fails
+    //     let not = Cond::Not(&Cond::Kw(Keyword::Select));
+    //     let (matched, offset) = not.match_from(&tokens, Dir::Fwd, 0);
+    //     assert!(!matched);
+    //     assert_eq!(offset, 0);
 
-    //         // Inner doesn't match - negation succeeds
-    //         let not = Cond::Not(&Cond::Kw(Keyword::From));
-    //         let (matched, offset) = not.match_from(&tokens, Dir::Fwd, 0);
-    //         assert!(matched);
-    //         assert_eq!(offset, 1);
+    //     // Inner doesn't match - negation succeeds
+    //     let not = Cond::Not(&Cond::Kw(Keyword::From));
+    //     let (matched, offset) = not.match_from(&tokens, Dir::Fwd, 0);
+    //     assert!(matched);
+    //     assert_eq!(offset, 1);
 
-    //         // Backward direction
-    //         let not = Cond::Not(&Cond::Kw(Keyword::Select));
-    //         let (matched, offset) = not.match_from(&tokens, Dir::Bwd, 2);
-    //         assert!(matched);
-    //         assert_eq!(offset, 1);
-    //     }
+    //     // Backward direction
+    //     let not = Cond::Not(&Cond::Kw(Keyword::Select));
+    //     let (matched, offset) = not.match_from(&tokens, Dir::Bwd, 2);
+    //     assert!(matched);
+    //     assert_eq!(offset, 1);
+    // }
 
-    //     #[test]
-    //     fn test_if_while() {
-    //         let tokens = vec![
-    //             TokenKind::Identifier,
-    //             TokenKind::Identifier,
-    //             TokenKind::Identifier,
-    //             TokenKind::Keyword(Keyword::Select),
-    //         ];
+    // #[test]
+    // fn test_if_while() {
+    //     let tokens = vec![
+    //         TokenKind::Identifier,
+    //         TokenKind::Identifier,
+    //         TokenKind::Identifier,
+    //         TokenKind::Keyword(Keyword::Select),
+    //     ];
 
-    //         // Consume while identifier
-    //         let while_ = Cond::Many(&Cond::Kind(TokenKind::Identifier));
-    //         let (matched, offset) = while_.match_from(&tokens, Dir::Fwd, 0);
-    //         assert!(matched);
-    //         assert_eq!(offset, 3); // Consumed 3 identifiers
+    //     // Consume while identifier
+    //     let while_ = Cond::Many(&Cond::Kind(TokenKind::Identifier));
+    //     let (matched, offset) = while_.match_from(&tokens, Dir::Fwd, 0);
+    //     assert!(matched);
+    //     assert_eq!(offset, 3); // Consumed 3 identifiers
 
-    //         // Consume while from non-matching position
-    //         let (matched, offset) = while_.match_from(&tokens, Dir::Fwd, 3);
-    //         assert!(matched);
-    //         assert_eq!(offset, 3); // No consumption, but still "matches"
+    //     // Consume while from non-matching position
+    //     let (matched, offset) = while_.match_from(&tokens, Dir::Fwd, 3);
+    //     assert!(matched);
+    //     assert_eq!(offset, 3); // No consumption, but still "matches"
 
-    //         let reversed_tokens =
+    //     let reversed_tokens =
     // tokens.iter().rev().copied().collect::<Vec<_>>();
 
-    //         // Backward direction
-    //         let while_ = Cond::Many(&Cond::Kind(TokenKind::Identifier));
-    //         let (matched, offset) = while_.match_from(&reversed_tokens,
-    // Dir::Bwd, 4);         assert!(matched);
-    //         assert_eq!(offset, 1);
-    //     }
+    //     // Backward direction
+    //     let while_ = Cond::Many(&Cond::Kind(TokenKind::Identifier));
+    //     let (matched, offset) = while_.match_from(&reversed_tokens, Dir::Bwd,
+    // 4);     assert!(matched);
+    //     assert_eq!(offset, 1);
+    // }
 
-    //     #[test]
-    //     fn test_if_match() {
-    //         let tokens = vec![
-    //             TokenKind::Keyword(Keyword::Select),
-    //             TokenKind::Identifier,
-    //             TokenKind::Keyword(Keyword::From),
-    //         ];
+    // #[test]
+    // fn test_if_match() {
+    //     let tokens = vec![
+    //         TokenKind::Keyword(Keyword::Select),
+    //         TokenKind::Identifier,
+    //         TokenKind::Keyword(Keyword::From),
+    //     ];
 
-    //         // Match sequence - Forward
-    //         let match_ = Cond::Seq(&[Cond::Kw(Keyword::Select),
-    // Cond::Kind(TokenKind::Identifier)]);         let (matched, offset) =
-    // match_.match_from(&tokens, Dir::Fwd, 0);         assert!(matched);
-    //         assert_eq!(offset, 2);
+    //     // Match sequence - Forward
+    //     let match_ = Cond::Seq(&[Cond::Kw(Keyword::Select),
+    // Cond::Kind(TokenKind::Identifier)]);     let (matched, offset) =
+    // match_.match_from(&tokens, Dir::Fwd, 0);     assert!(matched);
+    //     assert_eq!(offset, 2);
 
-    //         // Match fails on second element
-    //         let match_ = Cond::Seq(&[Cond::Kw(Keyword::Select),
-    // Cond::Kw(Keyword::Where)]);         let (matched, offset) =
-    // match_.match_from(&tokens, Dir::Fwd, 0);         assert!(!matched);
-    //         assert_eq!(offset, 1);
+    //     // Match fails on second element
+    //     let match_ = Cond::Seq(&[Cond::Kw(Keyword::Select),
+    // Cond::Kw(Keyword::Where)]);     let (matched, offset) =
+    // match_.match_from(&tokens, Dir::Fwd, 0);     assert!(!matched);
+    //     assert_eq!(offset, 1);
 
-    //         // Match sequence - Backward
-    //         let match_ = Cond::Seq(&[Cond::Kw(Keyword::Select),
-    // Cond::Kind(TokenKind::Identifier)]);         let (matched, offset) =
-    // match_.match_from(&tokens, Dir::Bwd, 2);         assert!(matched);
-    //         assert_eq!(offset, 0); // Note: moves backward through both
-    // tokens     }
+    //     // Match sequence - Backward
+    //     let match_ = Cond::Seq(&[Cond::Kw(Keyword::Select),
+    // Cond::Kind(TokenKind::Identifier)]);     let (matched, offset) =
+    // match_.match_from(&tokens, Dir::Bwd, 2);     assert!(matched);
+    //     assert_eq!(offset, 0); // Note: moves backward through both
+    //     tokens
+    // }
 
-    //     #[test]
-    //     fn test_if_until() {
-    //         let tokens = vec![
-    //             TokenKind::Identifier,
-    //             TokenKind::Identifier,
-    //             TokenKind::Keyword(Keyword::From),
-    //             TokenKind::Identifier,
-    //         ];
+    // #[test]
+    // fn test_if_until() {
+    //     let tokens = vec![
+    //         TokenKind::Identifier,
+    //         TokenKind::Identifier,
+    //         TokenKind::Keyword(Keyword::From),
+    //         TokenKind::Identifier,
+    //     ];
 
-    //         // Until keyword - Forward
-    //         let until = Cond::Until(&Cond::Kw(Keyword::From));
-    //         let (matched, offset) = until.match_from(&tokens, Dir::Fwd, 0);
-    //         assert!(matched);
-    //         assert_eq!(offset, 2); // Stopped at FROM
+    //     // Until keyword - Forward
+    //     let until = Cond::Until(&Cond::Kw(Keyword::From));
+    //     let (matched, offset) = until.match_from(&tokens, Dir::Fwd, 0);
+    //     assert!(matched);
+    //     assert_eq!(offset, 2); // Stopped at FROM
 
-    //         // Until not found - Forward
-    //         let until = Cond::Until(&Cond::Kw(Keyword::Where));
-    //         let (matched, offset) = until.match_from(&tokens, Dir::Fwd, 0);
-    //         assert!(!matched);
-    //         assert_eq!(offset, 4); // Reached end
+    //     // Until not found - Forward
+    //     let until = Cond::Until(&Cond::Kw(Keyword::Where));
+    //     let (matched, offset) = until.match_from(&tokens, Dir::Fwd, 0);
+    //     assert!(!matched);
+    //     assert_eq!(offset, 4); // Reached end
 
-    //         let tokens = vec![
-    //             TokenKind::Identifier,
-    //             TokenKind::Keyword(Keyword::From),
-    //             TokenKind::Identifier,
-    //             TokenKind::Identifier,
-    //         ];
+    //     let tokens = vec![
+    //         TokenKind::Identifier,
+    //         TokenKind::Keyword(Keyword::From),
+    //         TokenKind::Identifier,
+    //         TokenKind::Identifier,
+    //     ];
 
-    //         // Until keyword - Backward
-    //         let until = Cond::Until(&Cond::Kw(Keyword::From));
-    //         let (matched, offset) = until.match_from(&tokens, Dir::Bwd, 4);
-    //         assert!(matched);
-    //         assert_eq!(offset, 2); // Found identifier at position 1
-    //     }
+    //     // Until keyword - Backward
+    //     let until = Cond::Until(&Cond::Kw(Keyword::From));
+    //     let (matched, offset) = until.match_from(&tokens, Dir::Bwd, 4);
+    //     assert!(matched);
+    //     assert_eq!(offset, 2); // Found identifier at position 1
+    // }
 }

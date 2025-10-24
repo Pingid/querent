@@ -36,24 +36,7 @@ impl SchemaCacheBuilder {
     pub(crate) fn new() -> Self {
         Self(schema::Cache::default())
     }
-    pub(crate) fn add_table(mut self, schema: &str, name: &str, cols: &[&str]) -> Self {
-        self.0.add_table(schema::Table {
-            table_name: name.to_string(),
-            schema_name: Some(schema.to_string()),
-            database_name: None,
-            table_type: None,
-        });
-        for c in cols {
-            self.0.add_column(schema::Column {
-                column_name: c.to_string(),
-                table_name: Some(name.to_string()),
-                schema_name: Some(schema.to_string()),
-                data_type: schema::DataType::Text,
-                is_nullable: None,
-            });
-        }
-        self
-    }
+
     pub(crate) fn add_function(
         mut self, schema: &str, name: &str, function_type: schema::FunctionType,
         params: &[schema::DataType], return_type: schema::DataType,

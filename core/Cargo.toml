@@ -7,6 +7,7 @@ edition = "2024"
 phf = { version = "0.13", features = ["macros"] }
 ropey = "1.6.1"
 strsim = "0.11.1"
+pat = { path = "../pat" }
 
 # Feature dependencies
 ts-rs = { version = "11", optional = true }

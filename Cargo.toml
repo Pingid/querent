@@ -2,7 +2,7 @@
 members = [
     "core",
     "lsp",
-    "lsp-wasm",
+    "lsp-wasm", "pat",
     # "lsp-catalog",
     # "lsp-engine-tcp",
     # "lsp-server",

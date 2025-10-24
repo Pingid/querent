@@ -45,6 +45,13 @@ impl<'a> From<ResolvedColumn<'a>> for AvailableColumn<'a> {
                 qualifier,
                 source: AvailableColumnSource::Unresolved { ty: None },
             },
+            ResolvedColumnSource::Cte => Self {
+                name: col.name,
+                score: 0,
+                source_alias: col.source_alias,
+                qualifier: col.qualifier,
+                source: AvailableColumnSource::Unresolved { ty: None },
+            },
         }
     }
 }

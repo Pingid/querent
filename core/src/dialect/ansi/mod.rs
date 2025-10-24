@@ -4,17 +4,15 @@ use crate::dialect::DialectSpec;
 use crate::dialect::StyleRules;
 use crate::lex::QuoteStyle;
 
-mod keyword;
-use keyword::KEYWORDS;
-
-mod operator;
-use operator::OPERATORS;
-
 mod functions;
-pub(crate) use functions::FUNCTIONS;
-
+mod keyword;
+mod operator;
 mod rule;
-pub use rule::RULES;
+
+pub(crate) use functions::FUNCTIONS;
+use keyword::KEYWORDS;
+use operator::OPERATORS;
+pub(crate) use rule::RULES;
 
 /// The global ANSI dialect spec — no runtime alloc, no cloning.
 pub static SPEC: DialectSpec = DialectSpec {

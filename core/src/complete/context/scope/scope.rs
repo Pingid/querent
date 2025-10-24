@@ -30,13 +30,14 @@ impl<'a> Scope<'a> {
 
     /// Returns a vector of the names of the CTEs in the scope.
     pub fn ctes(&mut self) -> &Vec<&'a str> {
-        cached(&mut self.cte_names, || get_cte_names(&self.relations))
+        self.cte_names
+            .get_or_insert_with(|| get_cte_names(&self.relations))
     }
 
     /// Returns a vector column declared in the SELECT list.
     pub fn projected(&mut self) -> &Vec<ResolvedColumn<'a>> {
-        cached(&mut self.projected, || {
-            resolve_projected_columns(&self.relations, self.schema)
+        self.projected.get_or_insert_with(|| {
+            resolve_projected_columns(&self.relations, self.schema).collect()
         })
     }
 
@@ -48,17 +49,9 @@ impl<'a> Scope<'a> {
     /// - CTEs (Common Table Expressions) visible at this position
     /// - Subqueries with their projected columns
     pub fn available_columns(&mut self) -> &Vec<ResolvedColumn<'a>> {
-        cached(&mut self.available, || {
-            resolve_available_columns(&self.relations, self.schema)
-        })
+        self.available
+            .get_or_insert_with(|| resolve_available_columns(&self.relations, self.schema))
     }
-}
-
-fn cached<T>(cache: &mut Option<T>, compute: impl Fn() -> T) -> &T {
-    if cache.is_none() {
-        *cache = Some(compute());
-    }
-    &cache.as_ref().unwrap()
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
@@ -79,12 +72,14 @@ impl<'a> ResolvedColumn<'a> {
             ResolvedColumnSource::Schema(c) => c.table_name.as_ref().map(|s| s.as_str()),
             ResolvedColumnSource::Literal { .. } => None,
             ResolvedColumnSource::Unresolved(qualifier) => qualifier.table,
+            ResolvedColumnSource::Cte => None,
         })
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum ResolvedColumnSource<'a> {
+    Cte,
     Schema(&'a schema::Column),
     Literal { ty: schema::DataType },
     Unresolved(Qualifier<'a>),
@@ -96,6 +91,7 @@ impl<'a> ResolvedColumnSource<'a> {
             ResolvedColumnSource::Schema(c) => c.table_name.as_ref().map(|s| s.as_str()),
             ResolvedColumnSource::Literal { .. } => None,
             ResolvedColumnSource::Unresolved(qualifier) => qualifier.table,
+            ResolvedColumnSource::Cte => None,
         }
     }
 }
@@ -113,14 +109,11 @@ fn get_cte_names<'a>(relations: &Relations<'a>) -> Vec<&'a str> {
 
 fn resolve_projected_columns<'a>(
     relations: &Relations<'a>, schema: &'a schema::Cache,
-) -> Vec<ResolvedColumn<'a>> {
-    let mut cols = Vec::new();
-    for column in &relations.projected {
-        cols.extend(get_resolved_columns_for_bound_column(
-            relations, schema, column,
-        ));
-    }
-    cols
+) -> impl Iterator<Item = ResolvedColumn<'a>> {
+    relations
+        .projected
+        .iter()
+        .flat_map(move |p| get_resolved_columns_for_bound_column(relations, schema, p))
 }
 
 fn resolve_available_columns<'a>(
@@ -140,14 +133,12 @@ fn resolve_available_columns<'a>(
                     }
                 }))
             }
-            BindingKind::Cte(scope) => cols.extend(
-                resolve_projected_columns(scope, schema)
-                    .into_iter()
-                    .map(|mut x| {
-                        x.source_alias = relation.alias;
-                        x
-                    }),
-            ),
+            BindingKind::Cte(scope) => {
+                cols.extend(resolve_projected_columns(scope, schema).map(|mut x| {
+                    x.source_alias = relation.alias;
+                    x
+                }))
+            }
             BindingKind::Subquery(scope) => {
                 let projected = resolve_projected_columns(scope, schema)
                     .into_iter()
@@ -191,19 +182,28 @@ fn get_resolved_columns_for_bound_column<'a>(
                             }),
                         }
                     }
-                    BindingKind::Cte(_) => {}
+                    BindingKind::Cte(scope) => {
+                        let matched =
+                            resolve_projected_columns(scope, schema).find(|c| c.name == *name);
+                        if let Some(matched) = matched {
+                            cols.push(ResolvedColumn {
+                                name: matched.name.to_string(),
+                                source: ResolvedColumnSource::Cte,
+                                source_alias: relation.alias,
+                                qualifier: column.qualifier.clone(),
+                            });
+                        }
+                    }
                     BindingKind::Subquery(scope) => {
-                        let projected = resolve_projected_columns(scope, schema);
-
-                        let found: Vec<ResolvedColumn<'a>> = projected
-                            .into_iter()
-                            .filter(|c| c.name == *name)
-                            .map(|mut x| {
-                                x.source_alias = relation.alias;
-                                x.qualifier = column.qualifier.clone();
-                                x
-                            })
-                            .collect::<Vec<_>>();
+                        let found: Vec<ResolvedColumn<'a>> =
+                            resolve_projected_columns(scope, schema)
+                                .filter(|c| c.name == *name)
+                                .map(|mut x| {
+                                    x.source_alias = relation.alias;
+                                    x.qualifier = column.qualifier.clone();
+                                    x
+                                })
+                                .collect::<Vec<_>>();
 
                         cols.extend(found);
                     }
@@ -212,8 +212,8 @@ fn get_resolved_columns_for_bound_column<'a>(
         }
         Origin::UnresolvedIdent(path) => {
             let qualifier = column.qualifier.clone();
-            let colum_name = path.0.last().copied();
-            let found = find_columns_in_schema(schema, &qualifier, colum_name).collect::<Vec<_>>();
+            let column_name = path.0.last().copied();
+            let found = find_columns_in_schema(schema, &qualifier, column_name).collect::<Vec<_>>();
 
             if found.is_empty() {
                 cols.push(ResolvedColumn {
@@ -243,15 +243,14 @@ fn get_resolved_columns_for_bound_column<'a>(
                                 name: c.column_name.clone(),
                                 source: ResolvedColumnSource::Schema(c),
                                 source_alias: None,
-                                qualifier: Qualifier::default(),
+                                qualifier: qualifier.clone(),
                             }
                         }));
                     }
                     BindingKind::Cte(scope) => {
                         let projected = resolve_projected_columns(scope, schema);
-                        cols.extend(projected.into_iter().map(|mut x| {
+                        cols.extend(projected.map(|mut x| {
                             x.source_alias = relation.alias;
-                            // x.qualifier = Qualifier::default();
                             x
                         }))
                     }

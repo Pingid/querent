@@ -28,12 +28,6 @@ impl<'a> Relations<'a> {
     pub fn insert_relation(&mut self, kind: BindingKind<'a>, alias: Option<&'a str>) -> BindingId {
         let id = BindingId(self.bindings.len() as u32);
 
-        if let BindingKind::Base(path) = &kind
-            && let Some(name) = path.0.last()
-        {
-            self.by_name.insert(*name, id);
-        }
-
         self.bindings.insert(
             id,
             RelationBinding {

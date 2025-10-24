@@ -1,44 +1,47 @@
 use crate::complete::completion::Completion;
 use crate::complete::completion::CompletionBuilder;
 use crate::complete::completion::CompletionKind;
+use crate::complete::completion::InsertTextFormat;
 use crate::complete::context::Context;
+use crate::dialect::rule::Next;
 use crate::lex::Keyword;
 use crate::lex::TokenKind;
 
 pub fn complete(ctx: &Context, builder: &mut CompletionBuilder) {
     let follow_tokens = follow_tokens(ctx);
 
-    for keywords in ctx.spec.resolve_follow_rules(&follow_tokens) {
-        let label = format_label(&keywords);
-        let score = keyword_score(&keywords);
-        builder.add(
-            Completion::new(
-                CompletionKind::Keyword,
-                label,
-                ctx.cursor.replace,
-                Some(vec![]),
-                None,
-            ),
-            score,
+    for next in ctx.spec.resolve_follow_rules(&follow_tokens) {
+        let is_snippet = match next {
+            Next::Seq(seq) => seq.iter().any(|next| matches!(next, Next::Query)),
+            _ => false,
+        };
+        let score = next_score(&next);
+        let label = fmt_next(&next, true);
+        let mut completion = Completion::new(
+            CompletionKind::Keyword,
+            label,
+            ctx.cursor.replace,
+            Some(vec![]),
+            None,
         );
+        if is_snippet {
+            completion.insert_text_format = InsertTextFormat::Snippet;
+        }
+        builder.add(completion, score);
     }
 }
 
-fn format_label(label: &[Keyword]) -> String {
-    label
-        .iter()
-        .map(|kw| format!("{:?}", kw))
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_ascii_uppercase()
+fn next_score(next: &Next) -> i8 {
+    match next {
+        Next::Kw(kw) => keyword_score(*kw),
+        Next::KwSeq(kws) => kws.iter().map(|kw| keyword_score(*kw)).max().unwrap_or(0),
+        Next::Seq(seq) => seq.iter().map(|next| next_score(next)).max().unwrap_or(0),
+        Next::Query => 0,
+    }
 }
 
-fn keyword_score(keywords: &[Keyword]) -> i8 {
-    let Some(first) = keywords.first() else {
-        return 0;
-    };
-
-    match first {
+fn keyword_score(keyword: Keyword) -> i8 {
+    match keyword {
         Keyword::Select | Keyword::From => 10,
         Keyword::With | Keyword::Where => 9,
         Keyword::Insert | Keyword::Update | Keyword::Delete | Keyword::Create => 8,
@@ -59,4 +62,29 @@ fn follow_tokens(ctx: &Context) -> Vec<TokenKind> {
         tokens.pop();
     }
     tokens
+}
+
+fn fmt_next(next: &Next, capitilize: bool) -> String {
+    match next {
+        Next::Kw(kw) => fmt_kw(kw, capitilize),
+        Next::KwSeq(kws) => kws
+            .iter()
+            .map(|kw| fmt_kw(kw, capitilize))
+            .collect::<Vec<String>>()
+            .join(" "),
+        Next::Seq(seq) => seq
+            .iter()
+            .map(|next| fmt_next(next, capitilize))
+            .collect::<Vec<String>>()
+            .join(" "),
+        Next::Query => "($1)".to_string(),
+    }
+}
+
+fn fmt_kw(kw: &Keyword, capitilize: bool) -> String {
+    let kw = format!("{:?}", kw);
+    match capitilize {
+        true => kw.to_uppercase(),
+        false => kw,
+    }
 }
