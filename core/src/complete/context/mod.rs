@@ -1,3 +1,23 @@
+//! Context analysis for SQL code completion.
+//!
+//! This module provides the [`Context`] structure, which aggregates all the
+//! information needed to generate accurate completion suggestions at a specific
+//! cursor position in a SQL query.
+//!
+//! ## Overview
+//!
+//! The completion context combines multiple analysis layers:
+//!
+//! - **Lexical context** ([`Cursor`]): Information about the token at the
+//!   cursor position, including its location, preceding tokens, and whether
+//!   it's at the start/end of an identifier
+//!
+//! - **Syntactic context** ([`ClauseKind`]): Which SQL clause the cursor is
+//!   located in (SELECT, FROM, WHERE, JOIN, etc.)
+//!
+//! - **Semantic context** ([`Scope`]): Which tables and columns are visible and
+//!   accessible at the cursor position based on the query structure
+
 use std::ops::Deref;
 
 use crate::ast;
@@ -24,7 +44,7 @@ pub struct Context<'a> {
     pub schema: &'a schema::Cache,
     pub spec: &'a DialectSpec,
     pub cursor: Cursor<'a>,
-    pub scope: ResolvedScope<'a>,
+    pub scope: Scope<'a>,
     pub clause: ClauseKind,
 }
 
@@ -48,46 +68,5 @@ impl<'a> Context<'a> {
             scope,
             clause,
         })
-    }
-
-    pub fn matches(&'a self) -> Match<'a> {
-        Match::new(self)
-    }
-}
-
-pub struct Match<'a>(&'a Context<'a>, bool);
-impl<'a> Deref for Match<'a> {
-    type Target = bool;
-    fn deref(&self) -> &Self::Target {
-        &self.1
-    }
-}
-
-impl<'a> Match<'a> {
-    pub fn new(ctx: &'a Context<'a>) -> Self {
-        Self(ctx, false) // start from false when OR-ing conditions
-    }
-
-    pub fn clause(mut self, k: ClauseKind) -> Self {
-        self.1 |= self.0.clause == k; // compare, not matches!
-        self
-    }
-
-    pub fn loc<F: Fn(&Location) -> bool>(mut self, pred: F) -> Self {
-        self.1 |= pred(&self.0.cursor.location);
-        self
-    }
-
-    pub fn preceding<const N: usize>(mut self, pat: [TokenKind; N]) -> Self {
-        self.1 |= self.0.cursor.preceding_matches(pat);
-        self
-    }
-
-    pub fn preceding_slice(mut self, pat: &[TokenKind]) -> Self {
-        let seq = &self.0.cursor.preceding;
-        let n = pat.len();
-        let ok = n <= seq.len() && &seq[seq.len() - n..] == pat;
-        self.1 |= ok;
-        self
     }
 }

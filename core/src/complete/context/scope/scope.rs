@@ -1,189 +1,316 @@
-use std::collections::HashMap;
-
+use super::relations::*;
 use crate::schema;
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone)]
 pub struct Scope<'a> {
-    /// By alias or relation name -> RelationId (for quick lookup).
-    pub by_name: HashMap<&'a str, RelationId>,
-    /// All bound relations.
-    pub relations: HashMap<RelationId, RelationBinding<'a>>,
-    /// Output columns of the innermost SELECT list (post-aliasing).
-    pub projected: Vec<BoundColumn<'a>>,
-    /// Columns referenced in the GROUP BY clause.
-    pub grouped: Vec<BoundColumn<'a>>,
-    /// Columns referenced in the ORDER BY clause.
-    pub ordered: Vec<BoundColumn<'a>>,
+    schema: &'a schema::Cache,
+    relations: Relations<'a>,
+    projected: Option<Vec<ResolvedColumn<'a>>>,
+    available: Option<Vec<ResolvedColumn<'a>>>,
+    cte_names: Option<Vec<&'a str>>,
 }
 
-/// Accessor methods for Scope.
-impl Scope<'_> {
-    pub fn relation(&self, name: &str) -> Option<RelationId> {
-        self.by_name.get(name).copied()
-    }
-}
-
-/// Builder methods for Scope.
 impl<'a> Scope<'a> {
-    pub fn insert_relation(
-        &mut self, kind: RelationKind<'a>, alias: Option<&'a str>,
-    ) -> RelationId {
-        let id = RelationId(self.relations.len() as u32);
-
-        if let RelationKind::Base(path) = &kind
-            && let Some(name) = path.0.last()
-        {
-            self.by_name.insert(*name, id);
+    pub fn new(scope: Relations<'a>, schema: &'a schema::Cache) -> Self {
+        Self {
+            relations: scope,
+            schema,
+            projected: None,
+            available: None,
+            cte_names: None,
         }
-
-        self.relations.insert(
-            id,
-            RelationBinding {
-                id,
-                kind,
-                alias,
-                columns: Vec::new(),
-            },
-        );
-
-        if let Some(a) = alias {
-            self.by_name.insert(a, id);
-        }
-
-        id
-    }
-
-    pub fn insert_column(
-        &mut self, name: &'a str, origin: Origin<'a>, qualifier: Qualifier<'a>,
-    ) -> ColumnId {
-        let id = ColumnId(self.projected.len() as u32);
-        self.projected.push(BoundColumn {
-            id,
-            name,
-            origin,
-            qualifier,
-        });
-        id
     }
 }
 
-/// Unique handles so aliases & nested scopes are unambiguous.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct RelationId(u32);
+impl<'a> Scope<'a> {
+    /// Returns an iterator over the bindings in the scope.
+    pub fn bindings(&mut self) -> impl Iterator<Item = &RelationBinding<'a>> {
+        self.relations.bindings.values()
+    }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ColumnId(pub u32);
+    /// Returns a vector of the names of the CTEs in the scope.
+    pub fn ctes(&mut self) -> &Vec<&'a str> {
+        cached(&mut self.cte_names, || get_cte_names(&self.relations))
+    }
 
-/// One bound relation in scope (FROM item or WITH binding).
-#[derive(Debug, Clone, PartialEq)]
-pub struct RelationBinding<'a> {
-    pub id: RelationId,
-    pub kind: RelationKind<'a>,
-    pub alias: Option<&'a str>,
-    pub columns: Vec<BoundColumn<'a>>,
+    /// Returns a vector column declared in the SELECT list.
+    pub fn projected(&mut self) -> &Vec<ResolvedColumn<'a>> {
+        cached(&mut self.projected, || {
+            resolve_projected_columns(&self.relations, self.schema)
+        })
+    }
+
+    /// Returns all columns that can be referenced at the current cursor
+    /// position.
+    ///
+    /// This includes columns from:
+    /// - Base tables referenced in FROM/JOIN clauses
+    /// - CTEs (Common Table Expressions) visible at this position
+    /// - Subqueries with their projected columns
+    pub fn available_columns(&mut self) -> &Vec<ResolvedColumn<'a>> {
+        cached(&mut self.available, || {
+            resolve_available_columns(&self.relations, self.schema)
+        })
+    }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum RelationKind<'a> {
-    Base(NamePath<'a>),       // e.g. schema.table
-    Cte(Box<Scope<'a>>),      // CTE with its scope
-    Subquery(Box<Scope<'a>>), // keep for lazy expansion or rebuild
+fn cached<T>(cache: &mut Option<T>, compute: impl Fn() -> T) -> &T {
+    if cache.is_none() {
+        *cache = Some(compute());
+    }
+    &cache.as_ref().unwrap()
 }
 
-/// Column visible in a relation binding or projection output.
-#[derive(Debug, Clone, PartialEq)]
-pub struct BoundColumn<'a> {
-    pub id: ColumnId,
-    pub name: &'a str,      // visible name (incl. alias)
-    pub origin: Origin<'a>, // lineage
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub struct ResolvedColumn<'a> {
+    pub name: String,
+    pub source: ResolvedColumnSource<'a>,
+    pub source_alias: Option<&'a str>,
     pub qualifier: Qualifier<'a>,
 }
 
-/// Where a column ultimately comes from; enables lineage & re-type.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Origin<'a> {
-    UnresolvedIdent(NamePath<'a>),
-    Constant(Literal),
-    /// Directly from a base table column.
-    BaseColumn {
-        relation: RelationId,
-        name: &'a str, // base column name
-    },
-    /// From another bound column (used for SELECT passthrough, CTEs).
-    // FromColumn(ColumnId),
-    // /// Computed expression. Keep input lineage for “deep” tracking.
-    // DerivedExpr {
-    //     expr: Loc<ast::Expr>,
-    //     inputs: Vec<Origin>,
-    // },
-    /// Wildcard expansion marker (resolved to concrete columns upstream).
-    Star {
-        relation: Option<RelationId>, // None => unqualified *
-    },
-}
+impl<'a> ResolvedColumn<'a> {
+    pub fn matches_source_name(&self, source_name: &String) -> bool {
+        self.source_name().map_or(false, |x| x == source_name)
+    }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
-    Number,
-    Float,
-    String,
-    Boolean,
-    Null,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct NamePath<'a>(pub Vec<&'a str>);
-
-impl<'a> From<Vec<&'a str>> for NamePath<'a> {
-    fn from(path: Vec<&'a str>) -> Self {
-        NamePath(path)
+    pub fn source_name(&self) -> Option<&str> {
+        self.source_alias.or_else(|| match &self.source {
+            ResolvedColumnSource::Schema(c) => c.table_name.as_ref().map(|s| s.as_str()),
+            ResolvedColumnSource::Literal { .. } => None,
+            ResolvedColumnSource::Unresolved(qualifier) => qualifier.table,
+        })
     }
 }
 
-/// The qualifier used in the source (e.g., "users" in "users.name")
-#[derive(Debug, Default, Clone, PartialEq, Hash, Eq)]
-pub struct Qualifier<'a> {
-    pub schema: Option<&'a str>,
-    pub table: Option<&'a str>,
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub enum ResolvedColumnSource<'a> {
+    Schema(&'a schema::Column),
+    Literal { ty: schema::DataType },
+    Unresolved(Qualifier<'a>),
 }
 
-impl Qualifier<'_> {
-    pub fn is_empty(&self) -> bool {
-        self.schema.is_none() && self.table.is_none()
-    }
-}
-
-impl<'a> From<Vec<&'a str>> for Qualifier<'a> {
-    fn from(qualifier: Vec<&'a str>) -> Self {
-        let mut q = qualifier;
-        let table = q.pop();
-        let schema = q.pop();
-        Self { schema, table }
-    }
-}
-
-impl<'a> From<&'a schema::Column> for Qualifier<'a> {
-    fn from(col: &'a schema::Column) -> Self {
-        Self {
-            schema: col.schema_name.as_ref().map(|x| x.as_str()),
-            table: col.table_name.as_ref().map(|x| x.as_str()),
+impl<'a> ResolvedColumnSource<'a> {
+    pub fn table_name(&self) -> Option<&str> {
+        match self {
+            ResolvedColumnSource::Schema(c) => c.table_name.as_ref().map(|s| s.as_str()),
+            ResolvedColumnSource::Literal { .. } => None,
+            ResolvedColumnSource::Unresolved(qualifier) => qualifier.table,
         }
     }
 }
 
-impl<'a> From<&Vec<&'a str>> for Qualifier<'a> {
-    fn from(qualifier: &Vec<&'a str>) -> Self {
-        Qualifier::from(qualifier.clone())
-    }
+fn get_cte_names<'a>(relations: &Relations<'a>) -> Vec<&'a str> {
+    relations
+        .bindings
+        .values()
+        .filter_map(|r| match &r.kind {
+            BindingKind::Cte(_) => r.alias,
+            _ => None,
+        })
+        .collect::<Vec<_>>()
 }
 
-impl ToString for Qualifier<'_> {
-    fn to_string(&self) -> String {
-        match (self.schema.as_ref(), self.table.as_ref()) {
-            (Some(schema), Some(table)) => format!("{}.{}", schema, table),
-            (Some(schema), None) => schema.to_string(),
-            (None, Some(table)) => table.to_string(),
-            (None, None) => String::new(),
+fn resolve_projected_columns<'a>(
+    relations: &Relations<'a>, schema: &'a schema::Cache,
+) -> Vec<ResolvedColumn<'a>> {
+    let mut cols = Vec::new();
+    for column in &relations.projected {
+        cols.extend(get_resolved_columns_for_bound_column(
+            relations, schema, column,
+        ));
+    }
+    cols
+}
+
+fn resolve_available_columns<'a>(
+    relations: &Relations<'a>, schema: &'a schema::Cache,
+) -> Vec<ResolvedColumn<'a>> {
+    let mut cols = Vec::new();
+    for relation in relations.bindings.values() {
+        match &relation.kind {
+            BindingKind::Base(path) => {
+                let qualifier = Qualifier::from(&path.0);
+                cols.extend(find_columns_in_schema(schema, &qualifier, None).map(|x| {
+                    ResolvedColumn {
+                        name: x.column_name.clone(),
+                        source: ResolvedColumnSource::Schema(x),
+                        source_alias: relation.alias,
+                        qualifier: qualifier.clone(),
+                    }
+                }))
+            }
+            BindingKind::Cte(scope) => cols.extend(
+                resolve_projected_columns(scope, schema)
+                    .into_iter()
+                    .map(|mut x| {
+                        x.source_alias = relation.alias;
+                        x
+                    }),
+            ),
+            BindingKind::Subquery(scope) => {
+                let projected = resolve_projected_columns(scope, schema)
+                    .into_iter()
+                    .map(|mut x| {
+                        x.source_alias = relation.alias;
+                        x
+                    })
+                    .collect::<Vec<_>>();
+
+                cols.extend(projected);
+            }
         }
     }
+    cols
+}
+
+fn get_resolved_columns_for_bound_column<'a>(
+    relations: &Relations<'a>, schema: &'a schema::Cache, column: &BoundColumn<'a>,
+) -> Vec<ResolvedColumn<'a>> {
+    let mut cols = Vec::new();
+    match &column.origin {
+        Origin::BaseColumn { relation, name } => {
+            if let Some(relation) = relations.bindings.get(relation) {
+                match &relation.kind {
+                    BindingKind::Base(path) => {
+                        let qualifier = Qualifier::from(&path.0);
+                        match find_column_in_schema(schema, &qualifier, Some(name)) {
+                            Some(c) => {
+                                cols.push(ResolvedColumn {
+                                    name: column.name.to_string(),
+                                    source: ResolvedColumnSource::Schema(c),
+                                    source_alias: relation.alias,
+                                    qualifier: qualifier.clone(),
+                                });
+                            }
+                            None => cols.push(ResolvedColumn {
+                                name: column.name.to_string(),
+                                source: ResolvedColumnSource::Unresolved(qualifier.clone()),
+                                source_alias: relation.alias,
+                                qualifier: qualifier.clone(),
+                            }),
+                        }
+                    }
+                    BindingKind::Cte(_) => {}
+                    BindingKind::Subquery(scope) => {
+                        let projected = resolve_projected_columns(scope, schema);
+
+                        let found: Vec<ResolvedColumn<'a>> = projected
+                            .into_iter()
+                            .filter(|c| c.name == *name)
+                            .map(|mut x| {
+                                x.source_alias = relation.alias;
+                                x.qualifier = column.qualifier.clone();
+                                x
+                            })
+                            .collect::<Vec<_>>();
+
+                        cols.extend(found);
+                    }
+                }
+            }
+        }
+        Origin::UnresolvedIdent(path) => {
+            let qualifier = column.qualifier.clone();
+            let colum_name = path.0.last().copied();
+            let found = find_columns_in_schema(schema, &qualifier, colum_name).collect::<Vec<_>>();
+
+            if found.is_empty() {
+                cols.push(ResolvedColumn {
+                    name: column.name.to_string(),
+                    source: ResolvedColumnSource::Unresolved(qualifier.clone()),
+                    source_alias: None,
+                    qualifier: qualifier.clone(),
+                });
+            } else {
+                found.iter().for_each(|c| {
+                    cols.push(ResolvedColumn {
+                        name: c.column_name.clone(),
+                        source: ResolvedColumnSource::Schema(c),
+                        source_alias: None,
+                        qualifier: qualifier.clone(),
+                    })
+                });
+            }
+        }
+        Origin::Star { relation } => {
+            if let Some(relation) = relation.and_then(|r| relations.bindings.get(&r)) {
+                match &relation.kind {
+                    BindingKind::Base(path) => {
+                        let qualifier: Qualifier = Qualifier::from(&path.0);
+                        cols.extend(find_columns_in_schema(schema, &qualifier, None).map(|c| {
+                            ResolvedColumn {
+                                name: c.column_name.clone(),
+                                source: ResolvedColumnSource::Schema(c),
+                                source_alias: None,
+                                qualifier: Qualifier::default(),
+                            }
+                        }));
+                    }
+                    BindingKind::Cte(scope) => {
+                        let projected = resolve_projected_columns(scope, schema);
+                        cols.extend(projected.into_iter().map(|mut x| {
+                            x.source_alias = relation.alias;
+                            // x.qualifier = Qualifier::default();
+                            x
+                        }))
+                    }
+                    _ => {}
+                };
+            }
+        }
+        Origin::Constant(literal) => {
+            let ty = match literal {
+                Literal::Number => schema::DataType::Integer,
+                Literal::Float => schema::DataType::Float,
+                Literal::String => schema::DataType::Text,
+                Literal::Boolean => schema::DataType::Boolean,
+                Literal::Null => schema::DataType::Null,
+            };
+            cols.push(ResolvedColumn {
+                name: column.name.to_string(),
+                source: ResolvedColumnSource::Literal { ty },
+                source_alias: None,
+                qualifier: Qualifier::default(),
+            });
+        }
+    };
+    cols
+}
+
+fn find_columns_in_schema<'a>(
+    schema: &'a schema::Cache, path: &Qualifier, name: Option<&str>,
+) -> impl Iterator<Item = &'a schema::Column> {
+    schema
+        .get_columns()
+        .iter()
+        .filter(move |c| matches_path(c, path, name))
+}
+
+fn find_column_in_schema<'a>(
+    schema: &'a schema::Cache, path: &Qualifier, name: Option<&str>,
+) -> Option<&'a schema::Column> {
+    schema
+        .get_columns()
+        .iter()
+        .find(move |c| matches_path(c, path, name))
+}
+
+fn matches_path(c: &schema::Column, path: &Qualifier, name: Option<&str>) -> bool {
+    if let Some(t) = path.table
+        && c.table_name.as_ref().map_or(true, |c| c.as_str() != t)
+    {
+        return false;
+    }
+    if let Some(t) = path.schema
+        && c.schema_name.as_ref().map_or(true, |c| c.as_str() != t)
+    {
+        return false;
+    }
+    if let Some(n) = name
+        && c.column_name != n
+    {
+        return false;
+    }
+    true
 }

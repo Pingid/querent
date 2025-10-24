@@ -1,15 +1,15 @@
-use super::scope::*;
+use super::relations::*;
 use crate::ast::QualifiedName;
 use crate::ast::{self};
 use crate::span::Loc;
 
-pub struct ScopeBuilder<'txt, 'ast> {
+pub struct RelationsBuilder<'txt, 'ast> {
     pub text: &'txt str,
     pub position: usize,
     pub ast: ast::Node<'ast>,
 }
 
-impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
+impl<'txt, 'ast> RelationsBuilder<'txt, 'ast> {
     pub fn new(text: &'txt str, position: usize, ast: ast::Node<'ast>) -> Self {
         Self {
             text,
@@ -18,29 +18,29 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
         }
     }
 
-    pub fn build(&self) -> Scope<'txt> {
+    pub fn build(&self) -> Relations<'txt> {
         let query = self.ast.find_rev(
             |node| matches!(node, ast::Node::Query(q) if q.span.contains_inclusive(self.position) || (q.span.end <= self.position && self.text[q.span.end..self.position].chars().all(|c| c.is_whitespace()))),
         );
 
         let Some(query_node) = query else {
-            return Scope::default();
+            return Relations::default();
         };
-        self.build_scope(query_node)
+        self.gather_relations(query_node)
     }
 
-    fn build_scope(&self, query_node: impl Into<ast::Node<'ast>>) -> Scope<'txt> {
-        let mut scope = Scope::default();
+    fn gather_relations(&self, query_node: impl Into<ast::Node<'ast>>) -> Relations<'txt> {
+        let mut relations = Relations::default();
         let query_node = query_node.into();
-        self.gather_ctes(&mut scope, query_node);
-        self.gather_relations(&mut scope, query_node);
-        self.gather_projections(&mut scope, query_node);
-        self.gather_group_by(&mut scope, query_node);
-        self.gather_order_by(&mut scope, query_node);
-        scope
+        self.gather_ctes(&mut relations, query_node);
+        self.gather_from(&mut relations, query_node);
+        self.gather_projections(&mut relations, query_node);
+        self.gather_group_by(&mut relations, query_node);
+        self.gather_order_by(&mut relations, query_node);
+        relations
     }
 
-    fn gather_ctes(&self, scope: &mut Scope<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_ctes(&self, scope: &mut Relations<'txt>, query_node: ast::Node<'ast>) {
         let ast::Node::Query(query) = query_node else {
             return;
         };
@@ -52,12 +52,12 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
         // Process each CTE
         for cte in &with.item.ctes {
             let name = self.span_str(&cte.item.name);
-            let cte_scope = self.build_scope(&*cte.item.query);
-            scope.insert_relation(RelationKind::<'txt>::Cte(Box::new(cte_scope)), Some(name));
+            let cte_scope = self.gather_relations(&*cte.item.query);
+            scope.insert_relation(BindingKind::<'txt>::Cte(Box::new(cte_scope)), Some(name));
         }
     }
 
-    fn gather_relations(&self, scope: &mut Scope<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_from(&self, scope: &mut Relations<'txt>, query_node: ast::Node<'ast>) {
         let Some(select) = query_node.as_select() else {
             return;
         };
@@ -73,7 +73,7 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_table_ref(&self, scope: &mut Scope<'txt>, table_ref: &Loc<ast::TableRef>) {
+    fn gather_table_ref(&self, scope: &mut Relations<'txt>, table_ref: &Loc<ast::TableRef>) {
         match &table_ref.item {
             ast::TableRef::Factor(factor) => {
                 self.gather_table_factor(scope, factor);
@@ -87,7 +87,7 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_table_factor(&self, scope: &mut Scope<'txt>, factor: &Loc<ast::TableFactor>) {
+    fn gather_table_factor(&self, scope: &mut Relations<'txt>, factor: &Loc<ast::TableFactor>) {
         match &factor.item {
             ast::TableFactor::Named(n) => {
                 let path = self.name_path(&n.item.name);
@@ -103,13 +103,14 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
                     }
                 } else {
                     // Regular table
-                    scope.insert_relation(RelationKind::Base(path), alias);
+                    scope.insert_relation(BindingKind::Base(path), alias);
                 }
             }
             ast::TableFactor::Subquery(n) => {
                 let alias = n.item.alias.as_ref().map(|a| self.span_str(&a.span));
-                let inner_scope: Scope<'txt> = self.build_scope(ast::Node::Query(&n.item.query));
-                let kind = RelationKind::<'txt>::Subquery(Box::new(inner_scope));
+                let inner_scope: Relations<'txt> =
+                    self.gather_relations(ast::Node::Query(&n.item.query));
+                let kind = BindingKind::<'txt>::Subquery(Box::new(inner_scope));
                 scope.insert_relation(kind, alias);
             }
             ast::TableFactor::Parenthesized(table_ref) => {
@@ -121,7 +122,7 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_projections(&self, scope: &mut Scope<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_projections(&self, scope: &mut Relations<'txt>, query_node: ast::Node<'ast>) {
         let Some(select) = query_node.as_select() else {
             return;
         };
@@ -138,7 +139,7 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_group_by(&self, scope: &mut Scope<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_group_by(&self, scope: &mut Relations<'txt>, query_node: ast::Node<'ast>) {
         let Some(select) = query_node.as_select() else {
             return;
         };
@@ -169,7 +170,7 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_order_by(&self, scope: &mut Scope<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_order_by(&self, scope: &mut Relations<'txt>, query_node: ast::Node<'ast>) {
         let ast::Node::Query(query) = query_node else {
             return;
         };
@@ -250,7 +251,7 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
             .unwrap()
     }
 
-    fn column_origin(&self, scope: &Scope<'txt>, expr: &Loc<ast::Expr>) -> Origin<'txt> {
+    fn column_origin(&self, scope: &Relations<'txt>, expr: &Loc<ast::Expr>) -> Origin<'txt> {
         if let ast::Expr::Literal(literal) = &expr.item {
             match &literal.item {
                 ast::Literal::Number(_) => return Origin::Constant(Literal::Number),
@@ -271,8 +272,8 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
             .as_ref()
             .and_then(|table| scope.by_name.get(table).copied())
             .or_else(|| {
-                (scope.relations.len() == 1)
-                    .then(|| scope.relations.keys().next().copied())
+                (scope.bindings.len() == 1)
+                    .then(|| scope.bindings.keys().next().copied())
                     .flatten()
             });
 
@@ -294,10 +295,6 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
     }
 }
 
-pub fn build_scope<'txt, 'a>(text: &'txt str, position: usize, ast: ast::Node<'a>) -> Scope<'txt> {
-    ScopeBuilder::new(text, position, ast).build()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,16 +304,16 @@ mod tests {
 
     #[test]
     fn select() {
-        let s = ScopeFixture::new("SELECT name, ^");
+        let s = RelationsFixture::new("SELECT name, ^");
         s.assert_projection(0, "name", Origin::UnresolvedIdent(to_name_path("name")));
-        let s = ScopeFixture::new("SELECT a.c, b^");
+        let s = RelationsFixture::new("SELECT a.c, b^");
         s.assert_projection(0, "c", Origin::UnresolvedIdent(to_name_path("a.c")));
         s.assert_projection(1, "b", Origin::UnresolvedIdent(to_name_path("b")));
     }
 
     #[test]
     fn select_from() {
-        let s = ScopeFixture::new("SELECT * FROM users^");
+        let s = RelationsFixture::new("SELECT * FROM users^");
         s.assert_base_relation("users", "users");
         s.assert_projection(
             0,
@@ -329,7 +326,7 @@ mod tests {
 
     #[test]
     fn from_alias() {
-        let s = ScopeFixture::new("SELECT * FROM users u^");
+        let s = RelationsFixture::new("SELECT * FROM users u^");
         s.assert_base_relation("u", "users");
         s.assert_projection(
             0,
@@ -342,21 +339,21 @@ mod tests {
 
     #[test]
     fn from_schema_qualified() {
-        let s = ScopeFixture::new("SELECT * FROM public.users^");
+        let s = RelationsFixture::new("SELECT * FROM public.users^");
         s.assert_base_relation("users", "public.users");
     }
 
     #[test]
     fn from_multiple_sources() {
-        let s = ScopeFixture::new("SELECT * FROM users, orders^");
+        let s = RelationsFixture::new("SELECT * FROM users, orders^");
         s.assert_base_relation("users", "users");
         s.assert_base_relation("orders", "orders");
     }
 
     #[test]
     fn from_subquery() {
-        let s = ScopeFixture::new("SELECT * FROM (SELECT * FROM users) u^");
-        assert!(matches!(s.binding("u").kind, RelationKind::Subquery(_)));
+        let s = RelationsFixture::new("SELECT * FROM (SELECT * FROM users) u^");
+        assert!(matches!(s.binding("u").kind, BindingKind::Subquery(_)));
         s.assert_projection(
             0,
             "*",
@@ -366,18 +363,18 @@ mod tests {
         );
     }
 
-    struct ScopeFixture {
-        scope: Scope<'static>,
+    struct RelationsFixture {
+        relations: Relations<'static>,
     }
 
-    impl ScopeFixture {
+    impl RelationsFixture {
         fn new(input: &str) -> Self {
             let (text, pos) = get_leaky_static_caret_cursor(input);
             let tokens = ansi_tokens(text);
             let statement = Parser::new(&tokens).parse_statement().unwrap();
-            let scope = build_scope(text, pos, ast::Node::Statement(&statement));
-
-            Self { scope }
+            let relations =
+                RelationsBuilder::new(text, pos, ast::Node::Statement(&statement)).build();
+            Self { relations }
         }
     }
 
@@ -386,26 +383,26 @@ mod tests {
         NamePath(name.split('.').map(|s| s).collect())
     }
 
-    impl ScopeFixture {
-        fn relation(&self, name: &str) -> Option<RelationId> {
-            self.scope.relation(name)
+    impl RelationsFixture {
+        fn relation(&self, name: &str) -> Option<BindingId> {
+            self.relations.relation(name)
         }
 
         fn binding(&self, name: &str) -> &RelationBinding<'static> {
-            let id = self.scope.by_name.get(name).unwrap();
-            self.scope.relations.get(id).unwrap()
+            let id = self.relations.by_name.get(name).unwrap();
+            self.relations.bindings.get(id).unwrap()
         }
 
         fn assert_base_relation(&self, name: &str, expected: &str) {
             assert_eq!(
                 self.binding(name).kind,
-                RelationKind::Base(to_name_path(expected))
+                BindingKind::Base(to_name_path(expected))
             );
         }
 
         fn assert_projection(&self, idx: usize, expected_name: &str, expected_origin: Origin) {
-            assert_eq!(self.scope.projected[idx].name, expected_name);
-            assert_eq!(self.scope.projected[idx].origin, expected_origin);
+            assert_eq!(self.relations.projected[idx].name, expected_name);
+            assert_eq!(self.relations.projected[idx].origin, expected_origin);
         }
     }
 }

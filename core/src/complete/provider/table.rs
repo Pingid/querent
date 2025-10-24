@@ -1,10 +1,10 @@
 use crate::complete::completion::Completion;
 use crate::complete::completion::CompletionBuilder;
 use crate::complete::completion::CompletionKind;
+use crate::complete::context::BindingKind;
 use crate::complete::context::ClauseKind;
 use crate::complete::context::Context;
 use crate::complete::context::Location;
-use crate::complete::context::RelationKind;
 use crate::lex::Keyword;
 use crate::lex::TokenKind;
 use crate::schema;
@@ -26,7 +26,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
     }
 
     // Add all CTEs
-    for cte in ctx.scope.cte_names() {
+    for cte in ctx.scope.ctes() {
         tables.push(AvailableTable {
             name: cte.to_string(),
             score: 0,
@@ -48,8 +48,8 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
 
     // Rank tables already used in the FROM clause lower
     for t in &mut tables {
-        if ctx.scope.relations().iter().any(|(_, r)| match &r.kind {
-            RelationKind::Base(path) => path.0.contains(&t.name.as_str()),
+        if ctx.scope.bindings().any(|r| match &r.kind {
+            BindingKind::Base(path) => path.0.contains(&t.name.as_str()),
             _ => false,
         }) {
             t.score -= 30;
