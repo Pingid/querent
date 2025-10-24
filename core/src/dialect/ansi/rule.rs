@@ -1,7 +1,7 @@
-use crate::dialect::Rules;
-use crate::dialect::follow::Cond;
-use crate::dialect::follow::Next;
-use crate::dialect::follow::Rule;
+use crate::dialect::KeywordRule;
+use crate::dialect::KeywordRules;
+use crate::dialect::Next;
+use crate::lex::Cond;
 use crate::lex::Keyword;
 use crate::lex::OpTag;
 use crate::lex::TokenKind;
@@ -13,10 +13,7 @@ const SIMPLE_VALUE: Cond = Cond::Any(&[
     Cond::Kind(TokenKind::Str),
 ]);
 
-#[cfg(test)]
-use crate::dialect::follow::Dir;
-
-pub const RULES: Rules = Rules(&[
+pub const RULES: KeywordRules = KeywordRules(&[
     START_RULE,
     SELECT_RULE,
     FROM_RULE,
@@ -69,7 +66,7 @@ const END_CONDITION: Cond = Cond::Any(&[
     ]),
 ]);
 
-const START_RULE: Rule = Rule(
+const START_RULE: KeywordRule = KeywordRule(
     Cond::Any(&[
         END_CONDITION,
         Cond::Seq(&[END_CONDITION, Cond::Kind(TokenKind::Identifier)]),
@@ -87,12 +84,12 @@ const START_RULE: Rule = Rule(
     ],
 );
 
-const SELECT_RULE: Rule = Rule(
+const SELECT_RULE: KeywordRule = KeywordRule(
     Cond::Kw(Keyword::Select),
     &[Next::Kw(Keyword::Distinct), Next::Kw(Keyword::All)],
 );
 
-const FROM_RULE: Rule = Rule(
+const FROM_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Kw(Keyword::Select),
         Cond::Many(&Cond::Not(&Cond::Any(&[
@@ -110,7 +107,7 @@ const FROM_RULE: Rule = Rule(
     &[Next::Kw(Keyword::From)],
 );
 
-const WHERE_RULE: Rule = Rule(
+const WHERE_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Kw(Keyword::From),
         Cond::Many(&Cond::Not(&Cond::Any(&[
@@ -122,9 +119,9 @@ const WHERE_RULE: Rule = Rule(
     &[Next::Kw(Keyword::Where)],
 );
 
-const ORDER_BY_RULE: Rule = Rule(Cond::Kw(Keyword::Order), &[Next::Kw(Keyword::By)]);
+const ORDER_BY_RULE: KeywordRule = KeywordRule(Cond::Kw(Keyword::Order), &[Next::Kw(Keyword::By)]);
 
-const ORDER_BY_SUGGEST_RULE: Rule = Rule(
+const ORDER_BY_SUGGEST_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Not(&Cond::Any(&[
             Cond::Kw(Keyword::Select),
@@ -143,7 +140,7 @@ const ORDER_BY_SUGGEST_RULE: Rule = Rule(
     &[Next::KwSeq(&[Keyword::Order, Keyword::By])],
 );
 
-const ORDER_BY_DIR_RULE: Rule = Rule(
+const ORDER_BY_DIR_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Kw(Keyword::Order),
         Cond::Kw(Keyword::By),
@@ -166,13 +163,13 @@ const ORDER_BY_DIR_RULE: Rule = Rule(
     ],
 );
 
-const ORDER_BY_NULLS_PLACEMENT_RULE: Rule = Rule(
+const ORDER_BY_NULLS_PLACEMENT_RULE: KeywordRule = KeywordRule(
     Cond::Kw(Keyword::Nulls),
     &[Next::Kw(Keyword::First), Next::Kw(Keyword::Last)],
 );
 
 // Suggest ASC/DESC/NULLS after a column following a comma in ORDER BY
-const ORDER_BY_DIR_AFTER_COMMA_RULE: Rule = Rule(
+const ORDER_BY_DIR_AFTER_COMMA_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Kw(Keyword::Order),
         Cond::Kw(Keyword::By),
@@ -195,7 +192,7 @@ const ORDER_BY_DIR_AFTER_COMMA_RULE: Rule = Rule(
     ],
 );
 
-const ORDER_BY_FOLLOW_RULE: Rule = Rule(
+const ORDER_BY_FOLLOW_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Kw(Keyword::Order),
         Cond::Kw(Keyword::By),
@@ -213,7 +210,7 @@ const ORDER_BY_FOLLOW_RULE: Rule = Rule(
     &[Next::Kw(Keyword::Offset), Next::Kw(Keyword::Fetch)],
 );
 
-const LIMIT_RULE: Rule = Rule(
+const LIMIT_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Not(&Cond::Any(&[
             Cond::Kw(Keyword::Where),
@@ -231,16 +228,17 @@ const LIMIT_RULE: Rule = Rule(
     &[Next::Kw(Keyword::Limit)],
 );
 
-const SUBQUERY_RULE: Rule = Rule(
+const SUBQUERY_RULE: KeywordRule = KeywordRule(
     Cond::Kind(TokenKind::LeftParen),
     &[Next::Kw(Keyword::Select)],
 );
 
-const WITH_CTE_RULE: Rule = Rule(Cond::Kw(Keyword::With), &[Next::Kw(Keyword::Recursive)]);
+const WITH_CTE_RULE: KeywordRule =
+    KeywordRule(Cond::Kw(Keyword::With), &[Next::Kw(Keyword::Recursive)]);
 
-const GROUP_BY_RULE: Rule = Rule(Cond::Kw(Keyword::Group), &[Next::Kw(Keyword::By)]);
+const GROUP_BY_RULE: KeywordRule = KeywordRule(Cond::Kw(Keyword::Group), &[Next::Kw(Keyword::By)]);
 
-const GROUP_BY_SUGGEST_RULE: Rule = Rule(
+const GROUP_BY_SUGGEST_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Not(&Cond::Any(&[
             Cond::Kw(Keyword::Select),
@@ -259,32 +257,34 @@ const GROUP_BY_SUGGEST_RULE: Rule = Rule(
     &[Next::KwSeq(&[Keyword::Group, Keyword::By])],
 );
 
-const JOIN_RULE: Rule = Rule(
+const JOIN_RULE: KeywordRule = KeywordRule(
     Cond::Kw(Keyword::Join),
     &[Next::Kw(Keyword::On), Next::Kw(Keyword::Using)],
 );
 
-const INNER_JOIN_RULE: Rule = Rule(Cond::Kw(Keyword::Inner), &[Next::Kw(Keyword::Join)]);
+const INNER_JOIN_RULE: KeywordRule =
+    KeywordRule(Cond::Kw(Keyword::Inner), &[Next::Kw(Keyword::Join)]);
 
-const LEFT_JOIN_RULE: Rule = Rule(
+const LEFT_JOIN_RULE: KeywordRule = KeywordRule(
     Cond::Kw(Keyword::Left),
     &[Next::Kw(Keyword::Join), Next::Kw(Keyword::Outer)],
 );
 
-const RIGHT_JOIN_RULE: Rule = Rule(
+const RIGHT_JOIN_RULE: KeywordRule = KeywordRule(
     Cond::Kw(Keyword::Right),
     &[Next::Kw(Keyword::Join), Next::Kw(Keyword::Outer)],
 );
 
-const FULL_JOIN_RULE: Rule = Rule(
+const FULL_JOIN_RULE: KeywordRule = KeywordRule(
     Cond::Kw(Keyword::Full),
     &[Next::Kw(Keyword::Join), Next::Kw(Keyword::Outer)],
 );
 
-const CROSS_JOIN_RULE: Rule = Rule(Cond::Kw(Keyword::Cross), &[Next::Kw(Keyword::Join)]);
+const CROSS_JOIN_RULE: KeywordRule =
+    KeywordRule(Cond::Kw(Keyword::Cross), &[Next::Kw(Keyword::Join)]);
 
 // Suggest JOIN keywords after a table in FROM clause
-const JOIN_AFTER_FROM_RULE: Rule = Rule(
+const JOIN_AFTER_FROM_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Not(&Cond::Any(&[
             Cond::Kw(Keyword::Where),
@@ -320,23 +320,23 @@ const JOIN_AFTER_FROM_RULE: Rule = Rule(
 );
 
 // OUTER can follow LEFT, RIGHT, or FULL
-const LEFT_OUTER_JOIN_RULE: Rule = Rule(
+const LEFT_OUTER_JOIN_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[Cond::Kw(Keyword::Left), Cond::Kw(Keyword::Outer)]),
     &[Next::Kw(Keyword::Join)],
 );
 
-const RIGHT_OUTER_JOIN_RULE: Rule = Rule(
+const RIGHT_OUTER_JOIN_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[Cond::Kw(Keyword::Right), Cond::Kw(Keyword::Outer)]),
     &[Next::Kw(Keyword::Join)],
 );
 
-const FULL_OUTER_JOIN_RULE: Rule = Rule(
+const FULL_OUTER_JOIN_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[Cond::Kw(Keyword::Full), Cond::Kw(Keyword::Outer)]),
     &[Next::Kw(Keyword::Join)],
 );
 
 // NATURAL can combine with join types
-const NATURAL_JOIN_RULE: Rule = Rule(
+const NATURAL_JOIN_RULE: KeywordRule = KeywordRule(
     Cond::Kw(Keyword::Natural),
     &[
         Next::Kw(Keyword::Join),
@@ -347,9 +347,10 @@ const NATURAL_JOIN_RULE: Rule = Rule(
     ],
 );
 
-const HAVING_RULE: Rule = Rule(Cond::Kw(Keyword::Group), &[Next::KwSeq(&[Keyword::By])]);
+const HAVING_RULE: KeywordRule =
+    KeywordRule(Cond::Kw(Keyword::Group), &[Next::KwSeq(&[Keyword::By])]);
 
-const HAVING_AFTER_GROUP_BY_RULE: Rule = Rule(
+const HAVING_AFTER_GROUP_BY_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Kw(Keyword::Group),
         Cond::Kw(Keyword::By),
@@ -370,9 +371,10 @@ const HAVING_AFTER_GROUP_BY_RULE: Rule = Rule(
     &[Next::Kw(Keyword::Having)],
 );
 
-const INSERT_INTO_RULE: Rule = Rule(Cond::Kw(Keyword::Insert), &[Next::Kw(Keyword::Into)]);
+const INSERT_INTO_RULE: KeywordRule =
+    KeywordRule(Cond::Kw(Keyword::Insert), &[Next::Kw(Keyword::Into)]);
 
-const CREATE_TABLE_RULE: Rule = Rule(
+const CREATE_TABLE_RULE: KeywordRule = KeywordRule(
     Cond::Kw(Keyword::Create),
     &[
         Next::Kw(Keyword::Table),
@@ -381,16 +383,19 @@ const CREATE_TABLE_RULE: Rule = Rule(
     ],
 );
 
-const PRIMARY_KEY_RULE: Rule = Rule(Cond::Kw(Keyword::Primary), &[Next::KwSeq(&[Keyword::Key])]);
+const PRIMARY_KEY_RULE: KeywordRule =
+    KeywordRule(Cond::Kw(Keyword::Primary), &[Next::KwSeq(&[Keyword::Key])]);
 
-const FOREIGN_KEY_RULE: Rule = Rule(Cond::Kw(Keyword::Foreign), &[Next::KwSeq(&[Keyword::Key])]);
+const FOREIGN_KEY_RULE: KeywordRule =
+    KeywordRule(Cond::Kw(Keyword::Foreign), &[Next::KwSeq(&[Keyword::Key])]);
 
 // CASE statement rules
 // Suggest WHEN after CASE keyword
-const CASE_WHEN_RULE: Rule = Rule(Cond::Kw(Keyword::Case), &[Next::Kw(Keyword::When)]);
+const CASE_WHEN_RULE: KeywordRule =
+    KeywordRule(Cond::Kw(Keyword::Case), &[Next::Kw(Keyword::When)]);
 
 // Suggest THEN after a value following WHEN
-const WHEN_THEN_RULE: Rule = Rule(
+const WHEN_THEN_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Kw(Keyword::When),
         Cond::Many(&Cond::Not(&Cond::Any(&[
@@ -405,7 +410,7 @@ const WHEN_THEN_RULE: Rule = Rule(
 );
 
 // Suggest WHEN, ELSE, END after a value following THEN
-const THEN_FOLLOW_RULE: Rule = Rule(
+const THEN_FOLLOW_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Kw(Keyword::Then),
         Cond::Many(&Cond::Not(&Cond::Any(&[
@@ -424,7 +429,7 @@ const THEN_FOLLOW_RULE: Rule = Rule(
 );
 
 // Suggest END after a value following ELSE
-const ELSE_END_RULE: Rule = Rule(
+const ELSE_END_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Kw(Keyword::Else),
         Cond::Many(&Cond::Not(&Cond::Any(&[
@@ -436,7 +441,7 @@ const ELSE_END_RULE: Rule = Rule(
     &[Next::Kw(Keyword::End)],
 );
 
-const SET_OPERATION_ALL_RULE: Rule = Rule(
+const SET_OPERATION_ALL_RULE: KeywordRule = KeywordRule(
     Cond::Any(&[
         Cond::Kw(Keyword::Union),
         Cond::Kw(Keyword::Intersect),
@@ -445,7 +450,7 @@ const SET_OPERATION_ALL_RULE: Rule = Rule(
     &[Next::KwSeq(&[Keyword::All])],
 );
 
-const SET_OP_RULE: Rule = Rule(
+const SET_OP_RULE: KeywordRule = KeywordRule(
     Cond::Seq(&[
         Cond::Not(&Cond::Any(&[
             Cond::Kw(Keyword::Select),
@@ -471,6 +476,7 @@ const SET_OP_RULE: Rule = Rule(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lex::Dir;
     use crate::test_util::ansi_tokens;
 
     #[test]
@@ -1223,11 +1229,11 @@ mod tests {
         assert_matches(true, CASE_WHEN_RULE, "SELECT a FROM users ORDER BY CASE ");
     }
 
-    fn assert_matches(expected: bool, rule: Rule, sql: &str) {
+    fn assert_matches(expected: bool, rule: KeywordRule, sql: &str) {
         let tokens = ansi_tokens(sql);
         let kinds = tokens.iter().map(|t| t.kind).collect::<Vec<TokenKind>>();
         let kinds = &kinds[0..kinds.len().saturating_sub(1)]; // ignore the last token (EOF)
-        let result = rule.0.scan_from(kinds, Dir::Bwd, kinds.len()).0;
+        let result = rule.0.matches(kinds, Dir::Bwd);
 
         assert_eq!(
             result, expected,

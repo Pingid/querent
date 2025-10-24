@@ -87,6 +87,17 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
 }
 
 fn should_complete(ctx: &Context<'_>) -> bool {
+    // use ClauseKind::*;
+    // use MatchKind::*;
+
+    // let mut m = ctx.matcher();
+
+    // m.all([Clause(Select), Dot])
+    // // || m.all([Clause(Select), Comma, Space])
+    // // // if m == Clause(Select) {
+    // // //     return m.any([]);
+    // // // }
+
     match ctx.clause {
         ClauseKind::Select => match &ctx.cursor.location {
             Location::Space(inner) => matches!(
