@@ -1,21 +1,25 @@
 use std::collections::HashMap;
 
-use crate::complete::provider::column::helper::get_qualified_name;
-use crate::lex::{Keyword, TokenKind};
-
-use crate::complete::context::{ClauseKind, Context, Location, ResolvedColumn, ScopeResolve};
-use crate::complete::{Completion, CompletionBuilder, CompletionKind};
-
 use super::helper::get_scope_available_columns;
+use crate::complete::completion::Completion;
+use crate::complete::completion::CompletionBuilder;
+use crate::complete::completion::CompletionKind;
+use crate::complete::context::ClauseKind;
+use crate::complete::context::Context;
+use crate::complete::context::Location;
+use crate::complete::context::ResolvedColumn;
+use crate::complete::provider::column::helper::get_qualified_name;
+use crate::lex::Keyword;
+use crate::lex::TokenKind;
 
-pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
+pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
     if !should_complete(ctx) {
         return;
     }
 
     let mut cols = get_scope_available_columns(ctx);
 
-    let projected = ctx.scope.resolve_projected_columns(ctx.schema);
+    let projected = ctx.scope.projected();
 
     // Count the number of projected columns for each source name
     let mut source_counts: HashMap<String, i8> = HashMap::new();
@@ -89,7 +93,17 @@ fn should_complete(ctx: &Context<'_>) -> bool {
                 **inner,
                 Location::Comma | Location::Keyword(Keyword::Select)
             ),
+            // Complete qualified columns
             Location::Dot => true,
+            // Completes partial qualified identifier
+            Location::Ident
+                if ctx
+                    .cursor
+                    .preceding_matches([TokenKind::Dot, TokenKind::Identifier]) =>
+            {
+                true
+            }
+            // Completes partial column identifier
             Location::Ident
                 if ctx
                     .cursor
@@ -97,6 +111,8 @@ fn should_complete(ctx: &Context<'_>) -> bool {
             {
                 true
             }
+            // Completes function parameters
+            Location::Paren => true,
             _ => false,
         },
         _ => false,
@@ -104,20 +120,22 @@ fn should_complete(ctx: &Context<'_>) -> bool {
 }
 
 fn get_score_qualified_column(
-    projected: &Vec<ResolvedColumn<'_, '_>>,
-    has_column_conflicts: bool,
-    table_name: Option<String>,
+    projected: &Vec<ResolvedColumn<'_>>, has_column_conflicts: bool, table_name: Option<String>,
 ) -> i8 {
     let Some(table_name) = table_name else {
         return 0;
     };
-    // Check if there is a projected column from the same table using the qualified syntax
+
+    // Check if there is a projected column from the same table using the qualified
+    // syntax
     let found_projection_using_qualified = projected
         .iter()
         .rev()
         .find(|p| p.matches_source_name(&table_name))
         .map_or(false, |p| !p.qualifier.is_empty());
-    // If a projected column from the same table using the qualified syntax is found, score it higher
+
+    // If a projected column from the same table using the qualified syntax is
+    // found, score it higher
     match found_projection_using_qualified {
         true => 10,
         false => match projected.is_empty() && has_column_conflicts {
@@ -129,16 +147,22 @@ fn get_score_qualified_column(
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::{CompletionTest, CompletionTestResult};
-
     use super::*;
+    use crate::test_util::CompletionTest;
+    use crate::test_util::CompletionTestResult;
 
     #[test]
-    fn skips_at_inappropriate_locations() {
+    fn completes_at_appropriate_locations() {
+        // Should no complete
         case("SELECT a ^").assert_empty();
         case("SELECT a as^").assert_empty();
         case("SELECT a as b^").assert_empty();
         case("SELECT a as b ^").assert_empty();
+
+        // Should complete
+        case("SELECT ^").assert_not_empty();
+        case("SELECT UPPER(^)").assert_not_empty();
+        case("SELECT a, ^").assert_not_empty();
     }
 
     #[test]

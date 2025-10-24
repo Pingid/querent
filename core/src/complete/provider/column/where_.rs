@@ -1,12 +1,16 @@
-use crate::complete::provider::column::helper::{AvailableColumn, get_qualified_name};
-use crate::lex::{Keyword, OpTag};
-
-use crate::complete::context::{ClauseKind, Context, Location, ScopeResolve};
-use crate::complete::{Completion, CompletionBuilder, CompletionKind};
-
 use super::helper::get_scope_available_columns;
+use crate::complete::completion::Completion;
+use crate::complete::completion::CompletionBuilder;
+use crate::complete::completion::CompletionKind;
+use crate::complete::context::ClauseKind;
+use crate::complete::context::Context;
+use crate::complete::context::Location;
+use crate::complete::provider::column::helper::AvailableColumn;
+use crate::complete::provider::column::helper::get_qualified_name;
+use crate::lex::Keyword;
+use crate::lex::OpTag;
 
-pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
+pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
     if !should_complete(ctx) {
         return;
     }
@@ -35,10 +39,10 @@ pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
     }
 
     // Rank columns that appear in the SELECT list higher
-    let projected = ctx.scope.resolve_projected_columns(ctx.schema);
+    let projected = ctx.scope.projected();
 
     for p in projected {
-        let col = AvailableColumn::from(p);
+        let col = AvailableColumn::from(p.clone());
         builder.add(
             Completion::new(
                 CompletionKind::Column,
@@ -71,9 +75,9 @@ fn should_complete(ctx: &Context<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::{CompletionTest, CompletionTestResult};
-
     use super::*;
+    use crate::test_util::CompletionTest;
+    use crate::test_util::CompletionTestResult;
 
     #[test]
     fn skips_at_inappropriate_locations() {

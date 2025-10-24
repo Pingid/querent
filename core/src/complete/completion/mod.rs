@@ -21,14 +21,20 @@ pub struct Completion {
     pub kind: CompletionKind,
     pub replace: Span,
     pub commit_characters: Vec<char>,
+    pub insert_text_format: InsertTextFormat,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum InsertTextFormat {
+    #[default]
+    PlainText,
+    Snippet,
 }
 
 impl Completion {
     pub fn new(
-        kind: CompletionKind,
-        label: String,
-        replace: Span,
-        commit_characters: Option<Vec<char>>,
+        kind: CompletionKind, label: String, replace: Span, commit_characters: Option<Vec<char>>,
         detail: Option<String>,
     ) -> Self {
         Self {
@@ -39,6 +45,7 @@ impl Completion {
             kind,
             replace,
             commit_characters: commit_characters.unwrap_or(vec![',', ' ', '\n']),
+            insert_text_format: InsertTextFormat::default(),
         }
     }
 }

@@ -1,6 +1,8 @@
-use crate::lex::{Keyword, Token, TokenKind};
+use crate::lex::Keyword;
+use crate::lex::Token;
+use crate::lex::TokenKind;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClauseKind {
     /// SEL^
     Statement,
@@ -49,9 +51,9 @@ pub fn detect_clause_kind<'txt>(tokens: &[Token<'txt>], position: usize) -> Clau
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::{ansi_tokens, get_caret_cursor};
-
     use super::*;
+    use crate::test_util::ansi_tokens;
+    use crate::test_util::get_caret_cursor;
 
     #[test]
     fn ansi_clause_detection() {

@@ -1,10 +1,15 @@
+use super::super::completion::Completion;
+use super::super::completion::CompletionBuilder;
+use super::super::completion::CompletionKind;
+use super::super::context::ClauseKind;
 use super::super::context::Context;
-use crate::{
-    complete::{Completion, CompletionBuilder, CompletionKind, context::ClauseKind},
-    lex::{Assoc, Fixity, Keyword, Operator, TokenKind},
-};
+use crate::lex::Assoc;
+use crate::lex::Fixity;
+use crate::lex::Keyword;
+use crate::lex::Operator;
+use crate::lex::TokenKind;
 
-pub fn complete(ctx: &Context, builder: &mut CompletionBuilder) {
+pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
     let Some(op_ctx) = resolve_context(ctx) else {
         return;
     };
@@ -14,20 +19,14 @@ pub fn complete(ctx: &Context, builder: &mut CompletionBuilder) {
         if !op_ctx.allows(operator) {
             continue;
         }
-        let label = display_label(raw_label, operator);
-        let detail = Some(format!(
-            "{} • {}",
-            fixity_label(operator.fixity),
-            assoc_label(operator.assoc)
-        ));
 
         builder.add(
             Completion::new(
                 CompletionKind::Operator,
-                label,
+                display_label(raw_label, operator),
                 ctx.cursor.replace,
                 None,
-                detail,
+                Some(display_detail(operator)),
             ),
             operator_score(operator),
         );
@@ -149,21 +148,22 @@ fn display_label(raw: &str, operator: Operator) -> String {
     }
 }
 
-fn fixity_label(fixity: Fixity) -> &'static str {
-    match fixity {
-        Fixity::Prefix => "prefix",
-        Fixity::Infix => "infix",
-    }
+fn display_detail(o: Operator) -> String {
+    format!(
+        "{} • {}",
+        match o.fixity {
+            Fixity::Prefix => "prefix",
+            Fixity::Infix => "infix",
+        },
+        match o.assoc {
+            Assoc::Left => "left associative",
+            Assoc::Right => "right associative",
+            Assoc::None => "non associative",
+        }
+    )
 }
 
-fn assoc_label(assoc: Assoc) -> &'static str {
-    match assoc {
-        Assoc::Left => "left associative",
-        Assoc::Right => "right associative",
-        Assoc::None => "non associative",
-    }
-}
-
+/// Scores common operators higher than less common ones
 fn operator_score(operator: Operator) -> i8 {
     use crate::lex::OpTag;
     match operator.semantic_tag {
@@ -221,9 +221,9 @@ fn operator_score(operator: Operator) -> i8 {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::{CompletionTest, CompletionTestResult};
-
     use super::*;
+    use crate::test_util::CompletionTest;
+    use crate::test_util::CompletionTestResult;
 
     #[test]
     fn no_completion_after_incomplete_infix() {

@@ -1,7 +1,7 @@
-use crate::ast::{self, QualifiedName};
+use super::scope::*;
+use crate::ast::QualifiedName;
+use crate::ast::{self};
 use crate::span::Loc;
-
-use super::*;
 
 pub struct ScopeBuilder<'txt, 'ast> {
     pub text: &'txt str,
@@ -285,7 +285,7 @@ impl<'txt, 'ast> ScopeBuilder<'txt, 'ast> {
 
         if let Some(relation) = relation {
             return Origin::BaseColumn {
-                relation: relation,
+                relation,
                 name: self.get_name(name),
             };
         }
@@ -300,12 +300,10 @@ pub fn build_scope<'txt, 'a>(text: &'txt str, position: usize, ast: ast::Node<'a
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        parse::Parser,
-        test_util::{ansi_tokens, get_leaky_static_caret_cursor},
-    };
-
     use super::*;
+    use crate::parse::Parser;
+    use crate::test_util::ansi_tokens;
+    use crate::test_util::get_leaky_static_caret_cursor;
 
     #[test]
     fn select() {

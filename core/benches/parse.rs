@@ -1,8 +1,14 @@
-use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use querent_core::dialect::postgres;
 use std::time::Duration;
 
-use querent_core::lex::{TokenKind, lex};
+use criterion::BatchSize;
+use criterion::BenchmarkId;
+use criterion::Criterion;
+use criterion::Throughput;
+use criterion::criterion_group;
+use criterion::criterion_main;
+use querent_core::dialect::postgres;
+use querent_core::lex::TokenKind;
+use querent_core::lex::lex;
 use querent_core::parse::Parser;
 
 const DEFAULT_URL: &str =

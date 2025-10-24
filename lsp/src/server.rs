@@ -1,10 +1,16 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use futures::lock::Mutex;
+use querent_core::complete::completion::Completion;
+use querent_core::complete::completion::CompletionKind;
+use querent_core::complete::completion::InsertTextFormat;
+use querent_core::doc::Content;
 use serde_json::json;
-use std::{collections::HashMap, sync::Arc};
 
-use querent_core::{complete::Completion, doc::Content};
-
-use crate::{LspRequest, LspResponse, response::LspResponseCompletions};
+use crate::LspRequest;
+use crate::LspResponse;
+use crate::response::LspResponseCompletions;
 
 pub trait CompletionProvider {
     fn complete(&self, uri: String, doc: &Content) -> Vec<Completion>;
@@ -121,42 +127,49 @@ impl<E: CompletionProvider> LspServer<E> {
 }
 
 fn completion_from_engine(
-    doc: &Content,
-    completion: Completion,
-    index: usize,
+    doc: &Content, completion: Completion, index: usize,
 ) -> lsp_types::CompletionItem {
     let start = doc.get_line_col(completion.replace.start);
     let end = doc.get_line_col(completion.replace.end);
 
     let kind = match &completion.kind {
-        querent_core::complete::CompletionKind::Keyword => lsp_types::CompletionItemKind::KEYWORD,
-        querent_core::complete::CompletionKind::Table => lsp_types::CompletionItemKind::CLASS,
-        querent_core::complete::CompletionKind::Column => lsp_types::CompletionItemKind::FIELD,
-        querent_core::complete::CompletionKind::Schema => lsp_types::CompletionItemKind::MODULE,
-        querent_core::complete::CompletionKind::Function => lsp_types::CompletionItemKind::FUNCTION,
-        querent_core::complete::CompletionKind::Operator => lsp_types::CompletionItemKind::OPERATOR,
+        CompletionKind::Keyword => lsp_types::CompletionItemKind::KEYWORD,
+        CompletionKind::Table => lsp_types::CompletionItemKind::CLASS,
+        CompletionKind::Column => lsp_types::CompletionItemKind::FIELD,
+        CompletionKind::Schema => lsp_types::CompletionItemKind::MODULE,
+        CompletionKind::Function => lsp_types::CompletionItemKind::FUNCTION,
+        CompletionKind::Operator => lsp_types::CompletionItemKind::OPERATOR,
     };
 
-    lsp_types::CompletionItem {
+    let mut edit = lsp_types::CompletionItem {
         label: completion.label,
         insert_text: Some(completion.insert_text.clone()),
         filter_text: completion.filter_text,
         kind: Some(kind),
         sort_text: Some(format!("{:05}", index)),
         detail: completion.detail,
-        text_edit: Some(lsp_types::CompletionTextEdit::Edit(lsp_types::TextEdit {
-            range: lsp_types::Range {
-                start: lsp_types::Position {
-                    line: start.0 as u32,
-                    character: start.1 as u32,
-                },
-                end: lsp_types::Position {
-                    line: end.0 as u32,
-                    character: end.1 as u32,
-                },
-            },
-            new_text: completion.insert_text,
-        })),
         ..Default::default()
+    };
+    match completion.insert_text_format {
+        InsertTextFormat::PlainText => {
+            edit.text_edit = Some(lsp_types::CompletionTextEdit::Edit(lsp_types::TextEdit {
+                range: lsp_types::Range {
+                    start: lsp_types::Position {
+                        line: start.0 as u32,
+                        character: start.1 as u32,
+                    },
+                    end: lsp_types::Position {
+                        line: end.0 as u32,
+                        character: end.1 as u32,
+                    },
+                },
+                new_text: completion.insert_text,
+            }));
+        }
+        InsertTextFormat::Snippet => {
+            edit.insert_text_format = Some(lsp_types::InsertTextFormat::SNIPPET);
+            edit.insert_text = Some(completion.insert_text);
+        }
     }
+    edit
 }

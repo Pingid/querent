@@ -1,8 +1,9 @@
-use super::super::context::Context;
-use crate::{
-    complete::{Completion, CompletionBuilder, CompletionKind},
-    lex::{Keyword, TokenKind},
-};
+use crate::complete::completion::Completion;
+use crate::complete::completion::CompletionBuilder;
+use crate::complete::completion::CompletionKind;
+use crate::complete::context::Context;
+use crate::lex::Keyword;
+use crate::lex::TokenKind;
 
 pub fn complete(ctx: &Context, builder: &mut CompletionBuilder) {
     let follow_tokens = follow_tokens(ctx);

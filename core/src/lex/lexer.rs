@@ -1,4 +1,5 @@
-use crate::dialect::{CommentStyle, DialectSpec};
+use crate::dialect::CommentStyle;
+use crate::dialect::DialectSpec;
 use crate::lex::QuoteStyle;
 use crate::lex::Token;
 use crate::lex::TokenKind;

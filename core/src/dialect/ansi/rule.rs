@@ -1,6 +1,10 @@
 use crate::dialect::Rules;
-use crate::dialect::follow::{Cond, Next, Rule};
-use crate::lex::{Keyword, OpTag, TokenKind};
+use crate::dialect::follow::Cond;
+use crate::dialect::follow::Next;
+use crate::dialect::follow::Rule;
+use crate::lex::Keyword;
+use crate::lex::OpTag;
+use crate::lex::TokenKind;
 
 const SIMPLE_VALUE: Cond = Cond::Any(&[
     Cond::Kind(TokenKind::Identifier),
@@ -466,9 +470,8 @@ const SET_OP_RULE: Rule = Rule(
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::ansi_tokens;
-
     use super::*;
+    use crate::test_util::ansi_tokens;
 
     #[test]
     fn start_rule() {
@@ -673,7 +676,8 @@ mod tests {
         assert_matches(false, rule, "SELECT a FROM users ORDER");
         assert_matches(false, rule, "SELECT a FROM users HAVING");
 
-        // Should NOT suggest after GROUP BY (BY keyword is excluded to prevent suggesting after ORDER BY)
+        // Should NOT suggest after GROUP BY (BY keyword is excluded to prevent
+        // suggesting after ORDER BY)
         assert_matches(false, rule, "SELECT COUNT(*) FROM users GROUP BY name ");
 
         // Should NOT suggest after ORDER BY is already used
@@ -978,7 +982,8 @@ mod tests {
         assert_matches(false, rule, "SELECT a FROM users ORDER ");
         assert_matches(false, rule, "SELECT a FROM users ORDER BY ");
 
-        // Should NOT match columns after commas (that's ORDER_BY_DIR_AFTER_COMMA_RULE's job)
+        // Should NOT match columns after commas (that's ORDER_BY_DIR_AFTER_COMMA_RULE's
+        // job)
         assert_matches(false, rule, "SELECT a FROM users ORDER BY name ASC, id ");
     }
 
@@ -1086,8 +1091,9 @@ mod tests {
         );
         assert_matches(true, SET_OP_RULE, "SELECT * FROM (SELECT a FROM users) ");
 
-        // ORDER_BY_DIR_RULE SHOULD match after closing paren if there's ORDER BY before it
-        // This handles cases like: ORDER BY (expression) or ORDER BY (subquery_column)
+        // ORDER_BY_DIR_RULE SHOULD match after closing paren if there's ORDER BY before
+        // it This handles cases like: ORDER BY (expression) or ORDER BY
+        // (subquery_column)
         assert_matches(
             true,
             ORDER_BY_DIR_RULE,

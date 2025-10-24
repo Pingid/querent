@@ -1,11 +1,13 @@
 use std::borrow::Cow;
 
-use crate::{
-    complete::{CompletionBuilder, Completions, Context},
-    dialect::{DialectSpec, ansi},
-    lex::{Token, lex},
-    schema,
-};
+use crate::complete::completion::CompletionBuilder;
+use crate::complete::completion::Completions;
+use crate::complete::context::Context;
+use crate::dialect::DialectSpec;
+use crate::dialect::ansi;
+use crate::lex::Token;
+use crate::lex::lex;
+use crate::schema;
 
 pub fn get_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {
     let pos = sql_with_caret.find('^');
@@ -52,6 +54,21 @@ impl SchemaCacheBuilder {
         }
         self
     }
+    pub(crate) fn add_function(
+        mut self, schema: &str, name: &str, function_type: schema::FunctionType,
+        params: &[schema::DataType], return_type: schema::DataType,
+    ) -> Self {
+        self.0.add_function(schema::Function {
+            function_name: name.to_string(),
+            parameter_types: params.to_vec(),
+            function_type,
+            description: None,
+            schema_name: Some(schema.to_string()),
+            database_name: None,
+            return_type,
+        });
+        self
+    }
     pub(crate) fn build(self) -> schema::Cache {
         self.0
     }
@@ -79,27 +96,80 @@ impl CompletionTest {
     }
 
     pub fn with_users_posts(self) -> Self {
-        self.with_schema(
-            SchemaCacheBuilder::new()
-                .add_table("public", "users", &["id", "name", "email"])
-                .add_table("public", "posts", &["id", "title", "content"])
-                .build(),
-        )
+        let mut schema = schema::Cache::default();
+        // users table
+        schema.add_table(schema::Table {
+            table_name: "users".to_string(),
+            schema_name: Some("public".to_string()),
+            database_name: None,
+            table_type: Some(schema::TableType::Table),
+        });
+        schema.add_column(schema::Column {
+            column_name: "id".to_string(),
+            table_name: Some("users".to_string()),
+            schema_name: Some("public".to_string()),
+            data_type: schema::DataType::Integer,
+            is_nullable: None,
+        });
+        schema.add_column(schema::Column {
+            column_name: "name".to_string(),
+            table_name: Some("users".to_string()),
+            schema_name: Some("public".to_string()),
+            data_type: schema::DataType::Text,
+            is_nullable: None,
+        });
+        schema.add_column(schema::Column {
+            column_name: "email".to_string(),
+            table_name: Some("users".to_string()),
+            schema_name: Some("public".to_string()),
+            data_type: schema::DataType::Text,
+            is_nullable: None,
+        });
+
+        // posts table
+        schema.add_table(schema::Table {
+            table_name: "posts".to_string(),
+            schema_name: Some("public".to_string()),
+            database_name: None,
+            table_type: Some(schema::TableType::Table),
+        });
+        schema.add_column(schema::Column {
+            column_name: "id".to_string(),
+            table_name: Some("posts".to_string()),
+            schema_name: Some("public".to_string()),
+            data_type: schema::DataType::Integer,
+            is_nullable: None,
+        });
+        schema.add_column(schema::Column {
+            column_name: "title".to_string(),
+            table_name: Some("posts".to_string()),
+            schema_name: Some("public".to_string()),
+            data_type: schema::DataType::Text,
+            is_nullable: None,
+        });
+        schema.add_column(schema::Column {
+            column_name: "content".to_string(),
+            table_name: Some("posts".to_string()),
+            schema_name: Some("public".to_string()),
+            data_type: schema::DataType::Text,
+            is_nullable: None,
+        });
+
+        self.with_schema(schema)
     }
 
     pub fn run_with(
-        self,
-        complete: impl Fn(&Context<'_>, &mut CompletionBuilder),
+        self, complete: impl Fn(&mut Context<'_>, &mut CompletionBuilder),
     ) -> CompletionTestResult {
         let (input, cursor) = get_caret_cursor(&self.input);
         let spec = self.spec.as_ref();
-        let ctx = match spec {
+        let mut ctx = match spec {
             Some(spec) => Context::build(spec, &self.schema, &input, cursor),
             None => Context::build(&ansi::SPEC, &self.schema, &input, cursor),
         }
         .unwrap();
         let mut builder = CompletionBuilder::new();
-        complete(&ctx, &mut builder);
+        complete(&mut ctx, &mut builder);
         CompletionTestResult {
             query: input.to_string(),
             completions: builder.build(&ctx),

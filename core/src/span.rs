@@ -1,4 +1,5 @@
-use std::ops::{Deref, Range};
+use std::ops::Deref;
+use std::ops::Range;
 
 /// A span and an item
 #[derive(Debug, Clone, Copy, PartialEq)]

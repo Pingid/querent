@@ -1,5 +1,9 @@
 use crate::ast::*;
-use crate::lex::{Assoc, Keyword, OpTag, Operator, TokenKind};
+use crate::lex::Assoc;
+use crate::lex::Keyword;
+use crate::lex::OpTag;
+use crate::lex::Operator;
+use crate::lex::TokenKind;
 use crate::parse::Parser;
 use crate::span::Loc;
 

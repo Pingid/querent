@@ -1,5 +1,7 @@
-use std::fs::{self, File};
-use std::io::{BufWriter, Write};
+use std::fs::File;
+use std::fs::{self};
+use std::io::BufWriter;
+use std::io::Write;
 use std::path::PathBuf;
 
 use querent_core::schema;

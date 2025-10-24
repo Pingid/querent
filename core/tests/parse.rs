@@ -1,9 +1,10 @@
-use querent_core::{
-    ast,
-    dialect::{DialectSpec, ansi, postgres, sqlite},
-    lex::lex,
-    parse::Parser,
-};
+use querent_core::ast;
+use querent_core::dialect::DialectSpec;
+use querent_core::dialect::ansi;
+use querent_core::dialect::postgres;
+use querent_core::dialect::sqlite;
+use querent_core::lex::lex;
+use querent_core::parse::Parser;
 
 mod common;
 use common::ast::AstDisplay;

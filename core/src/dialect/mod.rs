@@ -1,7 +1,9 @@
-use crate::{
-    lex::{Keyword, Operator, QuoteStyle, TokenKind},
-    schema::{DataType, FunctionType},
-};
+use crate::lex::Keyword;
+use crate::lex::Operator;
+use crate::lex::QuoteStyle;
+use crate::lex::TokenKind;
+use crate::schema::DataType;
+use crate::schema::FunctionType;
 
 mod follow;
 pub use follow::*;
@@ -81,7 +83,7 @@ pub struct DialectSpec {
     pub name: &'static str,
     pub keywords: &'static phf::Map<&'static str, Keyword>,
     pub operators: &'static phf::Map<&'static str, Operator>,
-    pub functions: &'static phf::Map<&'static str, DialectFunction>,
+    pub functions: &'static phf::Map<&'static str, SpecFunction>,
     pub style_rules: StyleRules,
     pub follow_rules: &'static [Rules],
 }
@@ -168,7 +170,7 @@ pub enum CommentStyle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DialectFunction {
+pub struct SpecFunction {
     pub function_name: &'static str,
     pub parameter_types: &'static [DataType],
     pub function_type: FunctionType,

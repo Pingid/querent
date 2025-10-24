@@ -1,7 +1,9 @@
-use crate::{
-    dialect::{CaseFold, CommentStyle, DialectSpec, StyleRules, ansi},
-    lex::QuoteStyle,
-};
+use crate::dialect::CaseFold;
+use crate::dialect::CommentStyle;
+use crate::dialect::DialectSpec;
+use crate::dialect::StyleRules;
+use crate::dialect::ansi;
+use crate::lex::QuoteStyle;
 
 mod keyword;
 use keyword::KEYWORDS;

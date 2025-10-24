@@ -1,10 +1,15 @@
-use crate::lex::{Keyword, TokenKind};
-
-use crate::complete::context::{ClauseKind, Context, Location, RelationKind, ScopeResolve};
-use crate::complete::{Completion, CompletionBuilder, CompletionKind};
+use crate::complete::completion::Completion;
+use crate::complete::completion::CompletionBuilder;
+use crate::complete::completion::CompletionKind;
+use crate::complete::context::ClauseKind;
+use crate::complete::context::Context;
+use crate::complete::context::Location;
+use crate::complete::context::RelationKind;
+use crate::lex::Keyword;
+use crate::lex::TokenKind;
 use crate::schema;
 
-pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
+pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
     if !should_complete(ctx) {
         return;
     }
@@ -21,7 +26,7 @@ pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
     }
 
     // Add all CTEs
-    for cte in ctx.scope.get_cte_names() {
+    for cte in ctx.scope.cte_names() {
         tables.push(AvailableTable {
             name: cte.to_string(),
             score: 0,
@@ -30,7 +35,7 @@ pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
     }
 
     // Rank tables used in the SELECT list higher
-    let projected = ctx.scope.resolve_projected_columns(ctx.schema);
+    let projected = ctx.scope.projected();
 
     for t in &mut tables {
         if projected.iter().any(|p| match &p.source_alias {
@@ -43,7 +48,7 @@ pub fn complete(ctx: &Context<'_>, builder: &mut CompletionBuilder) {
 
     // Rank tables already used in the FROM clause lower
     for t in &mut tables {
-        if ctx.scope.relations.iter().any(|(_, r)| match &r.kind {
+        if ctx.scope.relations().iter().any(|(_, r)| match &r.kind {
             RelationKind::Base(path) => path.0.contains(&t.name.as_str()),
             _ => false,
         }) {
@@ -119,9 +124,9 @@ fn detail(table: &AvailableTable) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::{CompletionTest, CompletionTestResult};
-
     use super::*;
+    use crate::test_util::CompletionTest;
+    use crate::test_util::CompletionTestResult;
 
     #[test]
     fn completes_at_appropriate_locations() {

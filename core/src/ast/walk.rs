@@ -5,9 +5,9 @@ use crate::span::Loc;
 
 /// A reference to any node in the AST.
 ///
-/// This enum provides a unified type for traversing the entire SQL AST hierarchy.
-/// Each variant holds a borrowed reference to a specific node type, allowing
-/// zero-copy tree traversal.
+/// This enum provides a unified type for traversing the entire SQL AST
+/// hierarchy. Each variant holds a borrowed reference to a specific node type,
+/// allowing zero-copy tree traversal.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Node<'a> {
     // Top-level
@@ -108,16 +108,12 @@ pub enum AstEvent<'a> {
 
 /// AST traversal operations.
 impl<'a> Node<'a> {
-    /// Performs a depth-first traversal of the AST, calling the visitor function
-    /// for each node with both `Enter` and `Exit` events.
+    /// Performs a depth-first traversal of the AST, calling the visitor
+    /// function for each node with both `Enter` and `Exit` events.
     pub fn visit<T, F>(&self, visitor: &mut F) -> ControlFlow<T>
-    where
-        F: FnMut(AstEvent<'a>) -> ControlFlow<T>,
-    {
+    where F: FnMut(AstEvent<'a>) -> ControlFlow<T> {
         fn visit<'a, T, F>(node: Node<'a>, visitor: &mut F) -> ControlFlow<T>
-        where
-            F: FnMut(AstEvent<'a>) -> ControlFlow<T>,
-        {
+        where F: FnMut(AstEvent<'a>) -> ControlFlow<T> {
             visitor(AstEvent::Enter(node))?;
             node.visit(visitor)?;
             visitor(AstEvent::Exit(node))
@@ -459,11 +455,10 @@ impl<'a> Node<'a> {
 
 /// AST search operations.
 impl<'a> Node<'a> {
-    /// Finds the first node matching the predicate in pre-order (top-down) traversal.
+    /// Finds the first node matching the predicate in pre-order (top-down)
+    /// traversal.
     pub fn find<F>(&self, pred: F) -> Option<Node<'a>>
-    where
-        F: Fn(Node<'a>) -> bool,
-    {
+    where F: Fn(Node<'a>) -> bool {
         self.visit(&mut |event| match event {
             AstEvent::Enter(n) if pred(n) => ControlFlow::Break(n),
             _ => ControlFlow::Continue(()),
@@ -471,11 +466,10 @@ impl<'a> Node<'a> {
         .break_value()
     }
 
-    /// Finds the last node matching the predicate in post-order (bottom-up) traversal.
+    /// Finds the last node matching the predicate in post-order (bottom-up)
+    /// traversal.
     pub fn find_rev<F>(&self, pred: F) -> Option<Node<'a>>
-    where
-        F: Fn(Node<'a>) -> bool,
-    {
+    where F: Fn(Node<'a>) -> bool {
         self.visit(&mut |event| match event {
             AstEvent::Exit(n) if pred(n) => ControlFlow::Break(n),
             _ => ControlFlow::Continue(()),
@@ -488,11 +482,10 @@ impl<'a> Node<'a> {
 impl<'a> Node<'a> {
     /// Filters and maps nodes during traversal, returning a vector of results.
     ///
-    /// This is similar to Iterator's `filter_map`, but operates on the entire AST tree.
+    /// This is similar to Iterator's `filter_map`, but operates on the entire
+    /// AST tree.
     pub fn filter_map<T, F>(&self, mut f: F) -> Vec<T>
-    where
-        F: FnMut(Node<'a>) -> Option<T>,
-    {
+    where F: FnMut(Node<'a>) -> Option<T> {
         let mut results = Vec::new();
         let _ = self.visit(&mut |event| {
             if let AstEvent::Enter(n) = event
@@ -507,9 +500,7 @@ impl<'a> Node<'a> {
 
     /// Visits all nodes
     pub fn for_each<F>(&self, mut f: F)
-    where
-        F: FnMut(Node<'a>),
-    {
+    where F: FnMut(Node<'a>) {
         let _ = self.visit(&mut |event| {
             if let AstEvent::Enter(n) = event {
                 f(n);
@@ -520,9 +511,7 @@ impl<'a> Node<'a> {
 
     /// Visits only up to a given depth.
     pub fn for_each_max_depth<F>(&self, max_depth: usize, mut f: F)
-    where
-        F: FnMut(Node<'a>),
-    {
+    where F: FnMut(Node<'a>) {
         let mut depth = 0;
         let _ = self.visit(&mut |event| {
             match event {

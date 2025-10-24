@@ -1,5 +1,9 @@
 use crate::ast::*;
-use crate::lex::{Keyword, OpTag, Token, TokenKind, TokenTape};
+use crate::lex::Keyword;
+use crate::lex::OpTag;
+use crate::lex::Token;
+use crate::lex::TokenKind;
+use crate::lex::TokenTape;
 use crate::span::Loc;
 
 #[derive(Debug)]
@@ -546,7 +550,8 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             self.tokens.advance()?;
             return Some(NamePart::Star);
         }
-        // Allow non-reserved keywords as identifiers (e.g., "key", "value", but not "FROM", "WHERE")
+        // Allow non-reserved keywords as identifiers (e.g., "key", "value", but not
+        // "FROM", "WHERE")
         if let Some(TokenKind::Keyword(kw)) = self.tokens.current_kind()
             && !self.is_reserved_keyword(kw)
         {
@@ -686,8 +691,7 @@ impl<'src, 'tok> Parser<'src, 'tok> {
 
     /// Parse a comma-separated list (at least one item)
     fn comma_list1<T>(
-        &mut self,
-        parse_fn: impl Fn(&mut Self) -> Option<T>,
+        &mut self, parse_fn: impl Fn(&mut Self) -> Option<T>,
     ) -> Option<DelimitedList<Loc<T>>> {
         self.parse_list1(TokenKind::Comma, parse_fn)
     }
@@ -731,8 +735,7 @@ impl<'src, 'tok> Parser<'src, 'tok> {
     }
 
     fn parse_with_span<T>(
-        &mut self,
-        f: impl FnOnce(&mut Self) -> Option<T>,
+        &mut self, f: impl FnOnce(&mut Self) -> Option<T>,
     ) -> Option<(T, SpannedStr)> {
         let start = self.current_pos();
         let result = f(self)?;
@@ -740,11 +743,10 @@ impl<'src, 'tok> Parser<'src, 'tok> {
         Some((result, (start, end).into()))
     }
 
-    /// Parse a delimited list with at least one item (tolerates trailing separator)
+    /// Parse a delimited list with at least one item (tolerates trailing
+    /// separator)
     pub(crate) fn parse_list1<T>(
-        &mut self,
-        sep: TokenKind,
-        parse_fn: impl Fn(&mut Self) -> Option<T>,
+        &mut self, sep: TokenKind, parse_fn: impl Fn(&mut Self) -> Option<T>,
     ) -> Option<DelimitedList<Loc<T>>> {
         let mut list = DelimitedList::default();
         list.items.push(self.node(|s| parse_fn(s))?);

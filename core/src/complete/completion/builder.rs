@@ -1,8 +1,8 @@
-use crate::complete::Completions;
-
 use super::super::context::Context;
 use super::Completion;
-use super::ranker::{DefaultRanker, Ranker};
+use super::ranker::DefaultRanker;
+use super::ranker::Ranker;
+use crate::complete::completion::Completions;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompletionBuilder {
@@ -47,6 +47,7 @@ impl CompletionBuilder {
                     kind: completion.kind,
                     replace: ctx.cursor.replace,
                     commit_characters: completion.commit_characters,
+                    insert_text_format: completion.insert_text_format,
                     detail: completion.detail,
                 })
                 .collect(),

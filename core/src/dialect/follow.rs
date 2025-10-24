@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use crate::lex::{Keyword, OpTag, Operator, TokenKind};
+use crate::lex::Keyword;
+use crate::lex::OpTag;
+use crate::lex::Operator;
+use crate::lex::TokenKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rules(pub &'static [Rule]);
@@ -16,7 +19,8 @@ pub enum Next {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Cond {
-    /// Returns true when at the end in forward direction or when tokens are empty in backward direction.
+    /// Returns true when at the end in forward direction or when tokens are
+    /// empty in backward direction.
     End,
     /// Consumes the token if it matches the given keyword.
     Kw(Keyword),
@@ -24,15 +28,20 @@ pub enum Cond {
     Op(OpTag),
     /// Consumes the token if it matches the given kind.
     Kind(TokenKind),
-    /// Tries each condition and succeeds if any match. Takes the best (furthest in direction) match.
+    /// Tries each condition and succeeds if any match. Takes the best (furthest
+    /// in direction) match.
     Any(&'static [Cond]),
-    /// Succeeds when the inner condition fails, consumes one token. Fails when inner succeeds.
+    /// Succeeds when the inner condition fails, consumes one token. Fails when
+    /// inner succeeds.
     Not(&'static Cond),
-    /// Continues consuming until the condition no longer holds. Always succeeds (even with zero matches).
+    /// Continues consuming until the condition no longer holds. Always succeeds
+    /// (even with zero matches).
     Many(&'static Cond),
-    /// All conditions must match in order. Fails if any condition doesn't match.
+    /// All conditions must match in order. Fails if any condition doesn't
+    /// match.
     Seq(&'static [Cond]),
-    /// Stops at (but doesn't consume) the first token where the condition holds. Fails if condition never matches.
+    /// Stops at (but doesn't consume) the first token where the condition
+    /// holds. Fails if condition never matches.
     Until(&'static Cond),
 }
 
@@ -77,11 +86,7 @@ impl Cond {
     }
 
     fn scan_inner(
-        &self,
-        ts: &[TokenKind],
-        offset: usize,
-        direction: Dir,
-        fuel: &mut usize,
+        &self, ts: &[TokenKind], offset: usize, direction: Dir, fuel: &mut usize,
     ) -> (bool, usize) {
         if *fuel == 0 {
             return (false, offset);
@@ -202,8 +207,7 @@ impl Cond {
 }
 
 pub fn resolve_next<'a>(
-    rules: &'a [Rules],
-    tokens: &'a [TokenKind],
+    rules: &'a [Rules], tokens: &'a [TokenKind],
 ) -> impl Iterator<Item = Vec<Keyword>> + 'a {
     let t = match tokens.last() {
         Some(TokenKind::Eof) => &tokens[..tokens.len().saturating_sub(1)],
@@ -219,8 +223,7 @@ pub fn resolve_next<'a>(
 }
 
 fn apply<'a>(
-    rules: impl IntoIterator<Item = &'a Rule> + 'a,
-    tokens: &'a [TokenKind],
+    rules: impl IntoIterator<Item = &'a Rule> + 'a, tokens: &'a [TokenKind],
 ) -> impl Iterator<Item = Next> + 'a {
     rules
         .into_iter()
@@ -294,7 +297,8 @@ mod tests {
 
     #[test]
     fn test_if_op() {
-        use crate::lex::{Assoc, Fixity};
+        use crate::lex::Assoc;
+        use crate::lex::Fixity;
 
         let tokens = vec![
             TokenKind::Operator(Operator {

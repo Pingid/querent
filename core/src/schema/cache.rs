@@ -4,9 +4,9 @@ use crate::schema;
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS), ts(optional_fields))]
 #[derive(Debug, Default, Clone)]
 pub struct Cache {
-    columns: Vec<schema::Column>,
-    tables: Vec<schema::Table>,
-    functions: Vec<schema::Function>,
+    pub columns: Vec<schema::Column>,
+    pub tables: Vec<schema::Table>,
+    pub functions: Vec<schema::Function>,
 }
 
 /// Schema cache builder helpers

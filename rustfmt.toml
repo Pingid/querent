@@ -1,0 +1,27 @@
+# Imports
+imports_granularity = "Item"       # split grouped imports
+group_imports = "StdExternalCrate" # group std, external, and local imports
+
+# Line width and wrapping
+max_width = 100      # default is 100
+wrap_comments = true # wrap long comments
+
+# Function and struct layout
+fn_params_layout = "Compressed" # keep function args inline when short
+where_single_line = true        # keep simple where clauses on one line
+
+# Control braces and blocks
+brace_style = "SameLineWhere"          # place braces on same line as where
+control_brace_style = "AlwaysSameLine"
+
+# Formatting style
+trailing_comma = "Vertical"          # add trailing commas in multi-line lists
+match_arm_leading_pipes = "Preserve" # don't auto-add or remove leading `|`
+format_macro_bodies = true           # format `format!`/`println!` args
+normalize_comments = true            # normalize comment spacing
+
+# Misc
+edition = "2021"
+use_field_init_shorthand = true
+reorder_imports = true
+reorder_modules = true

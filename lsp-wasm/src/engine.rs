@@ -1,9 +1,14 @@
-use serde_wasm_bindgen as swb;
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
-use wasm_bindgen::prelude::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
-use querent_core::{complete::Engine, dialect::DialectKind, schema};
+use querent_core::complete::Engine;
+use querent_core::complete::completion::Completion;
+use querent_core::dialect::DialectKind;
+use querent_core::schema;
 use querent_lsp::CompletionProvider;
+use serde_wasm_bindgen as swb;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
@@ -77,11 +82,7 @@ impl EngineProvider {
 }
 
 impl CompletionProvider for EngineProvider {
-    fn complete(
-        &self,
-        uri: String,
-        doc: &querent_core::doc::Content,
-    ) -> Vec<querent_core::complete::Completion> {
+    fn complete(&self, uri: String, doc: &querent_core::doc::Content) -> Vec<Completion> {
         if let Some(engine) = self.engines.borrow().get(&uri) {
             engine.complete(doc).items
         } else {

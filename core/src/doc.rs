@@ -27,10 +27,7 @@ impl Content {
     }
 
     pub fn apply_edit(
-        &mut self,
-        start: impl Into<Location>,
-        end: impl Into<Location>,
-        new_text: &str,
+        &mut self, start: impl Into<Location>, end: impl Into<Location>, new_text: &str,
     ) {
         let start = self.get_offset(start);
         let end = self.get_offset(end);

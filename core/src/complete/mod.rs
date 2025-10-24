@@ -1,11 +1,10 @@
-use crate::{dialect::DialectSpec, doc::Content, schema};
+use crate::dialect::DialectSpec;
+use crate::doc::Content;
+use crate::schema;
 
-mod completion;
-mod context;
-mod provider;
-
-pub use completion::*;
-pub use context::Context;
+pub mod completion;
+pub mod context;
+pub mod provider;
 
 pub struct Engine {
     pub spec: &'static DialectSpec,
@@ -17,18 +16,20 @@ impl Engine {
         Self { spec, schema }
     }
 
-    pub fn complete(&self, doc: &Content) -> Completions {
+    pub fn complete(&self, doc: &Content) -> completion::Completions {
         complete(&self.spec, &self.schema, doc)
     }
 }
 
-pub fn complete(spec: &DialectSpec, schema: &schema::Cache, doc: &Content) -> Completions {
+pub fn complete(
+    spec: &DialectSpec, schema: &schema::Cache, doc: &Content,
+) -> completion::Completions {
     let text = doc.to_string();
     let cursor = doc.cursor().min(text.len());
-    let mut builder = CompletionBuilder::new();
-    let Some(ctx) = Context::build(spec, schema, &text, cursor) else {
+    let mut builder = completion::CompletionBuilder::new();
+    let Some(mut ctx) = context::Context::build(spec, schema, &text, cursor) else {
         return builder.empty();
     };
-    provider::complete(&ctx, &mut builder);
+    provider::complete(&mut ctx, &mut builder);
     builder.build(&ctx)
 }

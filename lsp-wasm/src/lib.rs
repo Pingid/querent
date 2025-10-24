@@ -1,11 +1,13 @@
-use js_sys::Promise;
-use serde::{Deserialize, Serialize};
-use serde_wasm_bindgen as swb;
 use std::rc::Rc;
+
+use js_sys::Promise;
+use querent_lsp::LspRequest;
+use querent_lsp::LspServer;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_wasm_bindgen as swb;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
-
-use querent_lsp::{LspRequest, LspServer};
 
 mod engine;
 mod types;

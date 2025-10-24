@@ -1,9 +1,13 @@
-use std::{cmp::Ordering, collections::HashSet};
+use std::cmp::Ordering;
+use std::collections::HashSet;
+
 use strsim::jaro_winkler;
 
-use super::{CompletionKind, CompletionWithScore};
+use super::CompletionKind;
+use super::CompletionWithScore;
 
-/// Ranker decides how a batch of completions should be ordered for a given `needle`.
+/// Ranker decides how a batch of completions should be ordered for a given
+/// `needle`.
 pub trait Ranker {
     fn rank(&self, needle: &str, items: Vec<CompletionWithScore>) -> Vec<CompletionWithScore>;
 }
@@ -110,8 +114,10 @@ fn score_text(a: &CompletionWithScore, needle: &str) -> (bool, bool, f64) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Completion, CompletionKind};
     use super::*;
+    use crate::complete::completion::Completion;
+    use crate::complete::completion::CompletionKind;
+    use crate::complete::completion::InsertTextFormat;
 
     fn c(label: &str, kind: CompletionKind, score: i8) -> CompletionWithScore {
         CompletionWithScore {
@@ -122,6 +128,7 @@ mod tests {
                 kind,
                 replace: (0, 0).into(),
                 commit_characters: vec![],
+                insert_text_format: InsertTextFormat::default(),
                 detail: None,
             },
             score,

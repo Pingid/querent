@@ -43,20 +43,20 @@
 //     // Without FROM clause, suggest columns from all tables in catalog
 //     let t = case("SELECT ^").cache(users_posts()).run();
 //     // Duplicate column names (id) show with qualified names
-//     t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
-// }
+//     t.assert_col(["content", "email", "name", "posts.id", "title",
+// "users.id"]); }
 
 // #[test]
 // fn column_filters_by_already_selected() {
-//     // Only suggest columns from tables containing all already-selected columns
-//     let t = case("SELECT name, ^").cache(users_posts()).run();
+//     // Only suggest columns from tables containing all already-selected
+// columns     let t = case("SELECT name, ^").cache(users_posts()).run();
 //     t.assert_col(["email", "id"]);
 // }
 
 // #[test]
 // fn column_restricts_to_from_tables() {
-//     // FROM clause restricts suggestions to columns from referenced tables only
-//     let t = case("SELECT ^ FROM users").cache(users_posts()).run();
+//     // FROM clause restricts suggestions to columns from referenced tables
+// only     let t = case("SELECT ^ FROM users").cache(users_posts()).run();
 //     t.assert_col(["email", "id", "name"]);
 // }
 
@@ -120,9 +120,9 @@
 // #[test]
 // fn column_qualifies_with_aliases_for_multiple_tables() {
 //     // With multiple FROM sources and an existing qualified selection,
-//     // suggestions should be qualified using aliases and exclude already selected column
-//     let t = case("SELECT u.name, ^ FROM public.users u, public.posts p")
-//         .cache(users_posts())
+//     // suggestions should be qualified using aliases and exclude already
+// selected column     let t = case("SELECT u.name, ^ FROM public.users u,
+// public.posts p")         .cache(users_posts())
 //         .run();
 
 //     // Duplicate "id" columns show with qualified names using aliases
@@ -130,8 +130,8 @@
 //         |k| matches!(k, CompletionKind::Column),
 //         ["p.content", "p.id", "u.email", "u.id"],
 //     );
-//     t.assert_apply("SELECT u.name, p.content FROM public.users u, public.posts p");
-// }
+//     t.assert_apply("SELECT u.name, p.content FROM public.users u,
+// public.posts p"); }
 
 // #[test]
 // fn column_resolves_from_subquery_with_alias() {
@@ -145,24 +145,24 @@
 // #[test]
 // fn column_suggests_from_cte() {
 //     // Suggest columns from CTE (Common Table Expression)
-//     let sql = "WITH cte AS (SELECT id, name FROM public.users) SELECT ^ FROM cte";
-//     let t = case(sql).cache(users_posts()).run();
+//     let sql = "WITH cte AS (SELECT id, name FROM public.users) SELECT ^ FROM
+// cte";     let t = case(sql).cache(users_posts()).run();
 //     t.assert_col(["id", "name"]);
 // }
 
 // #[test]
 // fn column_completes_from_cte_qualified() {
 //     // Complete columns from CTE using qualified name (cte.^)
-//     let sql = "WITH cte AS (SELECT id, name FROM public.users) SELECT cte.^ FROM cte";
-//     let t = case(sql).cache(users_posts()).run();
+//     let sql = "WITH cte AS (SELECT id, name FROM public.users) SELECT cte.^
+// FROM cte";     let t = case(sql).cache(users_posts()).run();
 //     t.assert_col(["id", "name"]);
 // }
 
 // #[test]
 // fn column_completes_from_cte_with_alias() {
 //     // Complete columns from CTE using an alias
-//     let sql = "WITH cte AS (SELECT id, name FROM public.users) SELECT u.^ FROM cte u";
-//     let t = case(sql).cache(users_posts()).run();
+//     let sql = "WITH cte AS (SELECT id, name FROM public.users) SELECT u.^
+// FROM cte u";     let t = case(sql).cache(users_posts()).run();
 //     t.assert_col(["id", "name"]);
 // }
 
@@ -174,8 +174,8 @@
 //         .table("public", "posts", &["id", "title"])
 //         .build();
 //     let t = case("SELECT ^ FROM users, posts").cache(cat).run();
-//     // Both "id" columns should show with qualified names (sorted alphabetically)
-//     t.assert_col(["name", "posts.id", "title", "users.id"]);
+//     // Both "id" columns should show with qualified names (sorted
+// alphabetically)     t.assert_col(["name", "posts.id", "title", "users.id"]);
 // }
 
 // #[test]
@@ -225,8 +225,8 @@
 
 // // #[test]
 // // fn table_shows_duplicates_from_different_schemas() {
-// //     // Same table name in different schemas should show both with qualified sources
-// //     let cat = SchemaCacheBuilder::new()
+// //     // Same table name in different schemas should show both with
+// qualified sources //     let cat = SchemaCacheBuilder::new()
 // //         .table("public", "users", &["id"])
 // //         .table("analytics", "users", &["id"])
 // //         .build();
@@ -266,8 +266,8 @@
 //     let sql = "SELECT * FROM users JOIN posts ON ^";
 //     let t = case(sql).cache(users_posts()).run();
 //     // Duplicate "id" columns show with qualified names
-//     t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
-// }
+//     t.assert_col(["content", "email", "name", "posts.id", "title",
+// "users.id"]); }
 
 // #[test]
 // fn join_suggests_columns_after_logical_operator() {
@@ -275,8 +275,8 @@
 //     let sql = "SELECT * FROM users JOIN posts ON users.id = posts.id AND ^";
 //     let t = case(sql).cache(users_posts()).run();
 //     // Duplicate "id" columns show with qualified names
-//     t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
-// }
+//     t.assert_col(["content", "email", "name", "posts.id", "title",
+// "users.id"]); }
 
 // #[test]
 // fn join_completes_qualified_columns() {
@@ -316,8 +316,8 @@
 //     let sql = "SELECT * FROM users INNER JOIN posts ON ^";
 //     let t = case(sql).cache(users_posts()).run();
 //     // Duplicate "id" columns show with qualified names
-//     t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
-// }
+//     t.assert_col(["content", "email", "name", "posts.id", "title",
+// "users.id"]); }
 
 // #[test]
 // fn join_suggests_common_columns_in_using() {
@@ -411,8 +411,8 @@
 // #[test]
 // fn subquery_isolates_scope() {
 //     // Subquery WHERE should only see columns from inner query tables
-//     let t = case("SELECT * FROM users WHERE EXISTS (SELECT 1 FROM posts p WHERE ^)")
-//         .cache(users_posts())
+//     let t = case("SELECT * FROM users WHERE EXISTS (SELECT 1 FROM posts p
+// WHERE ^)")         .cache(users_posts())
 //         .run();
 //     t.assert_col(["content", "id", "title"]);
 // }
@@ -420,8 +420,8 @@
 // #[test]
 // fn subquery_completes_qualified_columns() {
 //     // Qualified columns in correlated subquery work correctly
-//     let t = case("SELECT * FROM users u WHERE EXISTS (SELECT 1 FROM posts p WHERE p.^ = u.id)")
-//         .cache(users_posts())
+//     let t = case("SELECT * FROM users u WHERE EXISTS (SELECT 1 FROM posts p
+// WHERE p.^ = u.id)")         .cache(users_posts())
 //         .run();
 //     t.assert_col(["content", "id", "title"]);
 // }
@@ -434,8 +434,8 @@
 // //     // Suggest comparison operators after column
 // //     let t = case("SELECT * FROM users WHERE id ^").run();
 // //     t.assert_includes_op([
-// //         "=", "!=", "<>", ">", "<", ">=", "<=", "IN", "NOT IN", "LIKE", "IS", "IS NOT",
-// //     ]);
+// //         "=", "!=", "<>", ">", "<", ">=", "<=", "IN", "NOT IN", "LIKE",
+// "IS", "IS NOT", //     ]);
 // // }
 
 // // #[test]
@@ -456,8 +456,8 @@
 //     // Suggest THEN after WHEN condition
 //     let t = case("SELECT CASE WHEN ^").cache(users_posts()).run();
 //     // Duplicate "id" columns show with qualified names
-//     t.assert_col(["content", "email", "name", "posts.id", "title", "users.id"]);
-// }
+//     t.assert_col(["content", "email", "name", "posts.id", "title",
+// "users.id"]); }
 
 // // ============================================================================
 // // Test Utilities
@@ -481,9 +481,9 @@
 // }
 
 // impl TestCase {
-//     /// Assert that the first completions have the expected Column labels (exact order).
-//     fn assert_col<const N: usize>(&self, expected: [&str; N]) {
-//         let labels: Vec<_> = self
+//     /// Assert that the first completions have the expected Column labels
+// (exact order).     fn assert_col<const N: usize>(&self, expected: [&str; N])
+// {         let labels: Vec<_> = self
 //             .completions
 //             .iter()
 //             .filter(|c| matches!(c.kind, CompletionKind::Column))
@@ -507,8 +507,8 @@
 //     fn apply_nth(&self, idx: usize) -> String {
 //         let c = &self.completions[idx];
 //         let mut out = String::with_capacity(
-//             self.sql.len() - (c.replace.end - c.replace.start) + c.insert_text.len(),
-//         );
+//             self.sql.len() - (c.replace.end - c.replace.start) +
+// c.insert_text.len(),         );
 //         out.push_str(&self.sql[..c.replace.start]);
 //         out.push_str(&c.insert_text);
 //         out.push_str(&self.sql[c.replace.end..]);
@@ -520,9 +520,9 @@
 
 //     // ---- New helpers ----
 
-//     /// Assert that ALL completion labels (for a given kind) contain the provided set,
-//     /// in the exact order they appear in results. Useful when extra items may trail.
-//     fn assert_kind_contains_in_order<const N: usize>(
+//     /// Assert that ALL completion labels (for a given kind) contain the
+// provided set,     /// in the exact order they appear in results. Useful when
+// extra items may trail.     fn assert_kind_contains_in_order<const N: usize>(
 //         &self,
 //         kind_pred: impl Fn(&CompletionKind) -> bool,
 //         expected: [&str; N],
@@ -556,8 +556,8 @@
 // }
 
 // impl CompletionTester {
-//     fn new(spec: &'static DialectSpec, input: impl Into<String>, cursor: usize) -> Self {
-//         Self {
+//     fn new(spec: &'static DialectSpec, input: impl Into<String>, cursor:
+// usize) -> Self {         Self {
 //             spec,
 //             cache: schema::Cache::default(),
 //             input: input.into(),
@@ -585,8 +585,8 @@
 //     pub(crate) fn new() -> Self {
 //         Self(schema::Cache::default())
 //     }
-//     pub(crate) fn table(mut self, schema: &str, name: &str, cols: &[&str]) -> Self {
-//         self.0.add_table(schema::Table {
+//     pub(crate) fn table(mut self, schema: &str, name: &str, cols: &[&str]) ->
+// Self {         self.0.add_table(schema::Table {
 //             table_name: name.to_string(),
 //             schema_name: Some(schema.to_string()),
 //         });

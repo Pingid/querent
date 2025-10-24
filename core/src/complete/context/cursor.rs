@@ -1,4 +1,7 @@
-use crate::lex::{Keyword, OpTag, Token, TokenKind};
+use crate::lex::Keyword;
+use crate::lex::OpTag;
+use crate::lex::Token;
+use crate::lex::TokenKind;
 use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,9 +53,7 @@ pub enum Location {
 }
 
 pub fn detect_cursor<'txt>(
-    text: &'txt str,
-    tokens: &[Token<'txt>],
-    position: usize,
+    text: &'txt str, tokens: &[Token<'txt>], position: usize,
 ) -> Cursor<'txt> {
     if tokens.len() <= 1 {
         return Cursor {
@@ -170,9 +171,9 @@ pub fn detect_cursor<'txt>(
 
 #[cfg(test)]
 mod tests {
-    use crate::test_util::{ansi_tokens, get_caret_cursor};
-
     use super::*;
+    use crate::test_util::ansi_tokens;
+    use crate::test_util::get_caret_cursor;
 
     #[test]
     fn start() {

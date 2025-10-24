@@ -1,5 +1,7 @@
-use crate::lex::{OpTag, TokenKind};
-use crate::span::{Loc, Span};
+use crate::lex::OpTag;
+use crate::lex::TokenKind;
+use crate::span::Loc;
+use crate::span::Span;
 
 /// Identifier is a zero-copy string slice tracked by Span
 pub type SpannedStr = Span;
@@ -15,7 +17,8 @@ pub enum Statement {
 
 // ------------- Query structure -------------
 
-/// A full query: optional WITH, a set-operation expression body, and optional tail (ORDER/LIMIT/OFFSET)
+/// A full query: optional WITH, a set-operation expression body, and optional
+/// tail (ORDER/LIMIT/OFFSET)
 #[derive(Debug, Clone, PartialEq)]
 pub struct Query {
     pub with: Option<Loc<With>>,
@@ -254,7 +257,8 @@ pub enum WindowRef {
 
 // ------------- ORDER BY / LIMIT / OFFSET -------------
 
-/// Query tail with ORDER BY, LIMIT, OFFSET (binds to the whole query expression)
+/// Query tail with ORDER BY, LIMIT, OFFSET (binds to the whole query
+/// expression)
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuerySuffix {
     pub order_by: Option<Loc<OrderBy>>,
