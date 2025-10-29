@@ -85,9 +85,9 @@ pub enum QueryPrimary {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Select {
     pub distinct: SetQuantifier,
-    pub projection: Loc<DelimitedList<Loc<ProjectionItem>>>,
+    pub projection: Loc<Projection>,
     pub from: Option<Loc<From>>,
-    pub where_clause: Option<Loc<Expr>>,
+    pub where_clause: Option<Loc<Where>>,
     pub group_by: Option<Loc<GroupBy>>,
     pub having: Option<Loc<Expr>>,
     pub window: Option<Loc<Window>>,
@@ -99,6 +99,17 @@ pub enum SetQuantifier {
     All,
     Distinct,
     DistinctOn(DelimitedList<Loc<Expr>>),
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Projection {
+    pub list: DelimitedList<Loc<ProjectionItem>>,
+}
+
+impl Projection {
+    pub fn items(&self) -> impl Iterator<Item = &Loc<ProjectionItem>> {
+        self.list.items.iter()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -183,6 +194,13 @@ pub enum JoinBase {
 pub enum JoinConstraint {
     On(Loc<Expr>),
     Using(DelimitedList<Loc<SpannedStr>>),
+}
+
+// ------------- WHERE clause -------------
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Where {
+    pub expr: Loc<Expr>,
 }
 
 // ------------- GROUP BY clause -------------
@@ -400,7 +418,7 @@ pub struct SimilarExpr {
 pub struct FunctionCallExpr {
     pub name: Loc<QualifiedName>,
     pub distinct: bool,
-    pub args: DelimitedList<Loc<Expr>>,
+    pub args: Loc<DelimitedList<Loc<Expr>>>,
     pub filter: Option<Box<Loc<Expr>>>,
 }
 
@@ -447,7 +465,7 @@ pub enum ExprList {
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverExpr {
     pub name: Loc<QualifiedName>,
-    pub args: DelimitedList<Loc<Expr>>,
+    pub args: Loc<DelimitedList<Loc<Expr>>>,
     pub over: WindowRef,
     pub filter: Option<Box<Loc<Expr>>>,
 }

@@ -28,6 +28,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
     fn parse_prefix(&mut self) -> Option<Expr> {
         let span = self.tokens.current().map(|t| t.span).unwrap_or(0.into());
+
         match self.tokens.current_kind()? {
             // Literals
             TokenKind::Number => {
@@ -154,11 +155,14 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                     let distinct = self.eat_kw(Keyword::Distinct).is_some();
 
                     // Parse arguments
+                    let start = self.tokens.prev().map(|t| t.span.end).unwrap_or(0);
                     let args = if self.tokens.current_kind() == Some(TokenKind::RightParen) {
                         DelimitedList::default()
                     } else {
                         self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?
                     };
+                    let end = self.tokens.current().map(|t| t.span.start).unwrap_or(start);
+                    let args = Loc::new((start, end), args);
 
                     self.eat(TokenKind::RightParen);
 

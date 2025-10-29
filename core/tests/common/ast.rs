@@ -32,12 +32,15 @@ impl AstDisplay for ast::Select {
                 result.push_str(&format!(" DISTINCT ON ({})", on_items));
             }
         }
-        result.push_str(&format!(" {}", self.projection.item.display(input)));
+        result.push_str(&format!(" {}", self.projection.display(input)));
         if let Some(from) = &self.from {
             result.push_str(&format!(" FROM {}", from.item.display(input)));
         }
         if let Some(where_clause) = &self.where_clause {
-            result.push_str(&format!(" WHERE {}", where_clause.item.display(input)));
+            result.push_str(&format!(
+                " WHERE {}",
+                where_clause.item.expr.item.display(input)
+            ));
         }
         if let Some(group_by) = &self.group_by {
             result.push_str(&format!(" GROUP BY {}", group_by.item.display(input)));
@@ -49,6 +52,17 @@ impl AstDisplay for ast::Select {
             result.push_str(&format!(" WINDOW {}", window.item.display(input)));
         }
         result
+    }
+}
+
+impl AstDisplay for ast::Projection {
+    fn display(&self, input: &str) -> String {
+        self.list
+            .items
+            .iter()
+            .map(|item| item.item.display(input))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 

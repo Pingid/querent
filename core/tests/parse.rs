@@ -138,7 +138,7 @@ fn assert_display_match(inputs: &[&str], specs: &[&DialectSpec]) {
                 eprintln!("Output: {:?}", output);
                 eprintln!("AST:    {:#?}", s);
             }
-            assert_eq!(output, input.to_string());
+            assert_eq!(input.to_string(), output);
         }
     }
 }

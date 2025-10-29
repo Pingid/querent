@@ -90,7 +90,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 query,
             };
             let span_start = cte.name.start;
-            let span_end = self.prev_end(span_start);
+            let span_end = self.prev_end().unwrap_or(span_start);
             ctes.push(Loc::new((span_start, span_end), cte));
 
             if self.eat(TokenKind::Comma).is_some() {
@@ -234,20 +234,27 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
     fn parse_query_core(&mut self) -> Option<QueryPrimary> {
         match self.tokens.current_kind() {
-            Some(TokenKind::Keyword(Keyword::Select)) => {
-                Some(QueryPrimary::Select(self.node(|s| s.parse_select_stmt())?))
-            }
+            Some(TokenKind::Keyword(Keyword::Select)) => Some(QueryPrimary::Select(
+                self.node_incl(|s| s.parse_select_stmt())?,
+            )),
             _ => None,
         }
     }
 
     fn parse_select_stmt(&mut self) -> Option<Select> {
         self.eat_kw(Keyword::Select)?;
+
+        let distinct = self.parse_distinct().unwrap_or(SetQuantifier::All);
+        let projection = self.node_incl(|s| Some(s.parse_projection().unwrap_or_default()))?;
         Some(Select {
-            distinct: self.parse_distinct().unwrap_or(SetQuantifier::All),
-            projection: self.node(|s| s.parse_projection())?,
+            distinct,
+            projection,
             from: self.node(|s| s.parse_from()),
-            where_clause: self.clause_expr(Keyword::Where),
+            where_clause: self.node(|s| {
+                Some(Where {
+                    expr: s.clause_expr(Keyword::Where)?,
+                })
+            }),
             group_by: self.node(|s| s.parse_group_by()),
             having: self.clause_expr(Keyword::Having),
             window: self.node(|s| s.parse_window_clause()),
@@ -255,11 +262,12 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         })
     }
 
-    fn parse_projection(&mut self) -> Option<DelimitedList<Loc<ProjectionItem>>> {
-        Some(
-            self.comma_list1(|s| s.parse_select_item())
+    fn parse_projection(&mut self) -> Option<Projection> {
+        Some(Projection {
+            list: self
+                .comma_list1(|s| s.parse_select_item())
                 .unwrap_or_default(),
-        )
+        })
     }
 
     fn parse_select_item(&mut self) -> Option<ProjectionItem> {
@@ -332,7 +340,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             let right_start = self.current_pos();
             let right = self.parse_table_factor()?;
             let constraint = self.parse_join_constraint();
-            let right_end = self.prev_end(right_start);
+            let right_end = self.prev_end().unwrap_or(right_start);
 
             left = TableRef::Join(Loc::new(
                 (start, right_end),
@@ -394,7 +402,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 None
             };
 
-            let end = self.prev_end(start);
+            let end = self.prev_end().unwrap_or(start);
             return Some(TableRef::Factor(Loc::new(
                 (start, end),
                 TableFactor::Function(Loc::new(
@@ -412,7 +420,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
         // Plain named table
         let alias = self.parse_alias();
-        let end = self.prev_end(start);
+        let end = self.prev_end().unwrap_or(start);
         Some(TableRef::Factor(Loc::new(
             (start, end),
             TableFactor::Named(Loc::new(
@@ -436,7 +444,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             let query = self.node(|s| s.parse_query())?;
             self.eat(TokenKind::RightParen);
             let alias = self.parse_alias();
-            let end = self.prev_end(start);
+            let end = self.prev_end().unwrap_or(start);
             TableFactor::Subquery(Loc::new(
                 (start, end),
                 SubqueryTableFactor {
@@ -452,7 +460,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             TableFactor::Parenthesized(inner)
         };
 
-        let end = self.prev_end(start);
+        let end = self.prev_end().unwrap_or(start);
         Some(TableRef::Factor(Loc::new((start, end), factor)))
     }
 
@@ -722,13 +730,27 @@ impl<'src, 'tok> Parser<'src, 'tok> {
 
     /// Get previous token end position, defaulting to start
     #[inline]
-    fn prev_end(&mut self, default: usize) -> usize {
-        self.tokens.prev().map(|t| t.span.end).unwrap_or(default)
+    fn prev_end(&mut self) -> Option<usize> {
+        self.tokens.prev().map(|t| t.span.end)
     }
 }
 
 // ---------------- Core Combinators ----------------
 impl<'src, 'tok> Parser<'src, 'tok> {
+    pub(crate) fn node_incl<T>(&mut self, f: impl Fn(&mut Self) -> Option<T>) -> Option<Loc<T>> {
+        let (result, span) = self.parse_with_span_incl(|s| f(s))?;
+        Some(Loc::new(span, result))
+    }
+
+    fn parse_with_span_incl<T>(
+        &mut self, f: impl FnOnce(&mut Self) -> Option<T>,
+    ) -> Option<(T, SpannedStr)> {
+        let start = self.tokens.prev().map(|x| x.span.end)?;
+        let result = f(self)?;
+        let end = self.current_pos();
+        Some((result, (start, end).into()))
+    }
+
     pub(crate) fn node<T>(&mut self, f: impl Fn(&mut Self) -> Option<T>) -> Option<Loc<T>> {
         let (result, span) = self.parse_with_span(|s| f(s))?;
         Some(Loc::new(span, result))
@@ -737,10 +759,10 @@ impl<'src, 'tok> Parser<'src, 'tok> {
     fn parse_with_span<T>(
         &mut self, f: impl FnOnce(&mut Self) -> Option<T>,
     ) -> Option<(T, SpannedStr)> {
-        let start = self.current_pos();
+        let start = self.tokens.current().map(|x| x.span)?;
         let result = f(self)?;
-        let end = self.prev_end(start);
-        Some((result, (start, end).into()))
+        let end = self.prev_end().unwrap_or(start.end).max(start.end);
+        Some((result, (start.start, end).into()))
     }
 
     /// Parse a delimited list with at least one item (tolerates trailing

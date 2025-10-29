@@ -2,6 +2,7 @@ use std::ops::ControlFlow;
 
 use crate::ast;
 use crate::span::Loc;
+use crate::span::Span;
 
 /// A reference to any node in the AST.
 ///
@@ -22,6 +23,7 @@ pub enum Node<'a> {
 
     // SELECT statement
     Select(&'a Loc<ast::Select>),
+    Projection(&'a Loc<ast::Projection>),
     ProjectionItem(&'a Loc<ast::ProjectionItem>),
 
     // FROM clause
@@ -33,6 +35,9 @@ pub enum Node<'a> {
     SubqueryTableFactor(&'a Loc<ast::SubqueryTableFactor>),
     Join(&'a Loc<ast::Join>),
     JoinConstraint(&'a Loc<ast::JoinConstraint>),
+
+    // WHERE clause
+    Where(&'a Loc<ast::Where>),
 
     // GROUP BY clause
     GroupBy(&'a Loc<ast::GroupBy>),
@@ -80,22 +85,35 @@ pub enum Node<'a> {
     SpannedStr(&'a Loc<ast::SpannedStr>),
 }
 
-// Implement From<&'a Loc<ast::$n>> for Node<'a>
 macro_rules! impl_from {
-    ($n:ident) => {
+    ($n:tt) => {
         impl<'a> From<&'a Loc<ast::$n>> for Node<'a> {
             fn from(t: &'a Loc<ast::$n>) -> Self {
                 Node::$n(t)
             }
         }
     };
-    ($($n:ident),+ $(,)?) => {
+
+    ($($n:tt),+ $(,)?) => {
         $( impl_from!($n); )+
+
+        impl<'a> Node<'a> {
+            pub fn span(&self) -> Span {
+                match self {
+                    $(Node::$n(n) => n.span,)+
+                }
+            }
+            pub fn name(&self) -> &'static str {
+                match self {
+                    $(Node::$n(_) => stringify!($n),)+
+                }
+            }
+        }
     };
 }
 
 #[rustfmt::skip]
-impl_from!(Statement, Query, With, Cte, SetOpTerm, QueryPrimary, Select, ProjectionItem, From, TableRef, TableFactor, NamedTableFactor, FunctionTableFactor, SubqueryTableFactor, Join, JoinConstraint, GroupBy, GroupByItem, GroupingSet, Window, WindowDef, WindowSpec, WindowFrame, FrameBound, QuerySuffix, OrderBy, OrderByItem, Limit, Offset, Values, Expr, BinaryExpr, UnaryExpr, ParenExpr, IsNullExpr, BetweenExpr, LikeExpr, ILikeExpr, SimilarExpr, FunctionCallExpr, QuantifiedExpr, CaseExpr, InExpr, OverExpr, Literal, QualifiedName, SpannedStr);
+impl_from!(Statement, Query, With, Cte, SetOpTerm, QueryPrimary, Select, Projection, ProjectionItem, From, TableRef, TableFactor, NamedTableFactor, FunctionTableFactor, SubqueryTableFactor, Join, JoinConstraint, Where, GroupBy, GroupByItem, GroupingSet, Window, WindowDef, WindowSpec, WindowFrame, FrameBound, QuerySuffix, OrderBy, OrderByItem, Limit, Offset, Values, Expr, BinaryExpr, UnaryExpr, ParenExpr, IsNullExpr, BetweenExpr, LikeExpr, ILikeExpr, SimilarExpr, FunctionCallExpr, QuantifiedExpr, CaseExpr, InExpr, OverExpr, Literal, QualifiedName, SpannedStr);
 
 /// Events emitted during AST traversal.
 #[derive(Debug, Clone, Copy)]
@@ -165,14 +183,12 @@ impl<'a> Node<'a> {
 
             // SELECT statement
             Node::Select(stmt) => {
-                for item in &stmt.projection.items {
-                    visit(Node::ProjectionItem(item), visitor)?;
-                }
+                visit(Node::Projection(&stmt.projection), visitor)?;
                 if let Some(from) = &stmt.from {
                     visit(Node::From(from), visitor)?;
                 }
                 if let Some(where_clause) = &stmt.where_clause {
-                    visit(Node::Expr(where_clause), visitor)?;
+                    visit(Node::Where(where_clause), visitor)?;
                 }
                 if let Some(group_by) = &stmt.group_by {
                     visit(Node::GroupBy(group_by), visitor)?;
@@ -185,6 +201,12 @@ impl<'a> Node<'a> {
                 }
                 if let Some(qualify) = &stmt.qualify {
                     visit(Node::Expr(qualify), visitor)?;
+                }
+                ControlFlow::Continue(())
+            }
+            Node::Projection(n) => {
+                for item in &n.list.items {
+                    visit(Node::ProjectionItem(item), visitor)?;
                 }
                 ControlFlow::Continue(())
             }
@@ -232,6 +254,9 @@ impl<'a> Node<'a> {
                     ControlFlow::Continue(())
                 }
             },
+
+            // WHERE clause
+            Node::Where(n) => visit(Node::Expr(&n.expr), visitor),
 
             // GROUP BY clause
             Node::GroupBy(n) => {
@@ -472,6 +497,30 @@ impl<'a> Node<'a> {
     where F: Fn(Node<'a>) -> bool {
         self.visit(&mut |event| match event {
             AstEvent::Exit(n) if pred(n) => ControlFlow::Break(n),
+            _ => ControlFlow::Continue(()),
+        })
+        .break_value()
+    }
+
+    pub fn find_map<T, F>(&self, pred: F) -> Option<T>
+    where F: Fn(Node<'a>) -> Option<T> {
+        self.visit(&mut |event| match event {
+            AstEvent::Enter(n) => match pred(n) {
+                Some(val) => ControlFlow::Break(val),
+                None => ControlFlow::Continue(()),
+            },
+            _ => ControlFlow::Continue(()),
+        })
+        .break_value()
+    }
+
+    pub fn find_map_rev<T, F>(&self, pred: F) -> Option<T>
+    where F: Fn(Node<'a>) -> Option<T> {
+        self.visit(&mut |event| match event {
+            AstEvent::Exit(n) => match pred(n) {
+                Some(val) => ControlFlow::Break(val),
+                None => ControlFlow::Continue(()),
+            },
             _ => ControlFlow::Continue(()),
         })
         .break_value()

@@ -127,7 +127,7 @@ impl<'txt, 'ast> RelationsBuilder<'txt, 'ast> {
             return;
         };
 
-        for item in &select.projection.items {
+        for item in select.projection.items() {
             let name = item
                 .alias
                 .as_ref()
