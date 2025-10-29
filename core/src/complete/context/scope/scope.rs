@@ -1,17 +1,17 @@
-use super::relations::*;
+use super::graph::*;
 use crate::schema;
 
 #[derive(Debug, Clone)]
 pub struct Scope<'a> {
     schema: &'a schema::Cache,
-    relations: Relations<'a>,
+    relations: ScopeGraph<'a>,
     projected: Option<Vec<ResolvedColumn<'a>>>,
     available: Option<Vec<ResolvedColumn<'a>>>,
     cte_names: Option<Vec<&'a str>>,
 }
 
 impl<'a> Scope<'a> {
-    pub fn new(scope: Relations<'a>, schema: &'a schema::Cache) -> Self {
+    pub fn new(scope: ScopeGraph<'a>, schema: &'a schema::Cache) -> Self {
         Self {
             relations: scope,
             schema,
@@ -96,7 +96,7 @@ impl<'a> ResolvedColumnSource<'a> {
     }
 }
 
-fn get_cte_names<'a>(relations: &Relations<'a>) -> Vec<&'a str> {
+fn get_cte_names<'a>(relations: &ScopeGraph<'a>) -> Vec<&'a str> {
     relations
         .bindings
         .values()
@@ -108,7 +108,7 @@ fn get_cte_names<'a>(relations: &Relations<'a>) -> Vec<&'a str> {
 }
 
 fn resolve_projected_columns<'a>(
-    relations: &Relations<'a>, schema: &'a schema::Cache,
+    relations: &ScopeGraph<'a>, schema: &'a schema::Cache,
 ) -> impl Iterator<Item = ResolvedColumn<'a>> {
     relations
         .projected
@@ -117,7 +117,7 @@ fn resolve_projected_columns<'a>(
 }
 
 fn resolve_available_columns<'a>(
-    relations: &Relations<'a>, schema: &'a schema::Cache,
+    relations: &ScopeGraph<'a>, schema: &'a schema::Cache,
 ) -> Vec<ResolvedColumn<'a>> {
     let mut cols = Vec::new();
     for relation in relations.bindings.values() {
@@ -156,7 +156,7 @@ fn resolve_available_columns<'a>(
 }
 
 fn get_resolved_columns_for_bound_column<'a>(
-    relations: &Relations<'a>, schema: &'a schema::Cache, column: &BoundColumn<'a>,
+    relations: &ScopeGraph<'a>, schema: &'a schema::Cache, column: &BoundColumn<'a>,
 ) -> Vec<ResolvedColumn<'a>> {
     let mut cols = Vec::new();
     match &column.origin {

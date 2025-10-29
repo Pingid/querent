@@ -24,18 +24,14 @@
 use crate::ast;
 use crate::schema;
 
-mod builder;
-mod relations;
+mod graph;
 mod scope;
 
-pub use relations::*;
+pub use graph::*;
 pub use scope::*;
 
 pub fn resolve_scope<'txt, 'a>(
-    text: &'txt str, position: usize, ast: ast::Node<'a>, schema: &'txt schema::Cache,
+    text: &'txt str, position: usize, ast: ast::Node<'_>, schema: &'txt schema::Cache,
 ) -> Scope<'txt> {
-    Scope::new(
-        builder::RelationsBuilder::new(text, position, ast).build(),
-        schema,
-    )
+    Scope::new(ScopeGraph::build(text, position, ast), schema)
 }
