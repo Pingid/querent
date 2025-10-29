@@ -362,7 +362,7 @@ pub enum Expr {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinaryExpr {
     pub left: Box<Loc<Expr>>,
-    pub op: Option<OpTag>,
+    pub op: Option<Loc<OpTag>>,
     pub right: Option<Box<Loc<Expr>>>,
 }
 

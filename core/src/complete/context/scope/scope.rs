@@ -1,4 +1,5 @@
 use super::graph::*;
+use crate::complete::context::ContextBuildParams;
 use crate::schema;
 
 #[derive(Debug, Clone)]
@@ -10,11 +11,12 @@ pub struct Scope<'a> {
     cte_names: Option<Vec<&'a str>>,
 }
 
-impl<'a> Scope<'a> {
-    pub fn new(scope: ScopeGraph<'a>, schema: &'a schema::Cache) -> Self {
-        Self {
-            relations: scope,
-            schema,
+impl<'a> From<&ContextBuildParams<'a>> for Scope<'a> {
+    fn from(params: &ContextBuildParams<'a>) -> Self {
+        let graph = ScopeGraph::from(params);
+        Scope {
+            schema: params.schema,
+            relations: graph,
             projected: None,
             available: None,
             cte_names: None,
@@ -272,6 +274,14 @@ fn get_resolved_columns_for_bound_column<'a>(
                 source_alias: None,
                 qualifier: Qualifier::default(),
             });
+        }
+        Origin::FunctionCall { .. } => {
+            // cols.push(ResolvedColumn {
+            //     name: column.name.to_string(),
+            //     source: ResolvedColumnSource::FunctionCall(name),
+            //     source_alias: None,
+            //     qualifier: Qualifier::default(),
+            // });
         }
     };
     cols

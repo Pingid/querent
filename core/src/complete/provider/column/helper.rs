@@ -85,6 +85,14 @@ impl<'a> AvailableColumn<'a> {
         self.qualifier.schema
     }
 
+    pub fn data_type(&self) -> Option<schema::DataType> {
+        match &self.source {
+            AvailableColumnSource::Schema(c) => Some(c.data_type),
+            AvailableColumnSource::Unresolved { ty: Some(ty) } => Some(*ty),
+            _ => None,
+        }
+    }
+
     /// Alias or else qualifier or else schema table name
     pub fn source_name(&self) -> Option<String> {
         self.source_alias
@@ -135,28 +143,30 @@ fn detail(qualifier: &Qualifier, name: &str, ty: &Option<schema::DataType>) -> S
     }
 }
 
-pub fn get_scope_available_columns<'a>(ctx: &mut Context<'a>) -> Vec<AvailableColumn<'a>> {
-    let mut cols = Vec::new();
+impl<'a> Context<'a> {
+    pub fn available_columns(&mut self) -> Vec<AvailableColumn<'a>> {
+        let mut cols = Vec::new();
 
-    // Find all exposed columns from CTE's, FROM tables/subqueries, etc.
-    let available = ctx.scope.available_columns().clone();
+        // Find all exposed columns from CTE's, FROM tables/subqueries, etc.
+        let available = self.scope.available_columns().clone();
 
-    // If no columns are available, add all columns from the schema.
-    if available.is_empty() {
-        for col in ctx.schema.get_columns().iter() {
+        // If no columns are available, add all columns from the schema.
+        if available.is_empty() {
+            for col in self.schema.get_columns().iter() {
+                cols.push(AvailableColumn::from(col));
+            }
+        }
+
+        // Add all available columns to the list.
+        for col in available {
             cols.push(AvailableColumn::from(col));
         }
+
+        // Filter out columns that don't match the qualifier.
+        cols.retain(|col| col.matches_qualifier(&self.cursor.qualifier));
+
+        cols
     }
-
-    // Add all available columns to the list.
-    for col in available {
-        cols.push(AvailableColumn::from(col));
-    }
-
-    // Filter out columns that don't match the qualifier.
-    cols.retain(|col| col.matches_qualifier(&ctx.cursor.qualifier));
-
-    cols
 }
 
 pub fn get_qualified_name(col: &AvailableColumn) -> Option<String> {

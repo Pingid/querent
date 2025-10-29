@@ -57,7 +57,7 @@ impl OperatorContext {
 }
 
 fn resolve_context(ctx: &Context) -> Option<OperatorContext> {
-    if !matches!(ctx.clause, ClauseKind::Where) {
+    if !matches!(ctx.clause.kind, ClauseKind::Where) {
         return None;
     }
 
@@ -97,7 +97,7 @@ fn resolve_context(ctx: &Context) -> Option<OperatorContext> {
 
 fn clause_tokens<'a>(ctx: &'a Context<'a>) -> &'a [TokenKind] {
     let tokens = &ctx.cursor.preceding;
-    match ctx.clause {
+    match ctx.clause.kind {
         ClauseKind::Where => tokens_after_keyword(tokens, Keyword::Where),
         _ => tokens,
     }
@@ -233,22 +233,22 @@ mod tests {
     #[test]
     fn offers_infix_after_operand() {
         let t = case("SELECT * FROM users WHERE name ^");
-        t.assert_labels_contains(["="]);
-        t.assert_missing_labels(["-u"]);
+        t.assert_labels_contains(&["="]);
+        t.assert_missing_labels(&["-u"]);
     }
 
     #[test]
     fn offers_prefix_at_clause_start() {
         let t = case("SELECT * FROM users WHERE ^");
-        t.assert_labels_contains(["NOT", "+", "-"]);
-        t.assert_missing_labels(["="]);
+        t.assert_labels_contains(&["NOT", "+", "-"]);
+        t.assert_missing_labels(&["="]);
     }
 
     #[test]
     fn filters_non_associative_after_completed_comparison() {
         let t = case("SELECT * FROM users WHERE name = 'cool' ^");
-        t.assert_labels_contains(["AND"]);
-        t.assert_missing_labels(["="]);
+        t.assert_labels_contains(&["AND"]);
+        t.assert_missing_labels(&["="]);
     }
 
     fn case(input: &str) -> CompletionTestResult {

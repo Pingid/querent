@@ -49,10 +49,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         let recursive = self.eat_kw(Keyword::Recursive).is_some();
 
         let mut ctes: Vec<Loc<Cte>> = Vec::new();
-        loop {
-            // CTE name
-            let name = self.parse_ident()?;
-
+        while let Some(name) = self.parse_ident() {
             // Optional column list
             let columns = if self.eat(TokenKind::LeftParen).is_some() {
                 let cols = if self.tokens.current_kind() == Some(TokenKind::RightParen) {
@@ -185,7 +182,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
     }
 
     fn parse_order_by_item(&mut self) -> Option<OrderByItem> {
-        let expr = self.node(|s| s.parse_expr())?;
+        let expr = self.parse_expr()?;
         let direction = self.parse_optional_enum(&[
             (Keyword::Asc, SortDirection::Asc),
             (Keyword::Desc, SortDirection::Desc),
@@ -201,7 +198,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         // Try FETCH FIRST syntax first
         if self.eat_kw(Keyword::Fetch).is_some() {
             self.eat_kw(Keyword::First)?;
-            let count = self.node(|s| s.parse_expr())?;
+            let count = self.parse_expr()?;
             self.eat_kw(Keyword::Rows);
             self.eat_kw(Keyword::Only);
             return Some(Limit {
@@ -212,7 +209,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
         // Fall back to LIMIT syntax
         if self.eat_kw(Keyword::Limit).is_some() {
-            let count = self.node(|s| s.parse_expr())?;
+            let count = self.parse_expr()?;
             return Some(Limit {
                 count,
                 style: LimitKind::Limit,
@@ -224,7 +221,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
     fn parse_offset(&mut self) -> Option<Offset> {
         self.eat_kw(Keyword::Offset)?;
-        let count = self.node(|s| s.parse_expr())?;
+        let count = self.parse_expr()?;
         let had_rows = self.eat_kw(Keyword::Rows).is_some(); // ROWS is optional
         Some(Offset {
             count,
@@ -272,7 +269,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
     fn parse_select_item(&mut self) -> Option<ProjectionItem> {
         Some(ProjectionItem {
-            expr: self.node(|s| s.parse_expr())?,
+            expr: self.parse_expr()?,
             alias: self.parse_alias(),
         })
     }
@@ -303,12 +300,14 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
     fn parse_group_by(&mut self) -> Option<GroupBy> {
         self.eat_kws(&[Keyword::Group, Keyword::By])?;
         Some(GroupBy {
-            items: self.comma_list1(|s| s.parse_group_by_item())?,
+            items: self
+                .comma_list1(|s| s.parse_group_by_item())
+                .unwrap_or_default(),
         })
     }
 
     fn parse_group_by_item(&mut self) -> Option<GroupByItem> {
-        Some(GroupByItem::Expr(self.node(|s| s.parse_expr())?))
+        Some(GroupByItem::Expr(self.parse_expr()?))
     }
 
     fn parse_window_clause(&mut self) -> Option<Window> {
@@ -373,7 +372,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             let args = if self.tokens.current_kind() == Some(TokenKind::RightParen) {
                 DelimitedList::default()
             } else {
-                self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?
+                self.parse_list1(TokenKind::Comma, |s| s.parse_expr().map(|x| x.item))?
             };
             self.eat(TokenKind::RightParen);
 
@@ -508,7 +507,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
     fn parse_join_constraint(&mut self) -> Option<Loc<JoinConstraint>> {
         self.node(|s| {
             if s.eat_kw(Keyword::On).is_some() {
-                return Some(JoinConstraint::On(s.node(|s2| s2.parse_expr())?));
+                return Some(JoinConstraint::On(s.parse_expr()?));
             }
 
             if s.eat_kw(Keyword::Using).is_some() {
@@ -533,7 +532,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 // Empty list tolerated (partial input)
                 DelimitedList::default()
             } else {
-                self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?
+                self.parse_list1(TokenKind::Comma, |s| s.parse_expr().map(|x| x.item))?
             };
             self.eat(TokenKind::RightParen);
             return Some(SetQuantifier::DistinctOn(items));
@@ -615,7 +614,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
     pub(crate) fn parse_window_spec(&mut self) -> Option<WindowSpec> {
         let partition_by = if self.eat_kw(Keyword::Partition).is_some() {
             self.eat_kw(Keyword::By)?;
-            Some(self.comma_list1(|s| s.parse_expr())?)
+            Some(self.comma_list1(|s| s.parse_expr().map(|x| x.item))?)
         } else {
             None
         };
@@ -668,7 +667,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 Some(FrameBound::CurrentRow)
             }
             _ => {
-                let expr = Box::new(self.node(|s| s.parse_expr())?);
+                let expr = Box::new(self.parse_expr()?);
                 if self.eat_kw(Keyword::Preceding).is_some() {
                     Some(FrameBound::Preceding(expr))
                 } else {
@@ -685,7 +684,7 @@ impl<'src, 'tok> Parser<'src, 'tok> {
     /// Parse a clause that starts with a keyword and contains an expression
     fn clause_expr(&mut self, kw: Keyword) -> Option<Loc<Expr>> {
         self.eat_kw(kw)?;
-        self.node(|s| Some(s.parse_expr().unwrap_or(Expr::Empty)))
+        self.node(|s| Some(s.parse_expr().map(|x| x.item).unwrap_or(Expr::Empty)))
     }
 
     /// Parse zero or more items using a parser function
@@ -763,6 +762,13 @@ impl<'src, 'tok> Parser<'src, 'tok> {
         let result = f(self)?;
         let end = self.prev_end().unwrap_or(start.end).max(start.end);
         Some((result, (start.start, end).into()))
+    }
+
+    pub fn span_start(&mut self) -> Option<usize> {
+        self.tokens.current().map(|x| x.span.start)
+    }
+    pub fn span_end(&mut self) -> Option<usize> {
+        self.tokens.prev().map(|t| t.span.end)
     }
 
     /// Parse a delimited list with at least one item (tolerates trailing

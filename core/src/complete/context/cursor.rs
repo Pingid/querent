@@ -1,3 +1,4 @@
+use crate::complete::context::ContextBuildParams;
 use crate::lex::Keyword;
 use crate::lex::OpTag;
 use crate::lex::Token;
@@ -22,14 +23,6 @@ pub struct Cursor<'txt> {
     pub qualifier: Option<Vec<&'txt str>>,
 }
 
-impl<'txt> Cursor<'txt> {
-    pub fn preceding_matches<const N: usize>(&self, other: [TokenKind; N]) -> bool {
-        self.preceding[self.preceding.len().saturating_sub(N)..]
-            .iter()
-            .eq(other.iter())
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Location {
     /// ^
@@ -50,6 +43,20 @@ pub enum Location {
     Literal,
     /// SELECT a, ^
     Space(Box<Location>),
+}
+
+impl<'txt> Cursor<'txt> {
+    pub fn preceding_matches<const N: usize>(&self, other: [TokenKind; N]) -> bool {
+        self.preceding[self.preceding.len().saturating_sub(N)..]
+            .iter()
+            .eq(other.iter())
+    }
+}
+
+impl<'txt> From<&ContextBuildParams<'txt>> for Cursor<'txt> {
+    fn from(params: &ContextBuildParams<'txt>) -> Self {
+        detect_cursor(params.text, &params.tokens, params.cursor)
+    }
 }
 
 pub fn detect_cursor<'txt>(

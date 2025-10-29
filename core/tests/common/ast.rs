@@ -85,7 +85,7 @@ impl AstDisplay for ast::Expr {
         match self {
             ast::Expr::Literal(literal) => literal.display(input),
             ast::Expr::Binary(b) => {
-                let op_str = match b.op {
+                let op_str = match b.op.map(|o| o.item) {
                     Some(OpTag::Add) => " + ",
                     Some(OpTag::Sub) => " - ",
                     Some(OpTag::Mul) => " * ",

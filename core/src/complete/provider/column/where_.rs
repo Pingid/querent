@@ -1,4 +1,3 @@
-use super::helper::get_scope_available_columns;
 use crate::complete::completion::Completion;
 use crate::complete::completion::CompletionBuilder;
 use crate::complete::completion::CompletionKind;
@@ -16,7 +15,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
     }
 
     // Add relation columns with qualified name
-    let available = get_scope_available_columns(ctx);
+    let available = ctx.available_columns();
     for col in available {
         let label = match ctx.cursor.qualifier.is_some() {
             true => col.name().to_string(),
@@ -57,7 +56,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
 }
 
 fn should_complete(ctx: &Context<'_>) -> bool {
-    match ctx.clause {
+    match ctx.clause.kind {
         ClauseKind::Where => match &ctx.cursor.location {
             Location::Space(inner) => matches!(
                 **inner,
@@ -93,26 +92,26 @@ mod tests {
     #[test]
     fn ranks_projected_columns_higher() {
         let t = case("SELECT * FROM users WHERE ^");
-        t.assert_labels(["email", "id", "name"]);
+        t.assert_labels(&["email", "id", "name"]);
     }
 
     #[test]
     fn completes_aliased_columns() {
         let t = case("SELECT email as email_alias FROM users WHERE ^");
-        t.assert_labels(["email_alias", "users.email", "users.id"]);
+        t.assert_labels(&["email_alias", "users.email", "users.id"]);
     }
 
     #[test]
     fn completes_columns_from_cte() {
         let t = case("WITH cte as (SELECT * FROM users) SELECT * FROM cte WHERE ^");
-        t.assert_labels(["email", "id", "name", "cte.email", "cte.id", "cte.name"]);
+        t.assert_labels(&["email", "id", "name", "cte.email", "cte.id", "cte.name"]);
     }
 
     #[test]
     fn completes_after_qualifier_dot() {
         let t = case("WITH cte as (SELECT * FROM users) SELECT * FROM cte WHERE cte.^");
-        t.assert_labels(["email", "id", "name"]);
-        t.assert_missing_labels(["cte.email", "cte.id", "cte.name"]);
+        t.assert_labels(&["email", "id", "name"]);
+        t.assert_missing_labels(&["cte.email", "cte.id", "cte.name"]);
     }
 
     fn case(input: &str) -> CompletionTestResult {

@@ -4,19 +4,19 @@ use crate::complete::completion::CompletionKind;
 use crate::complete::completion::InsertTextFormat;
 use crate::complete::context::ClauseKind;
 use crate::complete::context::Context;
-use crate::complete::context::Location;
 use crate::dialect::SpecFunction;
-use crate::lex::Keyword;
-use crate::lex::TokenKind;
 use crate::schema;
 
 pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
-    if !should_complete(ctx) {
+    if !ctx.is_expression_left_completion_eligible() || ctx.clause.kind != ClauseKind::Select {
         return;
     }
 
+    // Get data type that should be ranked first
+    let expected_data_type = ctx.expected_data_type();
+
     // Collect all available functions
-    let available = get_available_functions(ctx);
+    let available = ctx.functions();
 
     for func in available {
         let mut completion = Completion::new(
@@ -28,53 +28,36 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
         );
         completion.insert_text_format = InsertTextFormat::Snippet;
         completion.insert_text = func.insert_text();
-        builder.add(completion, 0);
+
+        if expected_data_type.is_some() && Some(expected_data_type.unwrap()) == func.return_type() {
+            builder.add(completion, 10);
+        } else {
+            builder.add(completion, 0);
+        }
     }
 }
 
-fn should_complete(ctx: &Context<'_>) -> bool {
-    match ctx.clause {
-        ClauseKind::Select => match &ctx.cursor.location {
-            Location::Space(inner) => {
-                matches!(
-                    **inner,
-                    Location::Comma | Location::Keyword(Keyword::Select)
-                )
-            }
-            // Location::Dot => true,
-            Location::Ident
-                if ctx
-                    .cursor
-                    .preceding_matches([TokenKind::Comma, TokenKind::Identifier]) =>
-            {
-                true
-            }
-            _ => false,
-        },
-        _ => false,
+impl<'a> Context<'a> {
+    pub fn functions(&self) -> impl Iterator<Item = AvailableFunction<'a>> {
+        self.spec
+            .functions
+            .values()
+            .map(|func| AvailableFunction::Spec(func))
+            .chain(
+                self.schema
+                    .get_functions()
+                    .iter()
+                    .map(|func| AvailableFunction::Schema(func)),
+            )
+            .filter(|func| match (func.function_type(), self.clause.kind) {
+                (schema::FunctionType::Scalar, ClauseKind::Select) => true,
+                _ => false,
+            })
     }
-}
-
-fn get_available_functions<'a>(ctx: &'a Context<'_>) -> Vec<AvailableFunction<'a>> {
-    ctx.spec
-        .functions
-        .values()
-        .map(|func| AvailableFunction::Spec(func))
-        .chain(
-            ctx.schema
-                .get_functions()
-                .iter()
-                .map(|func| AvailableFunction::Schema(func)),
-        )
-        .filter(|func| match (func.function_type(), ctx.clause) {
-            (schema::FunctionType::Scalar, ClauseKind::Select) => true,
-            _ => false,
-        })
-        .collect::<Vec<_>>()
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum AvailableFunction<'schema> {
+pub enum AvailableFunction<'schema> {
     Spec(&'static SpecFunction),
     Schema(&'schema schema::Function),
 }
@@ -86,16 +69,22 @@ impl<'schema> AvailableFunction<'schema> {
             AvailableFunction::Schema(func) => func.function_type,
         }
     }
-    fn function_name(&self) -> String {
+    pub fn function_name(&self) -> String {
         match self {
             AvailableFunction::Spec(func) => func.function_name.to_string(),
             AvailableFunction::Schema(func) => func.function_name.to_string(),
         }
     }
-    fn parameter_types(&self) -> Vec<schema::DataType> {
+    pub fn parameter_types(&self) -> Vec<schema::DataType> {
         match self {
             AvailableFunction::Spec(func) => func.parameter_types.to_vec(),
             AvailableFunction::Schema(func) => func.parameter_types.to_vec(),
+        }
+    }
+    fn return_type(&self) -> Option<schema::DataType> {
+        match self {
+            AvailableFunction::Spec(func) => Some(func.return_type),
+            AvailableFunction::Schema(func) => Some(func.return_type),
         }
     }
 

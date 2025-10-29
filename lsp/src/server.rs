@@ -27,7 +27,7 @@ impl<E: CompletionProvider> LspServer<E> {
     pub fn new(engines: E) -> Self {
         let mut trigger_characters = vec![];
         trigger_characters.extend(
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,"
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,("
                 .chars()
                 .map(|c| c.to_string()),
         );

@@ -73,7 +73,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
 }
 
 fn should_complete(ctx: &Context<'_>) -> bool {
-    match ctx.clause {
+    match ctx.clause.kind {
         ClauseKind::From => match &ctx.cursor.location {
             Location::Space(inner) => {
                 matches!(**inner, Location::Keyword(Keyword::From) | Location::Comma)
@@ -145,25 +145,25 @@ mod tests {
     #[test]
     fn completes_tables() {
         let t = case("SELECT * FROM ^");
-        t.assert_labels(["posts", "users"]);
+        t.assert_labels(&["posts", "users"]);
     }
 
     #[test]
     fn ranks_tables_by_projected_columns() {
         let t = case("SELECT email FROM ^");
-        t.assert_labels(["users", "posts"]);
+        t.assert_labels(&["users", "posts"]);
     }
 
     #[test]
     fn ranks_already_used_tables_lower() {
         let t = case("SELECT email FROM users u, ^");
-        t.assert_labels(["posts", "users"]);
+        t.assert_labels(&["posts", "users"]);
     }
 
     #[test]
     fn completes_ctes() {
         let t = case("WITH cte AS (SELECT email FROM users) SELECT * FROM ^");
-        t.assert_labels(["cte", "posts", "users"]);
+        t.assert_labels(&["cte", "posts", "users"]);
     }
 
     fn case(input: &str) -> CompletionTestResult {

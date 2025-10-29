@@ -3,6 +3,7 @@ use super::context::Context;
 
 mod column;
 mod function;
+mod helpers;
 mod keyword;
 mod operator;
 mod table;

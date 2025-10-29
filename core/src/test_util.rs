@@ -185,20 +185,25 @@ impl CompletionTestResult {
         );
         assert_eq!(next, expected);
     }
-    pub fn assert_labels<const N: usize>(&self, expected: [&str; N]) {
+    pub fn assert_labels(&self, expected: &[&str]) {
         let labels = self.labels();
-        if labels.len() < N {
+        if labels.len() < expected.len() {
             panic!(
                 "\nquery: {:?}\nexpected atleast {} labels, got {}",
                 self.query,
-                N,
+                expected.len(),
                 labels.len()
             );
         }
-        assert_eq!(expected, labels[..N], "\n query: {:?}", self.query);
+        assert_eq!(
+            expected,
+            labels[..expected.len()].to_vec(),
+            "\n query: {:?}",
+            self.query
+        );
     }
 
-    pub fn assert_labels_contains<const N: usize>(&self, expected: [&str; N]) {
+    pub fn assert_labels_contains(&self, expected: &[&str]) {
         let labels = self.labels();
         for label in expected {
             assert!(labels.contains(&label), "label {} should be present", label);
@@ -222,7 +227,7 @@ impl CompletionTestResult {
         );
     }
 
-    pub fn assert_missing_labels<const N: usize>(&self, expected: [&str; N]) {
+    pub fn assert_missing_labels(&self, expected: &[&str]) {
         let labels = self.labels();
         for label in expected {
             assert!(

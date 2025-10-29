@@ -1,23 +1,21 @@
 use std::collections::HashMap;
 
-use super::helper::get_scope_available_columns;
 use crate::complete::completion::Completion;
 use crate::complete::completion::CompletionBuilder;
 use crate::complete::completion::CompletionKind;
-use crate::complete::context::ClauseKind;
 use crate::complete::context::Context;
-use crate::complete::context::Location;
 use crate::complete::context::ResolvedColumn;
 use crate::complete::provider::column::helper::get_qualified_name;
-use crate::lex::Keyword;
-use crate::lex::TokenKind;
 
 pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
-    if !should_complete(ctx) {
+    if !ctx.is_expression_left_completion_eligible() {
         return;
     }
 
-    let mut cols = get_scope_available_columns(ctx);
+    // Get data type that should be ranked first
+    let expected_data_type = ctx.expected_data_type();
+
+    let mut cols = ctx.available_columns();
 
     let projected = ctx.scope.projected();
 
@@ -41,6 +39,12 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
         // If the column name matches a projected column name decrease score
         if projected.iter().any(|p| p.name == *col.name()) {
             col.update_score(-1);
+        }
+
+        // If the column data type matches the rank type, increase score
+        if expected_data_type.is_some() && col.data_type() == expected_data_type {
+            tracing::debug!("Column {} matches expected data type", col.name());
+            col.update_score(10);
         }
     });
 
@@ -84,50 +88,6 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
             );
         }
     });
-}
-
-fn should_complete(ctx: &Context<'_>) -> bool {
-    // use ClauseKind::*;
-    // use MatchKind::*;
-
-    // let mut m = ctx.matcher();
-
-    // m.all([Clause(Select), Dot])
-    // // || m.all([Clause(Select), Comma, Space])
-    // // // if m == Clause(Select) {
-    // // //     return m.any([]);
-    // // // }
-
-    match ctx.clause {
-        ClauseKind::Select => match &ctx.cursor.location {
-            Location::Space(inner) => matches!(
-                **inner,
-                Location::Comma | Location::Keyword(Keyword::Select)
-            ),
-            // Complete qualified columns
-            Location::Dot => true,
-            // Completes partial qualified identifier
-            Location::Ident
-                if ctx
-                    .cursor
-                    .preceding_matches([TokenKind::Dot, TokenKind::Identifier]) =>
-            {
-                true
-            }
-            // Completes partial column identifier
-            Location::Ident
-                if ctx
-                    .cursor
-                    .preceding_matches([TokenKind::Comma, TokenKind::Identifier]) =>
-            {
-                true
-            }
-            // Completes function parameters
-            Location::Paren => true,
-            _ => false,
-        },
-        _ => false,
-    }
 }
 
 fn get_score_qualified_column(
@@ -178,57 +138,60 @@ mod tests {
 
     #[test]
     fn completes_all_columns_when_empty() {
-        let t = case("SELECT ^");
-        t.assert_labels([
+        let labels = vec![
             "posts.content",
             "posts.id",
             "posts.title",
             "users.email",
             "users.id",
             "users.name",
-        ]);
+        ];
+        case("SELECT ^").assert_labels(&labels);
+        case("SELECT foo(^").assert_labels(&labels);
+        case("SELECT * FROM (SELECT ^").assert_labels(&labels);
+        case("SELECT * FROM (SELECT ^)").assert_labels(&labels);
     }
 
     #[test]
     fn narrows_results_by_projected_columns() {
         let t = case("SELECT email, ^");
-        t.assert_labels(["id", "name"]);
+        t.assert_labels(&["id", "name"]);
     }
 
     #[test]
     fn narrows_results_by_qualified_columns() {
         let t = case("SELECT users.email, ^");
-        t.assert_labels(["users.id", "users.name"]);
+        t.assert_labels(&["users.id", "users.name"]);
     }
 
     #[test]
     fn completes_after_qualifier_dot() {
         let t = case("SELECT users.^");
-        t.assert_labels(["email", "id", "name"]);
+        t.assert_labels(&["email", "id", "name"]);
     }
 
     #[test]
     fn completes_aliased_columns_from_subquery() {
         let t = case("SELECT ^ FROM (SELECT email as u_email FROM users) u");
-        t.assert_labels(["u_email"]);
+        t.assert_labels(&["u_email"]);
     }
 
     #[test]
     fn completes_qualified_columns_from_subquery() {
         let t = case("SELECT u.email, ^ FROM (SELECT 10 as age, * FROM users) u");
-        t.assert_labels(["u.age", "u.id", "u.name"]);
+        t.assert_labels(&["u.age", "u.id", "u.name"]);
     }
 
     #[test]
     fn completes_after_qualifier_dot_from_multiple_subqueries() {
         let t = case("SELECT u.email, p.^ FROM (SELECT * FROM users) u, (SELECT * FROM posts) p;");
-        t.assert_labels(["content", "id", "title"]);
+        t.assert_labels(&["content", "id", "title"]);
     }
 
     #[test]
     fn completes_columns_from_cte() {
         let t = case("WITH u AS (SELECT id, email FROM users) SELECT ^ FROM u");
-        t.assert_labels(["email", "id"]);
+        t.assert_labels(&["email", "id"]);
     }
 
     fn case(input: &str) -> CompletionTestResult {

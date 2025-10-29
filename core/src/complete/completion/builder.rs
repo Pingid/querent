@@ -34,6 +34,10 @@ impl CompletionBuilder {
         });
     }
 
+    pub fn items(&mut self) -> &mut Vec<CompletionWithScore> {
+        &mut self.items
+    }
+
     pub fn build(self, ctx: &Context) -> Completions {
         let ranked = DefaultRanker::default().rank(&ctx.cursor.fragment, self.items);
         Completions {

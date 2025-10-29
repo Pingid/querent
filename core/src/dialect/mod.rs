@@ -134,7 +134,6 @@ impl DialectSpec {
     }
 
     pub fn resolve_follow_rules(&self, tokens: &[TokenKind]) -> impl Iterator<Item = Next> {
-        tracing::debug!("{:#?}", tokens);
         rule::find_matches(self.follow_rules, tokens)
     }
 }

@@ -9,18 +9,21 @@ use crate::span::Loc;
 
 /// Pratt parser for expressions.
 impl<'txt, 'tok> Parser<'txt, 'tok> {
-    pub(crate) fn parse_expr(&mut self) -> Option<Expr> {
+    pub(crate) fn parse_expr(&mut self) -> Option<Loc<Expr>> {
         self.parse_expr_prec(0)
     }
 
-    fn parse_expr_prec(&mut self, min_prec: u8) -> Option<Expr> {
+    fn parse_expr_prec(&mut self, min_prec: u8) -> Option<Loc<Expr>> {
         let start_pos = self.tokens.current().map(|t| t.span.start).unwrap_or(0);
-        let mut left = self.parse_prefix()?;
+        let mut left = self.node(|s| s.parse_prefix())?;
         while let Some(prec) = self.infix_binding_power() {
             if prec < min_prec {
                 break;
             }
-            left = self.parse_infix(left, start_pos, prec)?;
+            let start = self.span_start()?;
+            let infix = self.parse_infix(left, start_pos, prec)?;
+            let end = self.span_end()?;
+            left = Loc::new((start, end), infix);
         }
 
         Some(left)
@@ -100,7 +103,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 let items = if self.tokens.current_kind() == Some(TokenKind::RightBracket) {
                     DelimitedList::default()
                 } else {
-                    self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?
+                    self.parse_list1(TokenKind::Comma, |s| s.parse_expr().map(|x| x.item))?
                 };
                 self.eat(TokenKind::RightBracket);
                 Some(Expr::Array(items))
@@ -111,7 +114,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 let start = self.tokens.current()?.span.start;
                 self.tokens.advance()?;
                 self.eat(TokenKind::LeftParen)?;
-                let inner = Box::new(self.node(|s| s.parse_expr())?);
+                let inner = Box::new(self.parse_expr()?);
                 self.eat(TokenKind::RightParen);
                 let end = self.tokens.prev().map(|t| t.span.end).unwrap_or(start);
                 let quantifier = match kw {
@@ -159,7 +162,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                     let args = if self.tokens.current_kind() == Some(TokenKind::RightParen) {
                         DelimitedList::default()
                     } else {
-                        self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?
+                        self.parse_list1(TokenKind::Comma, |s| s.parse_expr().map(|x| x.item))?
                     };
                     let end = self.tokens.current().map(|t| t.span.start).unwrap_or(start);
                     let args = Loc::new((start, end), args);
@@ -173,7 +176,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                         self.tokens.advance()?;
                         self.eat(TokenKind::LeftParen)?;
                         self.eat_kw(Keyword::Where)?;
-                        let pred = self.node(|s| s.parse_expr())?;
+                        let pred = self.parse_expr()?;
                         self.eat(TokenKind::RightParen);
                         Some(Box::new(pred))
                     } else {
@@ -251,7 +254,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                     Some(Expr::Subquery(Box::new(query)))
                 } else {
                     // Regular parenthesized expression
-                    let expr = Box::new(self.node(|s| s.parse_expr())?);
+                    let expr = Box::new(self.parse_expr()?);
                     let close_span = if self.eat(TokenKind::RightParen).is_some() {
                         self.tokens.prev().map(|t| t.span)
                     } else {
@@ -276,7 +279,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 self.tokens.advance()?;
                 let op_node = self.node(|_| Some(op_tag))?;
                 let prec = self.prefix_binding_power(op_tag);
-                let expr = Box::new(self.node(|s| s.parse_expr_prec(prec))?);
+                let expr = Box::new(self.parse_expr_prec(prec)?);
                 let end_pos = expr.span.end;
                 Some(Expr::Unary(Loc::new(
                     (start_pos, end_pos),
@@ -291,7 +294,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         }
     }
 
-    fn parse_infix(&mut self, left: Expr, start_pos: usize, _prec: u8) -> Option<Expr> {
+    fn parse_infix(&mut self, left: Loc<Expr>, start_pos: usize, _prec: u8) -> Option<Expr> {
         let TokenKind::Operator(op) = self.tokens.current_kind()? else {
             return None;
         };
@@ -307,10 +310,10 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         }
     }
 
-    fn parse_binary_op(&mut self, left: Expr, start_pos: usize, op: Operator) -> Option<Expr> {
+    fn parse_binary_op(&mut self, left: Loc<Expr>, start_pos: usize, op: Operator) -> Option<Expr> {
         let op_tag = op.semantic_tag;
         let op_prec = op.precedence;
-        self.eat_op_tag(op_tag)?;
+        let op_node = self.node(|s| s.eat_op_tag(op_tag).map(|_| op_tag))?;
 
         let right_prec = match op.assoc {
             Assoc::Left => op_prec + 1,
@@ -318,37 +321,37 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             Assoc::None => op_prec + 1,
         };
 
-        let right = self.node(|s| s.parse_expr_prec(right_prec)).map(Box::new);
+        let right = self.parse_expr_prec(right_prec).map(Box::new);
         let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
 
         Some(Expr::Binary(Loc::new(
             (start_pos, end_pos),
             BinaryExpr {
-                left: Box::new(Loc::new((start_pos, end_pos), left)),
-                op: Some(op_tag),
+                left: Box::new(left),
+                op: Some(op_node),
                 right,
             },
         )))
     }
 
-    fn parse_between_op(&mut self, left: Expr, start_pos: usize) -> Option<Expr> {
+    fn parse_between_op(&mut self, left: Loc<Expr>, start_pos: usize) -> Option<Expr> {
         self.eat_op_tag(OpTag::Between)?;
 
-        let low_opt = self.node(|s| s.parse_expr_prec(10));
+        let low_opt = self.parse_expr_prec(10);
 
         // Consume AND between low and high bounds
         if self.tokens.current_operator_tag() == Some(OpTag::And) {
             self.tokens.advance();
         }
 
-        let high_opt = self.node(|s| s.parse_expr_prec(10));
+        let high_opt = self.parse_expr_prec(10);
         let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
-
+        let left_span_end = left.span.end;
         match (low_opt, high_opt) {
             (Some(low), Some(high)) => Some(Expr::Between(Loc::new(
                 (start_pos, end_pos),
                 BetweenExpr {
-                    expr: Box::new(Loc::new((start_pos, end_pos), left)),
+                    expr: Box::new(left),
                     low: Box::new(low),
                     high: Box::new(high),
                     not: false,
@@ -358,20 +361,20 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             _ => Some(Expr::Binary(Loc::new(
                 (start_pos, end_pos),
                 BinaryExpr {
-                    left: Box::new(Loc::new((start_pos, end_pos), left)),
-                    op: Some(OpTag::Between),
+                    left: Box::new(left),
+                    op: Some(Loc::new((left_span_end, left_span_end + 1), OpTag::Between)),
                     right: None,
                 },
             ))),
         }
     }
 
-    fn parse_like_op(&mut self, left: Expr, start_pos: usize, op_tag: OpTag) -> Option<Expr> {
+    fn parse_like_op(&mut self, left: Loc<Expr>, start_pos: usize, op_tag: OpTag) -> Option<Expr> {
         self.eat_op_tag(op_tag)?;
 
-        let pattern = Box::new(self.node(|s| s.parse_expr_prec(10))?);
+        let pattern = Box::new(self.parse_expr_prec(10)?);
         let end_pos = self.tokens.prev().map(|t| t.span.end).unwrap_or(start_pos);
-        let expr = Box::new(Loc::new((start_pos, end_pos), left));
+        let expr = Box::new(left);
 
         match op_tag {
             OpTag::Like => Some(Expr::Like(Loc::new(
@@ -394,13 +397,13 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         }
     }
 
-    fn parse_similar_op(&mut self, left: Expr, start_pos: usize) -> Option<Expr> {
+    fn parse_similar_op(&mut self, left: Loc<Expr>, start_pos: usize) -> Option<Expr> {
         self.eat_op_tag(OpTag::Similar)?;
         self.eat_kw(Keyword::To)?;
 
-        let pattern = Box::new(self.node(|s| s.parse_expr_prec(10))?);
+        let pattern = Box::new(self.parse_expr_prec(10)?);
         let escape = if self.eat_kw(Keyword::Escape).is_some() {
-            Some(Box::new(self.node(|s| s.parse_expr_prec(10))?))
+            Some(Box::new(self.parse_expr_prec(10)?))
         } else {
             None
         };
@@ -410,14 +413,14 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         Some(Expr::Similar(Loc::new(
             (start_pos, end_pos),
             SimilarExpr {
-                expr: Box::new(Loc::new((start_pos, end_pos), left)),
+                expr: Box::new(left),
                 pattern,
                 escape,
             },
         )))
     }
 
-    fn parse_in_op(&mut self, left: Expr, start_pos: usize) -> Option<Expr> {
+    fn parse_in_op(&mut self, left: Loc<Expr>, start_pos: usize) -> Option<Expr> {
         self.eat_op_tag(OpTag::In)?;
         self.eat(TokenKind::LeftParen)?;
 
@@ -431,7 +434,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             let exprs = if self.tokens.current_kind() == Some(TokenKind::RightParen) {
                 vec![]
             } else {
-                self.parse_list1(TokenKind::Comma, |s| s.parse_expr())?
+                self.parse_list1(TokenKind::Comma, |s| s.parse_expr().map(|x| x.item))?
                     .items
             };
             ExprList::Exprs(exprs)
@@ -443,14 +446,14 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         Some(Expr::In(Loc::new(
             (start_pos, end_pos),
             InExpr {
-                expr: Box::new(Loc::new((start_pos, end_pos), left)),
+                expr: Box::new(left),
                 list,
                 not: false,
             },
         )))
     }
 
-    fn parse_is_op(&mut self, left: Expr, start_pos: usize) -> Option<Expr> {
+    fn parse_is_op(&mut self, left: Loc<Expr>, start_pos: usize) -> Option<Expr> {
         self.eat_op_tag(OpTag::Is)?;
 
         let not = if let Some(TokenKind::Operator(op)) = self.tokens.current_kind() {
@@ -470,7 +473,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         Some(Expr::IsNull(Loc::new(
             (start_pos, end_pos),
             IsNullExpr {
-                expr: Box::new(Loc::new((start_pos, end_pos), left)),
+                expr: Box::new(left),
                 not,
             },
         )))
@@ -481,7 +484,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
         // Check for operand (CASE <expr> WHEN ...)
         let operand = if self.tokens.current_kind() != Some(TokenKind::Keyword(Keyword::When)) {
-            Some(Box::new(self.node(|s| s.parse_expr())?))
+            Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
@@ -489,15 +492,15 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         // Parse WHEN clauses
         let mut when_clauses = Vec::new();
         while self.eat_kw(Keyword::When).is_some() {
-            let when = self.node(|s| s.parse_expr())?;
+            let when = self.parse_expr()?;
             self.eat_kw(Keyword::Then)?;
-            let then = self.node(|s| s.parse_expr())?;
+            let then = self.parse_expr()?;
             when_clauses.push(WhenClause { when, then });
         }
 
         // Parse optional ELSE clause
         let else_clause = if self.eat_kw(Keyword::Else).is_some() {
-            Some(Box::new(self.node(|s| s.parse_expr())?))
+            Some(Box::new(self.parse_expr()?))
         } else {
             None
         };

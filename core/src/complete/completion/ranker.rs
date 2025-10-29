@@ -40,6 +40,7 @@ impl<S: Comparator> Ranker for DefaultRanker<S> {
         let needle = needle.to_string();
 
         items.sort_by(|a, b| self.comparator.compare(a, b, &needle));
+
         items.retain({
             let mut seen = HashSet::new();
             move |item| seen.insert(item.insert_text.clone())

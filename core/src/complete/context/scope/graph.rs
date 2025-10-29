@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ast;
+use crate::complete::context::ContextBuildParams;
 use crate::schema;
 use crate::span::Loc;
 
@@ -25,6 +26,17 @@ impl<'a> ScopeGraph<'a> {
     }
     pub fn build(text: &'a str, position: usize, ast: ast::Node<'_>) -> ScopeGraph<'a> {
         ScopeGraphBuilder::new(text, position, ast).build()
+    }
+}
+
+impl<'a> From<&ContextBuildParams<'a>> for ScopeGraph<'a> {
+    fn from(params: &ContextBuildParams<'a>) -> Self {
+        ScopeGraphBuilder::new(
+            params.text,
+            params.cursor,
+            ast::Node::Statement(&params.stmt),
+        )
+        .build()
     }
 }
 
@@ -116,6 +128,9 @@ pub enum Origin<'a> {
     Star {
         relation: Option<BindingId>, // None => unqualified *
     },
+    FunctionCall {
+        name: &'a str,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -129,6 +144,22 @@ pub enum Literal {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct NamePath<'a>(pub Vec<&'a str>);
+
+impl<'a> NamePath<'a> {
+    pub fn to_string(&self) -> String {
+        self.0.join(".")
+    }
+
+    pub fn from_qualified_name(text: &'a str, name: &ast::QualifiedName) -> NamePath<'a> {
+        Self(
+            name.parts
+                .items
+                .iter()
+                .map(|part| part.span.as_str(text))
+                .collect(),
+        )
+    }
+}
 
 impl<'a> From<Vec<&'a str>> for NamePath<'a> {
     fn from(path: Vec<&'a str>) -> Self {
@@ -442,6 +473,12 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
                 _ => return Origin::UnresolvedIdent(NamePath(vec![])),
             };
         };
+
+        if let ast::Expr::FunctionCall(function_call) = &expr.item {
+            return Origin::FunctionCall {
+                name: self.span_str(&function_call.name.span),
+            };
+        }
 
         let ast::Expr::Name(name) = &expr.item else {
             return Origin::UnresolvedIdent(NamePath(vec![]));
