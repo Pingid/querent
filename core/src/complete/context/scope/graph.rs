@@ -6,7 +6,7 @@ use crate::schema;
 use crate::span::Loc;
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct ScopeGraph<'a> {
+pub struct ScopeGraphv1<'a> {
     /// By alias or relation name -> RelationId (for quick lookup).
     pub by_name: HashMap<&'a str, BindingId>,
     /// All bound relations.
@@ -20,16 +20,16 @@ pub struct ScopeGraph<'a> {
 }
 
 /// Accessor methods for [`Relations`].
-impl<'a> ScopeGraph<'a> {
+impl<'a> ScopeGraphv1<'a> {
     pub fn relation(&self, name: &str) -> Option<BindingId> {
         self.by_name.get(name).copied()
     }
-    pub fn build(text: &'a str, position: usize, ast: ast::Node<'_>) -> ScopeGraph<'a> {
+    pub fn build(text: &'a str, position: usize, ast: ast::Node<'_>) -> ScopeGraphv1<'a> {
         ScopeGraphBuilder::new(text, position, ast).build()
     }
 }
 
-impl<'a> From<&ParsedStatement<'a>> for ScopeGraph<'a> {
+impl<'a> From<&ParsedStatement<'a>> for ScopeGraphv1<'a> {
     fn from(params: &ParsedStatement<'a>) -> Self {
         ScopeGraphBuilder::new(
             params.text,
@@ -41,7 +41,7 @@ impl<'a> From<&ParsedStatement<'a>> for ScopeGraph<'a> {
 }
 
 /// Builder methods for [`Relations`].
-impl<'a> ScopeGraph<'a> {
+impl<'a> ScopeGraphv1<'a> {
     pub fn insert_relation(&mut self, kind: BindingKind<'a>, alias: Option<&'a str>) -> BindingId {
         let id = BindingId(self.bindings.len() as u32);
 
@@ -88,10 +88,10 @@ pub struct RelationBinding<'a> {
 pub enum BindingKind<'a> {
     Base(NamePath<'a>), // e.g. schema.table
     Cte {
-        scope: Box<ScopeGraph<'a>>,
+        scope: Box<ScopeGraphv1<'a>>,
         name: &'a str,
     }, // CTE with its relations
-    Subquery(Box<ScopeGraph<'a>>), // keep for lazy expansion or rebuild
+    Subquery(Box<ScopeGraphv1<'a>>), // keep for lazy expansion or rebuild
 }
 
 /// Column visible in a relation binding or projection output.
@@ -270,19 +270,19 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
         }
     }
 
-    pub fn build(&self) -> ScopeGraph<'txt> {
+    pub fn build(&self) -> ScopeGraphv1<'txt> {
         let query = self.ast.find_rev(
             |node| matches!(node, ast::Node::Query(q) if q.span.contains_inclusive(self.position) || (q.span.end <= self.position && self.text[q.span.end..self.position].chars().all(|c| c.is_whitespace()))),
         );
 
         let Some(query_node) = query else {
-            return ScopeGraph::default();
+            return ScopeGraphv1::default();
         };
         self.gather_relations(query_node)
     }
 
-    fn gather_relations(&self, query_node: impl Into<ast::Node<'ast>>) -> ScopeGraph<'txt> {
-        let mut relations = ScopeGraph::default();
+    fn gather_relations(&self, query_node: impl Into<ast::Node<'ast>>) -> ScopeGraphv1<'txt> {
+        let mut relations = ScopeGraphv1::default();
         let query_node = query_node.into();
         self.gather_ctes(&mut relations, query_node);
         self.gather_from(&mut relations, query_node);
@@ -292,7 +292,7 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
         relations
     }
 
-    fn gather_ctes(&self, scope: &mut ScopeGraph<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_ctes(&self, scope: &mut ScopeGraphv1<'txt>, query_node: ast::Node<'ast>) {
         let ast::Node::Query(query) = query_node else {
             return;
         };
@@ -315,7 +315,7 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_from(&self, scope: &mut ScopeGraph<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_from(&self, scope: &mut ScopeGraphv1<'txt>, query_node: ast::Node<'ast>) {
         let Some(select) = query_node.as_select() else {
             return;
         };
@@ -331,7 +331,7 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_table_ref(&self, scope: &mut ScopeGraph<'txt>, table_ref: &Loc<ast::TableRef>) {
+    fn gather_table_ref(&self, scope: &mut ScopeGraphv1<'txt>, table_ref: &Loc<ast::TableRef>) {
         match &table_ref.item {
             ast::TableRef::Factor(factor) => {
                 self.gather_table_factor(scope, factor);
@@ -345,7 +345,7 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_table_factor(&self, scope: &mut ScopeGraph<'txt>, factor: &Loc<ast::TableFactor>) {
+    fn gather_table_factor(&self, scope: &mut ScopeGraphv1<'txt>, factor: &Loc<ast::TableFactor>) {
         match &factor.item {
             ast::TableFactor::Named(n) => {
                 let path = self.name_path(&n.item.name);
@@ -366,7 +366,7 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
             }
             ast::TableFactor::Subquery(n) => {
                 let alias = n.item.alias.as_ref().map(|a| self.span_str(&a.span));
-                let inner_scope: ScopeGraph<'txt> =
+                let inner_scope: ScopeGraphv1<'txt> =
                     self.gather_relations(ast::Node::Query(&n.item.query));
                 let kind = BindingKind::<'txt>::Subquery(Box::new(inner_scope));
                 scope.insert_relation(kind, alias);
@@ -380,7 +380,7 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_projections(&self, scope: &mut ScopeGraph<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_projections(&self, scope: &mut ScopeGraphv1<'txt>, query_node: ast::Node<'ast>) {
         let Some(select) = query_node.as_select() else {
             return;
         };
@@ -391,7 +391,7 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_group_by(&self, scope: &mut ScopeGraph<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_group_by(&self, scope: &mut ScopeGraphv1<'txt>, query_node: ast::Node<'ast>) {
         let Some(select) = query_node.as_select() else {
             return;
         };
@@ -422,7 +422,7 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
         }
     }
 
-    fn gather_order_by(&self, scope: &mut ScopeGraph<'txt>, query_node: ast::Node<'ast>) {
+    fn gather_order_by(&self, scope: &mut ScopeGraphv1<'txt>, query_node: ast::Node<'ast>) {
         let ast::Node::Query(query) = query_node else {
             return;
         };
@@ -505,7 +505,7 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
         )
     }
 
-    fn column_origin(&self, scope: &ScopeGraph<'txt>, expr: &Loc<ast::Expr>) -> Origin<'txt> {
+    fn column_origin(&self, scope: &ScopeGraphv1<'txt>, expr: &Loc<ast::Expr>) -> Origin<'txt> {
         if let ast::Expr::Literal(literal) = &expr.item {
             let value = self.span_str(&literal.span);
             match &literal.item {
@@ -581,8 +581,8 @@ impl<'txt, 'ast> ScopeGraphBuilder<'txt, 'ast> {
 mod tests {
     use super::*;
     use crate::parse::Parser;
-    use crate::test_util::ansi_tokens;
-    use crate::test_util::get_leaky_static_caret_cursor;
+    use crate::test_utils::ansi_lex;
+    use crate::test_utils::leaky_static_caret_cursor;
 
     // #[test]
     // fn select() {

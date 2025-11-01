@@ -50,7 +50,7 @@ impl<'a> Context<'a> {
                     .map(|func| AvailableFunction::Schema(func)),
             )
             .filter(|func| match (func.return_type(), self.clause.kind) {
-                (schema::FunctionReturnType::Scalar(_), ClauseKind::Select) => true,
+                (schema::FuncReturnType::Scalar(_), ClauseKind::Select) => true,
                 _ => false,
             })
     }
@@ -75,7 +75,7 @@ impl<'schema> AvailableFunction<'schema> {
             AvailableFunction::Schema(func) => func.parameter_types.to_vec(),
         }
     }
-    fn return_type(&self) -> &schema::FunctionReturnType {
+    fn return_type(&self) -> &schema::FuncReturnType {
         match self {
             AvailableFunction::Spec(func) => &func.return_type,
             AvailableFunction::Schema(func) => &func.return_type,
@@ -117,9 +117,9 @@ impl<'schema> AvailableFunction<'schema> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::CompletionTest;
-    use crate::test_util::CompletionTestResult;
-    use crate::test_util::SchemaCacheBuilder;
+    use crate::schema::CacheBuilder;
+    use crate::test_utils::CompletionTest;
+    use crate::test_utils::CompletionTestResult;
 
     #[test]
     fn completes_at_appropriate_locations() {
@@ -130,17 +130,12 @@ mod tests {
     }
 
     fn case(input: &str) -> CompletionTestResult {
+        use schema::DataType::*;
+        let schema = CacheBuilder::new()
+            .scalar_function("foo", &[Text], Text)
+            .build();
         CompletionTest::from_input(input)
-            .with_schema(
-                SchemaCacheBuilder::new()
-                    .add_function(
-                        "public",
-                        "foo",
-                        schema::FunctionReturnType::Scalar(schema::DataType::Text),
-                        &[schema::DataType::Text],
-                    )
-                    .build(),
-            )
+            .with_schema(schema)
             .run_with(complete)
     }
 }

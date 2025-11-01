@@ -1,0 +1,24 @@
+use crate::complete::completion::Candidate;
+use crate::complete::context::Context;
+use crate::complete::rank::Ranker;
+
+/// A ranker that aggregates multiple rankers (weighted linear combo).
+pub struct CompositeRanker<R> {
+    parts: Vec<(R, f32)>,
+}
+
+impl<'a, R: Ranker<'a>> CompositeRanker<R> {
+    pub fn new() -> Self {
+        Self { parts: vec![] }
+    }
+    pub fn with(mut self, r: impl Into<R>, weight: f32) -> Self {
+        self.parts.push((r.into(), weight));
+        self
+    }
+}
+
+impl<'a, R: Ranker<'a>> Ranker<'a> for CompositeRanker<R> {
+    fn score(&self, ctx: &Context<'a>, cand: &Candidate<'a>) -> f32 {
+        self.parts.iter().map(|(r, w)| w * r.score(ctx, cand)).sum()
+    }
+}

@@ -19,13 +19,13 @@
 //!   accessible at the cursor position based on the query structure
 
 use crate::ast;
-use crate::complete::context::resolved::ResolvedScope;
 use crate::dialect::DialectSpec;
 use crate::lex::Token;
 use crate::lex::lex;
 use crate::parse::parse_statement_at_cursor;
 use crate::schema;
 use crate::span::Loc;
+use crate::span::Span;
 
 mod clause;
 mod cursor;
@@ -34,6 +34,7 @@ mod scope;
 
 pub use clause::*;
 pub use cursor::*;
+pub use resolved::*;
 pub use scope::*;
 
 #[derive(Debug)]
@@ -43,7 +44,7 @@ pub struct Context<'a> {
     pub cursor: Cursor<'a>,
     pub scope: Scope<'a>,
     pub clause: Clause<'a>,
-    pub resolved_scope: ResolvedScope<'a>,
+    pub resolved_scope: ScopeGraph<'a>,
 }
 
 impl<'a> Context<'a> {
@@ -65,7 +66,7 @@ impl<'a> Context<'a> {
         let clause = Clause::from(&params);
         let cursor = Cursor::from(&params);
         let scope = Scope::from(&params);
-        let resolved_scope = ResolvedScope::from(&params);
+        let resolved_scope = ScopeGraph::from(&params);
         Some(Self {
             schema: params.schema,
             spec: params.spec,
@@ -92,9 +93,16 @@ impl<'a> Context<'a> {
         &self.clause
     }
 
-    pub fn resolved_scope(&self) -> &ResolvedScope<'a> {
+    pub fn resolved_scope(&self) -> &ScopeGraph<'a> {
         &self.resolved_scope
     }
+
+    // pub fn expected_data_type(&self) -> Option<schema::DataType> {
+    //     let func = self.clause.func.as_ref()?;
+    //     let func_name = func.name.to_string();
+    //     let func_def = self.functions().find(|f| f.function_name() == func_name)?;
+    //     func_def.parameter_types().get(func.arg).copied()
+    // }
 }
 
 #[derive(Debug)]
@@ -107,14 +115,30 @@ pub struct ParsedStatement<'a> {
     pub stmt: Loc<ast::Statement>,
 }
 
+impl<'a> ParsedStatement<'a> {
+    pub fn node_containing_cursor(&self, node: &ast::Node<'_>) -> bool {
+        self.containing_cursor(node.span())
+    }
+
+    pub fn containing_cursor(&self, span: impl Into<Span>) -> bool {
+        let span = span.into();
+        let eos = self.stmt.span.end;
+        let is_end = span.end == eos && (self.cursor - 1) == eos;
+        span.contains_inclusive(self.cursor) || is_end
+    }
+
+    pub fn statement_node(&self) -> ast::Node<'_> {
+        ast::Node::Statement(&self.stmt)
+    }
+}
+
 #[cfg(test)]
 impl ParsedStatement<'static> {
     pub fn new_ansi_static(text: &str) -> Option<Self> {
-        use crate::test_util::ansi_tokens;
-        use crate::test_util::get_leaky_static_caret_cursor;
-
-        let (text, pos) = get_leaky_static_caret_cursor(text);
-        let tokens = ansi_tokens(&text);
+        use crate::lex::lex;
+        use crate::test_utils::leaky_static_caret_cursor;
+        let (text, pos) = leaky_static_caret_cursor(text);
+        let tokens = lex(&crate::dialect::ansi::SPEC, &text);
         let stmt = parse_statement_at_cursor(&tokens, pos)?;
         let schema = Box::leak(Box::new(schema::Cache::default()));
         Some(Self {

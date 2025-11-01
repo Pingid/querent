@@ -41,11 +41,11 @@ pub trait AstNode<'a>: Sized + 'a {
 
     /// Finds the last node of this type (post-order) where the predicate is true.
     fn find_where_rev(
-        node: impl Into<Node<'a>>, pred: impl Fn(Node<'a>) -> bool,
+        node: impl Into<Node<'a>>, pred: impl Fn(&Loc<Self>) -> bool,
     ) -> Option<&'a Loc<Self>> {
-        node.into().find_map_rev(|n| match pred(n) {
-            true => Self::try_from_node(n),
-            false => None,
+        node.into().find_map_rev(|n| match Self::try_from_node(n) {
+            Some(v) if pred(v) => Some(v),
+            _ => None,
         })
     }
 

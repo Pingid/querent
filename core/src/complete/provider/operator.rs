@@ -223,8 +223,8 @@ fn operator_score(operator: Operator) -> i8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::CompletionTest;
-    use crate::test_util::CompletionTestResult;
+    use crate::test_utils::CompletionTest;
+    use crate::test_utils::CompletionTestResult;
 
     #[test]
     fn no_completion_after_incomplete_infix() {

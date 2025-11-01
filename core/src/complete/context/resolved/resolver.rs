@@ -1,21 +1,31 @@
 use crate::ast::AstNode;
 use crate::ast::{self};
-use crate::complete::context::resolved::ResolvedScope;
 use crate::complete::context::resolved::binding::*;
-use crate::complete::context::resolved::identifier::*;
+use crate::complete::context::resolved::identifier::IdentKind;
+use crate::complete::context::resolved::identifier::QualifiedIdent;
 use crate::dialect::DialectSpec;
 use crate::schema;
 use crate::span::Loc;
+use crate::span::Span;
 
-pub struct ScopeResolver<'a, 'ast> {
+pub struct ScopeGraphBuilder<'a, 'ast> {
     ast: &'ast Loc<ast::Query>,
     text: &'a str,
     schema: &'a schema::Cache,
     spec: &'a DialectSpec,
-    resolved: ResolvedScope<'a>,
+    graph: ScopeGraph<'a>,
 }
 
-impl<'a, 'ast> ScopeResolver<'a, 'ast> {
+impl ScopeGraphBuilder<'_, '_> {
+    pub fn build_graph<'a, 'ast>(
+        text: &'a str, schema: &'a schema::Cache, spec: &'a DialectSpec, ast: &'ast Loc<ast::Query>,
+    ) -> ScopeGraph<'a> {
+        ScopeGraphBuilder::new(text, schema, spec, ast).resolve()
+    }
+}
+
+impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
+    /// Creates a new scope resolver for the given query AST
     pub fn new(
         text: &'a str, schema: &'a schema::Cache, spec: &'a DialectSpec, ast: &'ast Loc<ast::Query>,
     ) -> Self {
@@ -24,277 +34,354 @@ impl<'a, 'ast> ScopeResolver<'a, 'ast> {
             text,
             schema,
             spec,
-            resolved: ResolvedScope::default(),
+            graph: ScopeGraph::default(),
         }
     }
 
-    pub fn resolve(mut self) -> ResolvedScope<'a> {
+    /// Resolves all CTEs, FROM clauses, and projections in the query
+    pub fn resolve(mut self) -> ScopeGraph<'a> {
         self.resolve_cte();
         self.resolve_from();
         self.resolve_projected();
-        self.resolved
+        self.graph
     }
 
+    /// Resolves Common Table Expressions (CTEs) in the WITH clause
     fn resolve_cte(&mut self) {
         for cte in ast::Cte::find_all_same_query(self.node()) {
-            let name = cte.item.name.as_str(self.text);
-            let scope = ResolvedScope::build(self.text, self.schema, self.spec, &cte.item.query);
-            self.resolved.bind(
+            let name = self.extract_text(cte.item.name);
+            let scope = Self::build_graph(self.text, self.schema, self.spec, &cte.item.query);
+            let available = scope
+                .projected()
+                .iter()
+                .map(|p| p.propagate(Some(name)))
+                .collect();
+            self.graph.bind(
                 Some(name),
-                BindingKind::Cte {
+                BindKind::Cte {
                     name,
                     scope: Box::new(scope),
                 },
+                available,
             );
         }
     }
 
+    /// Resolves all table references in the FROM clause
     fn resolve_from(&mut self) {
         for factor in ast::TableFactor::find_all_same_query(self.node()) {
-            match &factor.item {
-                ast::TableFactor::Named(named) => {
-                    let alias = self.extract_alias(named.alias);
-                    let name = self.table_name(&named.name);
-                    let table = self.lookup_table(&name);
-                    let origin = Some(self.resolved.next_id());
-                    let columns: Vec<_> = self
-                        .lookup_table_columns(&name)
-                        .map(|x| ColumnBinding {
-                            dt: Some(x.data_type),
-                            col: Some(x),
-                            name: ColumnName::from(x),
-                            alias,
-                            origin,
-                        })
-                        .collect();
-                    self.resolved.bind(
-                        alias,
-                        BindingKind::Base {
-                            name,
-                            table,
-                            columns,
-                        },
-                    );
-                }
-                ast::TableFactor::Function(func) => {
-                    let name = self.function_name(&func.name);
-                    let alias = self.extract_alias(func.alias);
-                    let next_id = self.resolved.next_id();
-                    let resolved_function = self.lookup_function(&name);
-                    let columns = match resolved_function {
-                        Some(def) => match def.return_type() {
-                            schema::FunctionReturnType::Table(columns) => columns
-                                .iter()
-                                .map(|c| ColumnBinding {
-                                    dt: Some(c.data_type),
-                                    col: None,
-                                    name: ColumnName::from(c.column_name.as_str()),
-                                    alias,
-                                    origin: Some(next_id),
-                                })
-                                .collect::<Vec<ColumnBinding<'a>>>(),
-                            _ => Vec::new(),
-                        },
-                        None => Vec::new(),
-                    };
-                    self.resolved.bind(
-                        alias,
-                        BindingKind::Func {
-                            name: name.function_name.unwrap_or(""),
-                            definition: resolved_function,
-                            columns,
-                        },
-                    );
-                }
-                ast::TableFactor::Subquery(subquery) => {
-                    let scope =
-                        ResolvedScope::build(self.text, self.schema, self.spec, &subquery.query);
-                    let alias = self.extract_alias(subquery.alias);
-                    self.resolved.bind(
-                        alias,
-                        BindingKind::Sub {
-                            scope: Box::new(scope),
-                        },
-                    );
-                }
-                ast::TableFactor::Parenthesized(_parenthesized) => {
-                    // println!("parenthesized: {:?}", parenthesized.span.as_str(self.text));
-                }
-            }
+            self.resolve_table_factor(&factor);
         }
     }
 
+    /// Resolves all projected columns in the SELECT clause
     fn resolve_projected(&mut self) {
         for item in ast::ProjectionItem::find_all_same_query(self.node()) {
             let alias = self.extract_alias(item.alias);
-            match &item.expr.item {
-                ast::Expr::Name(name) => {
-                    let name = self.column_name(name);
-                    let mut columns = self.find_columns(&name);
+            let projections = self.resolve_projection_item(&item, alias);
+            self.graph.projected.extend(projections);
+        }
+    }
 
-                    if columns.is_empty() && !name.is_star() {
-                        if let Some(column) = self.synthetic_projection_column(alias, name) {
-                            columns.push(column);
-                        }
-                    } else {
-                        self.apply_single_column_alias(&mut columns, alias, &name);
-                    }
-
-                    self.resolved.projected.extend(columns);
-                }
-                ast::Expr::Literal(item) => {
-                    let col = ColumnBinding {
-                        dt: self.infer_literal_type(item),
-                        col: None,
-                        name: ColumnName {
-                            column_name: Some(item.span.as_str(self.text)),
-                            ..Default::default()
-                        },
-                        alias,
-                        origin: None,
-                    };
-                    self.resolved.projected.push(col);
-                }
-                ast::Expr::FunctionCall(func) => {
-                    let name = self.function_name(&func.name);
-                    let label = alias.unwrap_or(item.span.as_str(self.text));
-                    let func = self.lookup_function(&name);
-
-                    let col = ColumnBinding {
-                        dt: func.and_then(|f| f.return_type().data_type()),
-                        col: None,
-                        name: ColumnName::from(label),
-                        alias,
-                        origin: None,
-                    };
-                    self.resolved.projected.push(col);
-                }
-                ast::Expr::Subquery(subquery) => {
-                    let scope = ResolvedScope::build(self.text, self.schema, self.spec, &subquery);
-                    self.resolved.projected.extend(scope.projected_columns());
-                    self.resolved.bind(
-                        alias,
-                        BindingKind::Sub {
-                            scope: Box::new(scope),
-                        },
-                    );
-                }
-                ast::Expr::Binary(_)
-                | ast::Expr::Unary(_)
-                | ast::Expr::Paren(_)
-                | ast::Expr::IsNull(_)
-                | ast::Expr::Between(_)
-                | ast::Expr::Like(_)
-                | ast::Expr::ILike(_)
-                | ast::Expr::Similar(_)
-                | ast::Expr::Array(_)
-                | ast::Expr::Quantified(_)
-                | ast::Expr::Case(_)
-                | ast::Expr::In(_)
-                | ast::Expr::Over(_)
-                | ast::Expr::Exists(_)
-                | ast::Expr::Empty => {
-                    let label = alias.unwrap_or(item.span.as_str(self.text));
-                    let col = self.expression_column(label, alias);
-                    self.resolved.projected.push(col);
-                }
+    /// Dispatches table factor resolution based on its type
+    fn resolve_table_factor(&mut self, factor: &Loc<ast::TableFactor>) {
+        match &factor.item {
+            ast::TableFactor::Named(named) => self.resolve_table_named(named),
+            ast::TableFactor::Function(func) => self.resolve_table_function(func),
+            ast::TableFactor::Subquery(subquery) => self.resolve_table_subquery(subquery),
+            ast::TableFactor::Parenthesized(_parenthesized) => {
+                // TODO: Handle parenthesized table factors if needed
             }
         }
     }
 
-    // ---------------- Binding resolution helpers ----------------
-    fn match_columns(
-        columns: impl Iterator<Item = ColumnBinding<'a>>, column_name: &ColumnName<'a>,
-    ) -> impl Iterator<Item = ColumnBinding<'a>> {
-        columns
-            .filter(|c| column_name.matches_column(&c.name))
-            .map(move |c| ColumnBinding {
-                dt: c.dt,
-                col: c.col,
-                name: match column_name.is_star() {
-                    true => c.name,
-                    false => *column_name,
+    /// Resolves a named table reference (e.g., users, schema.table)
+    fn resolve_table_named(&mut self, named: &ast::NamedTableFactor) {
+        let alias = self.extract_alias(named.alias);
+        let name = self.table_name(&named.name);
+        let table = self.lookup_table(&name);
+        let id = self.graph.new_bind_id();
+
+        let label = |c: &'a schema::Column| match alias {
+            Some(alias) => {
+                QualifiedIdent::from_slice(IdentKind::Column, &[alias, c.column_name.as_str()])
+                    .unwrap()
+            }
+            None => QualifiedIdent::from(c),
+        };
+
+        let available = self
+            .lookup_schema_columns(&name)
+            .map(|c| Projection {
+                label: label(c),
+                kind: ProjectionKind::Column {
+                    source: Some(id),
+                    schema_column: Some(c),
                 },
-                alias: c.alias,
-                origin: c.origin,
             })
+            .collect();
+
+        self.graph.bind(
+            alias.or(Some(name.name())),
+            BindKind::Base { name, table },
+            available,
+        );
     }
 
-    fn match_scope_columns(
-        scope: &ResolvedScope<'a>, column_name: &ColumnName<'a>,
-    ) -> Vec<ColumnBinding<'a>> {
-        Self::match_columns(scope.projected_columns().iter().copied(), column_name).collect()
+    /// Resolves a table-valued function (e.g., generate_series(), json_table())
+    fn resolve_table_function(&mut self, func: &ast::FunctionTableFactor) {
+        let name = self.function_name(&func.name);
+        let alias = self.extract_alias(func.alias);
+        let resolved_function = self.lookup_function(&name);
+        let columns = self.extract_function_columns(&resolved_function);
+        let id = self.graph.new_bind_id();
+
+        let label = |c: &'a schema::TableColumn| match alias {
+            Some(alias) => {
+                QualifiedIdent::from_slice(IdentKind::Column, &[alias, c.column_name.as_str()])
+                    .unwrap()
+            }
+            None => {
+                QualifiedIdent::from_slice(IdentKind::Column, &[c.column_name.as_str()]).unwrap()
+            }
+        };
+
+        let available = columns
+            .iter()
+            .map(|c| Projection {
+                label: label(c),
+                kind: ProjectionKind::TableFunction {
+                    source: id,
+                    column: c,
+                    definition: resolved_function,
+                },
+            })
+            .collect();
+
+        self.graph.bind(
+            alias,
+            BindKind::Func {
+                name: name.name(),
+                definition: resolved_function,
+                columns,
+            },
+            available,
+        );
     }
 
-    fn find_columns(&self, column_name: &ColumnName<'a>) -> Vec<ColumnBinding<'a>> {
-        self.resolved
-            .bindings
-            .values()
-            .flat_map(|binding| self.find_columns_in_binding(column_name, binding))
-            .collect()
+    /// Resolves a subquery used as a table source
+    fn resolve_table_subquery(&mut self, subquery: &ast::SubqueryTableFactor) {
+        let scope = Self::build_graph(self.text, self.schema, self.spec, &subquery.query);
+        let alias = self.extract_alias(subquery.alias);
+        let available = scope
+            .projected()
+            .iter()
+            .map(|p| p.propagate(alias))
+            .collect();
+        self.graph.bind(
+            alias,
+            BindKind::Sub {
+                scope: Box::new(scope),
+            },
+            available,
+        );
     }
 
-    fn find_columns_in_binding(
-        &self, column_name: &ColumnName<'a>, binding: &Binding<'a>,
-    ) -> Vec<ColumnBinding<'a>> {
-        match &binding.kind {
-            BindingKind::Base { name, columns, .. } => {
-                if column_name.matches_table_or_alias(*name, binding.alias) {
-                    Self::match_columns(columns.iter().copied(), column_name).collect()
-                } else {
-                    vec![]
-                }
-            }
-            BindingKind::Cte { scope, name } => {
-                let alias = binding.alias.or(Some(*name));
-                if column_name.matches_alias(alias) {
-                    Self::match_scope_columns(scope, column_name)
-                } else {
-                    vec![]
-                }
-            }
-            BindingKind::Sub { scope } => {
-                if column_name.matches_alias(binding.alias) {
-                    Self::match_scope_columns(scope, column_name)
-                } else {
-                    vec![]
-                }
-            }
-            BindingKind::Func { columns, .. } => {
-                if column_name.matches_alias(binding.alias) {
-                    Self::match_columns(columns.iter().copied(), column_name).collect()
-                } else {
-                    vec![]
-                }
-            }
+    /// Extracts column definitions from a table-valued function
+    fn extract_function_columns(
+        &self, func_ref: &Option<FunctionRef<'a>>,
+    ) -> Vec<&'a schema::TableColumn> {
+        match func_ref {
+            Some(def) => match def.return_type() {
+                schema::FuncReturnType::Table(columns) => columns.iter().collect(),
+                _ => Vec::new(),
+            },
+            None => Vec::new(),
         }
     }
 
-    // ---------------- AST resolution helpers ----------------
-    fn extract_name_parts(&self, name: &Loc<ast::QualifiedName>) -> impl Iterator<Item = &'a str> {
-        name.item
-            .parts
-            .items
+    /// Resolves a single projection item based on its expression type
+    fn resolve_projection_item(
+        &mut self, item: &Loc<ast::ProjectionItem>, alias: Option<&'a str>,
+    ) -> Vec<Projection<'a>> {
+        match &item.expr.item {
+            ast::Expr::Name(name) => self.resolve_name_projection(name, alias),
+            ast::Expr::Literal(lit) => vec![self.resolve_literal_projection(lit, alias)],
+            ast::Expr::FunctionCall(func) => {
+                vec![self.resolve_function_projection(func, alias, self.extract_text(item))]
+            }
+            ast::Expr::Subquery(subquery) => self.resolve_subquery_projection(subquery, alias),
+            _ => vec![self.resolve_expression_projection(self.extract_text(item), alias)],
+        }
+    }
+
+    /// Resolves column name projections, including wildcards and qualified names
+    fn resolve_name_projection(
+        &self, name: &Loc<ast::QualifiedName>, alias: Option<&'a str>,
+    ) -> Vec<Projection<'a>> {
+        let column_name = self.column_name(name);
+        if column_name.is_wildcard() {
+            return self
+                .graph
+                .available()
+                .filter(|p| match (column_name.table(), p.label.table()) {
+                    (Some(table), Some(label_table)) => table == label_table,
+                    _ => true,
+                })
+                .map(|p| *p)
+                .collect::<Vec<_>>();
+        }
+
+        let projection = column_name
+            .table()
+            .and_then(|table| self.graph.get_bind_by_alias(table))
+            .or_else(|| self.find_binding_by_column_name(column_name.name()))
+            .and_then(|(_, bind)| {
+                bind.available
+                    .iter()
+                    .find(|p| p.label.name() == column_name.name())
+                    .and_then(|p| p.project(column_name, alias))
+            });
+
+        projection
+            .or_else(|| match self.graph.bindings.len() {
+                0 => self
+                    .lookup_schema_columns(&column_name)
+                    .next()
+                    .map(|c| Projection {
+                        label: QualifiedIdent::from(c),
+                        kind: ProjectionKind::Column {
+                            source: None,
+                            schema_column: Some(c),
+                        },
+                    }),
+                _ => None,
+            })
+            .or_else(|| self.synthetic_projection_column(alias, column_name))
+            .map(|p| vec![p])
+            .unwrap_or_default()
+    }
+
+    /// Resolves literal value projections (e.g., 1, 'text', true)
+    fn resolve_literal_projection(
+        &self, literal: &Loc<ast::Literal>, alias: Option<&'a str>,
+    ) -> Projection<'a> {
+        let label = alias.unwrap_or(self.extract_text(literal));
+        Projection {
+            label: QualifiedIdent::from_str(IdentKind::Column, label),
+            kind: ProjectionKind::Literal {
+                alias,
+                text: self.extract_text(literal),
+                data_type: self.infer_literal_type(literal),
+            },
+        }
+    }
+
+    /// Resolves scalar function call projections (e.g., UPPER(name), COUNT(*))
+    fn resolve_function_projection(
+        &self, func: &ast::FunctionCall, alias: Option<&'a str>, full_expr: &'a str,
+    ) -> Projection<'a> {
+        let name = self.function_name(&func.name);
+        let label = alias.unwrap_or(full_expr);
+        let func_def = self.lookup_function(&name);
+
+        Projection {
+            label: QualifiedIdent::from_str(IdentKind::Column, label),
+            kind: ProjectionKind::ScalarFunction {
+                name: name.name(),
+                alias,
+                return_type: func_def.and_then(|f| f.return_type().data_type()),
+            },
+        }
+    }
+
+    /// Resolves subquery projections in SELECT clause
+    fn resolve_subquery_projection(
+        &mut self, subquery: &Loc<ast::Query>, alias: Option<&'a str>,
+    ) -> Vec<Projection<'a>> {
+        let scope = Self::build_graph(self.text, self.schema, self.spec, subquery);
+        scope
+            .projected()
+            .first()
+            .and_then(|p| p.project(QualifiedIdent::from_str(IdentKind::Column, "*"), alias))
+            .map(|p| vec![p])
+            .unwrap_or_default()
+    }
+
+    /// Resolves complex expression projections (e.g., CASE, operators)
+    fn resolve_expression_projection(
+        &self, expr_text: &'a str, alias: Option<&'a str>,
+    ) -> Projection<'a> {
+        let label = alias.unwrap_or(expr_text);
+        self.expression_column(label, alias)
+    }
+
+    // ================== COLUMN FINDING AND BINDING ==================
+    fn find_binding_by_column_name(&self, name: &str) -> Option<&(BindId, Bind<'a>)> {
+        self.graph
+            .bindings
             .iter()
-            .map(|part| part.span.as_str(self.text))
+            .find(|(_, bind)| bind.available.iter().any(|p| p.label.name() == name))
     }
 
-    fn collect_name_parts(&self, name: &Loc<ast::QualifiedName>) -> Vec<&'a str> {
-        self.extract_name_parts(name).collect()
+    /// Creates a projection for a generic expression
+    fn expression_column(&self, label: &'a str, alias: Option<&'a str>) -> Projection<'a> {
+        Projection {
+            label: QualifiedIdent::from_str(IdentKind::Column, alias.unwrap_or(label)),
+            kind: ProjectionKind::Expression {
+                data_type: None,
+                alias,
+            },
+        }
     }
 
-    fn table_name(&self, name: &Loc<ast::QualifiedName>) -> TableName<'a> {
-        self.collect_name_parts(name).into()
+    /// Creates a synthetic projection for unresolved columns
+    fn synthetic_projection_column(
+        &self, alias: Option<&'a str>, name: QualifiedIdent<'a>,
+    ) -> Option<Projection<'a>> {
+        alias.or_else(|| Some(name.name())).map(|label| Projection {
+            label: QualifiedIdent::from_str(IdentKind::Column, label),
+            kind: ProjectionKind::Unresolved,
+        })
     }
 
-    fn column_name(&self, name: &Loc<ast::QualifiedName>) -> ColumnName<'a> {
-        self.collect_name_parts(name).into()
+    /// Converts a qualified name AST node to a table identifier
+    fn table_name(&self, name: &Loc<ast::QualifiedName>) -> QualifiedIdent<'a> {
+        let parts = self.collect_name_parts(name);
+        QualifiedIdent::from_slice(IdentKind::Table, &parts).unwrap_or(QualifiedIdent {
+            kind: IdentKind::Table,
+            name: "",
+            database: None,
+            schema: None,
+            parent: None,
+        })
     }
 
-    fn function_name(&self, name: &Loc<ast::QualifiedName>) -> FunctionName<'a> {
-        self.collect_name_parts(name).into()
+    /// Converts a qualified name AST node to a column identifier
+    fn column_name(&self, name: &Loc<ast::QualifiedName>) -> QualifiedIdent<'a> {
+        let parts = self.collect_name_parts(name);
+        QualifiedIdent::from_slice(IdentKind::Column, &parts).unwrap_or(QualifiedIdent {
+            kind: IdentKind::Column,
+            name: "",
+            database: None,
+            schema: None,
+            parent: None,
+        })
     }
 
+    /// Converts a qualified name AST node to a function identifier
+    fn function_name(&self, name: &Loc<ast::QualifiedName>) -> QualifiedIdent<'a> {
+        let parts = self.collect_name_parts(name);
+        QualifiedIdent::from_slice(IdentKind::Function, &parts).unwrap_or(QualifiedIdent {
+            kind: IdentKind::Function,
+            name: "",
+            database: None,
+            schema: None,
+            parent: None,
+        })
+    }
+
+    /// Infers the data type of a literal value
     fn infer_literal_type(&self, literal: &Loc<ast::Literal>) -> Option<schema::DataType> {
         match &literal.item {
             ast::Literal::Number(_) => Some(schema::DataType::Integer),
@@ -309,75 +396,65 @@ impl<'a, 'ast> ScopeResolver<'a, 'ast> {
         }
     }
 
-    fn extract_alias(&self, alias: Option<Loc<ast::Identifier>>) -> Option<&'a str> {
-        alias.map(|a| a.span.as_str(self.text))
-    }
-
-    fn expression_column(&self, label: &'a str, alias: Option<&'a str>) -> ColumnBinding<'a> {
-        ColumnBinding {
-            dt: None,
-            col: None,
-            name: ColumnName::from(label),
-            alias,
-            origin: None,
-        }
-    }
-
-    fn synthetic_projection_column(
-        &self, alias: Option<&'a str>, name: ColumnName<'a>,
-    ) -> Option<ColumnBinding<'a>> {
-        alias.or(name.column_name).map(|label| ColumnBinding {
-            dt: None,
-            col: None,
-            name,
-            alias: Some(label),
-            origin: None,
-        })
-    }
-
-    fn apply_single_column_alias(
-        &self, columns: &mut [ColumnBinding<'a>], alias: Option<&'a str>, source: &ColumnName<'a>,
-    ) {
-        if columns.len() == 1 && !source.is_star() {
-            if let Some(alias_str) = alias {
-                columns[0].alias = Some(alias_str);
-            }
-        }
-    }
-
-    // ---------------- Schema resolution helpers ----------------
-    fn lookup_table(&self, name: &TableName<'a>) -> Option<&'a schema::Table> {
+    /// Looks up a table in the schema cache
+    fn lookup_table(&self, name: &QualifiedIdent<'a>) -> Option<&'a schema::Table> {
         self.schema
             .get_tables()
             .iter()
-            .find(|t| name.matches_table(t))
+            .find(|t| name.matches(&QualifiedIdent::from(*t)))
     }
 
-    fn lookup_table_columns(
-        &self, name: &TableName<'a>,
+    /// Looks up columns for a table in the schema cache
+    fn lookup_schema_columns(
+        &self, name: &QualifiedIdent<'a>,
     ) -> impl Iterator<Item = &'a schema::Column> {
         self.schema
             .get_columns()
             .iter()
-            .filter(move |c| ColumnName::from(*c).is_from_table(*name))
+            .filter(move |c| QualifiedIdent::from(*c).matches(name))
     }
 
-    fn lookup_function(&self, name: &FunctionName<'a>) -> Option<ResolvedFunction<'a>> {
+    /// Looks up a function in the dialect spec or schema cache
+    fn lookup_function(&self, name: &QualifiedIdent<'a>) -> Option<FunctionRef<'a>> {
         self.spec
             .functions
             .values()
-            .map(|f| ResolvedFunction::Spec(f))
-            .find(|f| Some(f.function_name().as_str()) == name.function_name)
+            .map(|f| FunctionRef::Spec(f))
+            .find(|f| f.function_name() == name.name())
             .or_else(|| {
                 self.schema
                     .get_functions()
                     .iter()
-                    .map(|f| ResolvedFunction::Schema(f))
-                    .find(|f| Some(f.function_name().as_str()) == name.function_name)
+                    .map(|f| FunctionRef::Schema(f))
+                    .find(|f| f.function_name() == name.name())
             })
     }
 
-    // ---------------- Ast Node traversal ----------------
+    /// Extracts an optional alias from an identifier
+    fn extract_alias(&self, alias: Option<Loc<ast::Identifier>>) -> Option<&'a str> {
+        alias.map(|a| self.extract_text(&a))
+    }
+
+    /// Collects name parts into a vector
+    fn collect_name_parts(&self, name: &Loc<ast::QualifiedName>) -> Vec<&'a str> {
+        self.extract_name_parts(name).collect()
+    }
+
+    /// Extracts name parts from a qualified name AST node
+    fn extract_name_parts(&self, name: &Loc<ast::QualifiedName>) -> impl Iterator<Item = &'a str> {
+        name.item
+            .parts
+            .items
+            .iter()
+            .map(|part| self.extract_text(part))
+    }
+
+    /// Extracts an optional alias from an identifier
+    fn extract_text(&self, name: impl Into<Span>) -> &'a str {
+        name.into().as_str(self.text)
+    }
+
+    /// Returns the root AST node for traversal
     fn node(&self) -> ast::Node<'ast> {
         ast::Node::Query(self.ast)
     }
@@ -387,61 +464,39 @@ impl<'a, 'ast> ScopeResolver<'a, 'ast> {
 mod tests {
     use super::*;
     use crate::complete::context::ParsedStatement;
-    use crate::test_util::users_posts_schema;
+    use crate::schema::CacheBuilder;
+    use crate::test_utils::users_posts_schema;
 
-    fn resolve_with_schema(sql: &str, schema: schema::Cache) -> ResolvedScope<'_> {
+    fn resolve_with_schema(sql: &str, schema: schema::Cache) -> ScopeGraph<'_> {
         let mut stmt = ParsedStatement::new_ansi_static(sql).unwrap();
         stmt.schema = Box::leak(Box::new(schema));
-        ResolvedScope::from(&stmt)
-    }
-
-    fn resolve(sql: &str) -> ResolvedScope<'_> {
-        resolve_with_schema(sql, users_posts_schema())
+        ScopeGraph::from(&stmt)
     }
 
     fn assert_projected_in_scope(
-        scope: &ResolvedScope<'_>, sql: &str, projected: &[&str],
+        scope: &ScopeGraph<'_>, sql: &str, projected: &[&str],
         data_types: &[Option<schema::DataType>],
     ) {
-        let actual_columns: Vec<_> = scope
-            .projected_columns()
-            .iter()
-            .map(|c| c.alias.or_else(|| c.name.column_name).unwrap_or("unknown"))
-            .collect();
-
-        for (index, col) in scope.projected_columns().iter().enumerate() {
-            let label = col.alias.or_else(|| col.name.column_name);
-            assert!(
-                scope
-                    .projected_columns()
-                    .iter()
-                    .any(|c| c.alias.or_else(|| c.name.column_name) == label),
-                "query: {:?} Expected column {:?} to be projected, but got {:?}",
-                sql,
-                col,
-                actual_columns,
-            );
-            if let Some(dtype) = data_types.get(index) {
-                assert_eq!(
-                    col.dt, *dtype,
-                    "query: {:?} Expected column {:?} to have data type {:?}, but got {:?}",
-                    sql, col, *dtype, col.dt
-                );
-            }
-        }
+        let actual_columns: Vec<_> = scope.projected.iter().map(|c| c.label.name()).collect();
+        // println!("actual_columns: {:#?}", scope.projected);
         assert_eq!(
-            scope.projected_columns().iter().count(),
-            projected.len(),
-            "query: {:?} Expected {} columns to be projected, but got {} columns: {:?}",
-            sql,
-            projected.len(),
-            actual_columns.len(),
-            actual_columns,
+            actual_columns, projected,
+            "query: {:?}\nExpected columns to be projected: {:?}\nBut got: {:?}",
+            sql, projected, actual_columns
         );
+
+        if data_types.len() > 0 {
+            let actual_data_types: Vec<_> = scope.projected.iter().map(|c| c.data_type()).collect();
+            assert_eq!(
+                actual_data_types, data_types,
+                "query: {:?}\nExpected data types to be projected: {:?}\nBut got: {:?}",
+                sql, data_types, actual_data_types
+            );
+        }
     }
 
     fn assert_projected(sql: &str, projected: &[&str], data_types: &[Option<schema::DataType>]) {
-        let scope = resolve(sql);
+        let scope = resolve_with_schema(sql, users_posts_schema());
         assert_projected_in_scope(&scope, sql, projected, data_types);
     }
 
@@ -457,6 +512,12 @@ mod tests {
     #[test]
     fn test_projected() {
         use schema::DataType::*;
+        // Infer from schema when no binding is found
+        assert_projected!("SELECT title, ", labels: ["title"], data_types: [Some(Text)]);
+
+        // Wildcard expansion from base table
+        assert_projected!("SELECT users.* FROM users, posts", labels: ["id", "name", "email"]);
+
         // Subquery with alias
         assert_projected!("SELECT * FROM (SELECT name as user_name FROM foo)", labels: ["user_name"]);
 
@@ -469,34 +530,34 @@ mod tests {
         // Star expansion from base table
         assert_projected!("SELECT * FROM users", labels: ["id", "name", "email"], data_types: [Some(Integer), Some(Text), Some(Text)]);
 
-        // // CTE with alias
+        // CTE with alias
         assert_projected!("WITH cte as (SELECT name as user_name FROM foo) SELECT * FROM cte", labels: ["user_name"], data_types: [None]);
 
-        // // Multiple columns with aliases
+        // Multiple columns with aliases
         assert_projected!("SELECT id as user_id, name as user_name, email FROM users", labels: ["user_id", "user_name", "email"], data_types: [Some(Integer), Some(Text), Some(Text)]);
 
-        // // Literal values
+        // Literal values
         assert_projected!("SELECT 1 as one, 'test' as str, true as flag", labels: ["one", "str", "flag"]);
 
-        // // Mix of columns and literals
+        // Mix of columns and literals
         assert_projected!("SELECT id, 'constant' as type, name FROM users", labels: ["id", "type", "name"]);
 
-        // // Table-qualified column names
+        // Table-qualified column names
         assert_projected!("SELECT users.id, users.name FROM users", labels: ["id", "name"]);
 
-        // // Subquery without table alias
+        // Subquery without table alias
         assert_projected!("SELECT * FROM (SELECT id, name FROM users)", labels: ["id", "name"]);
 
-        // // Multiple columns from subquery
+        // Multiple columns from subquery
         assert_projected!("SELECT * FROM (SELECT id as uid, email as mail FROM users) sub", labels: ["uid", "mail"]);
 
-        // // CTE with multiple columns
+        // CTE with multiple columns
         assert_projected!("WITH user_info AS (SELECT id, name FROM users) SELECT * FROM user_info", labels: ["id", "name"]);
 
-        // // Nested subqueries
+        // Nested subqueries
         assert_projected!("SELECT * FROM (SELECT * FROM (SELECT name FROM users))", labels: ["name"]);
 
-        // // Column from non-existent table (synthetic column)
+        // Column from non-existent table (synthetic column)
         assert_projected!("SELECT fake_col FROM non_existent_table", labels: ["fake_col"]);
 
         assert_projected!("SELECT posts.id FROM users, posts", labels: ["id"], data_types: [Some(Integer)]);
@@ -515,33 +576,9 @@ mod tests {
     #[test]
     fn test_function_projection() {
         use schema::DataType::*;
-
-        use crate::test_util::SchemaCacheBuilder;
-        let schema = SchemaCacheBuilder::new()
-            .add_function(
-                "public",
-                "foo",
-                schema::FunctionReturnType::Table(vec![schema::TableColumn {
-                    column_name: "name".to_string(),
-                    data_type: schema::DataType::Integer,
-                }]),
-                &[schema::DataType::Text],
-            )
-            .add_function(
-                "public",
-                "bar",
-                schema::FunctionReturnType::Table(vec![
-                    schema::TableColumn {
-                        column_name: "baz".to_string(),
-                        data_type: schema::DataType::Integer,
-                    },
-                    schema::TableColumn {
-                        column_name: "biz".to_string(),
-                        data_type: schema::DataType::Integer,
-                    },
-                ]),
-                &[schema::DataType::Text],
-            )
+        let schema = CacheBuilder::new()
+            .table_function("foo", &[Text], vec![("name", Integer)])
+            .table_function("bar", &[Text], vec![("baz", Integer), ("biz", Integer)])
             .build();
         let sql = "SELECT * FROM foo()";
         assert_projected_in_scope(
@@ -557,20 +594,6 @@ mod tests {
             sql,
             &["baz"],
             &[Some(Integer)],
-        );
-    }
-
-    #[test]
-    fn test_subquery_resolve() {
-        // Test basic subquery resolution
-        let sql = "SELECT * FROM (SELECT email as u_email FROM users) u";
-        let scope = resolve(sql);
-        let columns = scope.projected_columns();
-        assert_eq!(columns.len(), 1);
-        // Check that we get u_email as the alias
-        assert_eq!(
-            columns[0].alias.or(columns[0].name.column_name),
-            Some("u_email")
         );
     }
 }

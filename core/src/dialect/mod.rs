@@ -171,6 +171,6 @@ pub enum CommentStyle {
 pub struct SpecFunction {
     pub function_name: &'static str,
     pub parameter_types: &'static [schema::DataType],
-    pub return_type: schema::FunctionReturnType,
+    pub return_type: schema::FuncReturnType,
     pub description: &'static str,
 }

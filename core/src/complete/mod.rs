@@ -1,16 +1,24 @@
-use crate::ast;
+use crate::complete::completion::CandidateSet;
+use crate::complete::context::Context;
 use crate::dialect::DialectSpec;
 use crate::doc::Content;
-use crate::lex::Token;
-use crate::lex::lex;
-use crate::parse::parse_statement_at_cursor;
 use crate::schema;
-use crate::span::Loc;
 
 pub mod completion;
 pub mod context;
 pub mod provider;
-mod providers;
+pub mod providers;
+pub mod rank;
+
+#[cfg(test)]
+pub mod test_util;
+
+pub trait Completer<'a> {
+    fn complete(&mut self, ctx: &mut Context<'a>, builder: &mut CandidateSet<'a>);
+    fn should_complete(&self, _ctx: &Context<'a>) -> bool {
+        true
+    }
+}
 
 pub struct Engine {
     pub spec: &'static DialectSpec,
@@ -36,32 +44,6 @@ pub fn complete(
     let Some(mut ctx) = context::Context::build(spec, schema, &text, cursor) else {
         return builder.empty();
     };
-    provider::complete(&mut ctx, &mut builder);
+    // provider::complete(&mut ctx, &mut builder);
     builder.build(&ctx)
-}
-
-struct ParseResult<'a> {
-    text: &'a str,
-    tokens: Vec<Token<'a>>,
-    cursor: usize,
-    stmt: Option<Loc<ast::Statement>>,
-    spec: &'a DialectSpec,
-    schema: &'a schema::Cache,
-}
-
-impl<'a> ParseResult<'a> {
-    pub fn parse(
-        text: &'a str, spec: &'a DialectSpec, schema: &'a schema::Cache, cursor: usize,
-    ) -> Self {
-        let tokens = lex(spec, text);
-        let stmt = parse_statement_at_cursor(&tokens, cursor);
-        Self {
-            text,
-            tokens,
-            cursor,
-            stmt,
-            spec,
-            schema,
-        }
-    }
 }

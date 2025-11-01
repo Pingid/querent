@@ -22,6 +22,18 @@ impl<T> Deref for Loc<T> {
     }
 }
 
+impl<T> From<Loc<T>> for Span {
+    fn from(loc: Loc<T>) -> Self {
+        loc.span
+    }
+}
+
+impl<T> From<&Loc<T>> for Span {
+    fn from(loc: &Loc<T>) -> Self {
+        loc.span
+    }
+}
+
 /// Span of a token
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -6,17 +6,21 @@ use crate::schema;
 pub struct Function {
     pub function_name: String,
     pub parameter_types: Vec<schema::DataType>,
-    pub return_type: FunctionReturnType,
+    pub return_type: FuncReturnType,
     pub description: Option<String>,
     pub schema_name: Option<String>,
     pub database_name: Option<String>,
 }
 
 /// The return type of a function - either a scalar value or a table
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "lowercase", tag = "type", content = "data")
+)]
 #[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FunctionReturnType {
+pub enum FuncReturnType {
     /// Returns a single scalar value (e.g., UPPER(), COUNT())
     Scalar(schema::DataType),
 
@@ -28,12 +32,12 @@ pub enum FunctionReturnType {
     Table(Vec<TableColumn>),
 }
 
-impl FunctionReturnType {
+impl FuncReturnType {
     pub fn data_type(&self) -> Option<schema::DataType> {
         match self {
-            FunctionReturnType::Scalar(dt) => Some(*dt),
-            FunctionReturnType::Aggregate(dt) => Some(*dt),
-            FunctionReturnType::Table(_) => None,
+            FuncReturnType::Scalar(dt) => Some(*dt),
+            FuncReturnType::Aggregate(dt) => Some(*dt),
+            FuncReturnType::Table(_) => None,
         }
     }
 }

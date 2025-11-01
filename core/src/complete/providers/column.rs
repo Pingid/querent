@@ -1,197 +1,170 @@
+use std::borrow::Cow;
+use std::collections::HashSet;
+
+use crate::complete::Completer;
 use crate::complete::completion::Candidate;
 use crate::complete::completion::CandidateKind;
 use crate::complete::completion::CandidateSet;
 use crate::complete::completion::ColumnCandidate;
-use crate::complete::context::BindingId;
-use crate::complete::context::BindingKind;
-use crate::complete::context::BoundColumn;
+use crate::complete::context::ClausePosition;
 use crate::complete::context::Context;
-use crate::complete::context::NamePath;
-use crate::complete::context::Origin;
-use crate::complete::context::RelationBinding;
-use crate::complete::context::ResolvedColumnSource;
-use crate::complete::context::ScopeGraph;
+use crate::complete::context::Location;
+use crate::complete::context::Projection;
+use crate::complete::context::ProjectionKind;
+use crate::complete::context::QualifiedIdent;
 use crate::schema;
 
-pub fn complete<'a>(ctx: &mut Context<'a>, builder: &mut CandidateSet<'a>) {
-    // println!("ctx: {:#?}", ctx.resolved_scope);
-    // println!("\n\nGRAPH: \n{:#?}\n\n", ctx.scope.graph);
-    // let available = scope_columns(ctx.schema, &ctx.scope.graph, None);
-    // println!("\n\navailable: \n{:#?}\n\n", available);
-    // // Find all exposed columns from CTE's, FROM tables/subqueries, etc.
-    // let available = ctx.scope.available_columns().clone();
+pub struct ColumnProvider;
+impl<'a> Completer<'a> for ColumnProvider {
+    fn complete(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
+        let cols = discover_columns(ctx);
+        let labeler = DefaultLabelRenderer;
+        let detailr = DefaultDetailRenderer;
 
-    // // If no columns are available, add all columns from the schema.
-    // if available.is_empty() {
-    //     for col in ctx.schema.get_columns().iter() {
-    //         let candidate = Candidate::new(
-    //             col.column_name.clone(),
-    //             CandidateKind::Column(ColumnCandidate::Schema(col)),
-    //         );
-    //         builder.with(candidate);
-    //     }
-    // }
+        for col in cols {
+            let base = Candidate::new(CandidateKind::Column(ColumnCandidate {
+                dt: col.dt,
+                scope_alias: col.source_alias,
+                ident: col.ident,
+            }));
+            let detail = detailr.detail(ctx, &col);
+            let base = base.detail(detail);
 
-    // // Add all available columns to the list.
-    // for col in available {
-    //     let candidate = Candidate::new(
-    //         col.name,
-    //         match col.source {
-    //             ResolvedColumnSource::Schema(c) => {
-    //                 CandidateKind::Column(ColumnCandidate::Schema(c))
-    //             }
-    //             ResolvedColumnSource::Literal { ty } => {
-    //                 CandidateKind::Column(ColumnCandidate::Unresolved {
-    //                     dt: Some(ty),
-    //                     name: &col.name,
-    //                 })
-    //             }
-    //             ResolvedColumnSource::Unresolved(qualifier) => {
-    //                 CandidateKind::Column(ColumnCandidate::Unresolved {
-    //                     dt: None,
-    //                     name: &col.name,
-    //                 })
-    //             }
-    //             ResolvedColumnSource::Cte => CandidateKind::Column(ColumnCandidate::Cte {
-    //                 cte: &col.source_alias,
-    //                 dt: None,
-    //                 name: &col.name,
-    //             }),
-    //         },
-    //     );
-    //     builder.with(candidate);
-    // }
-
-    // // Filter out columns that don't match the qualifier.
-    // cols.retain(|col| col.matches_qualifier(&self.cursor.qualifier));
-
-    // cols
-}
-
-fn scope_columns<'a>(
-    schema: &'a schema::Cache, scope: &ScopeGraph<'a>, scope_alias: Option<&'a str>,
-) -> Vec<ColumnCandidate<'a>> {
-    let mut resolved = Vec::new();
-    for relation in scope.bindings.values() {
-        resolved.extend(relation_projections(schema, scope, relation, scope_alias));
-    }
-    resolved
-}
-
-fn scope_projections<'a>(
-    schema: &'a schema::Cache, scope: &ScopeGraph<'a>, scope_alias: Option<&'a str>,
-) -> Vec<ColumnCandidate<'a>> {
-    let mut resolved = Vec::new();
-    for b in scope.projected.iter() {
-        resolved.extend(resolve_column_from_origin(
-            schema,
-            scope,
-            scope_alias,
-            b,
-            b.alias,
-        ));
-    }
-    resolved
-}
-
-fn relation_projections<'a>(
-    schema: &'a schema::Cache, scope: &ScopeGraph<'a>, relation: &RelationBinding<'a>,
-    scope_alias: Option<&'a str>,
-) -> Vec<ColumnCandidate<'a>> {
-    let mut resolved = Vec::new();
-
-    match &relation.kind {
-        BindingKind::Base(path) => {
-            println!("\nBase: {:?}\n scope_alias: {:?}\n", path, scope_alias);
-            // let qualifier = NamePath(path.0.clone());
-            // resolved.extend(
-            //     find_columns_in_schema(schema, &qualifier, None)
-            //         .map(|c| ColumnCandidate::Schema(c)),
-            // );
-        }
-        BindingKind::Subquery(scope) => {
-            resolved.extend(scope_projections(schema, scope, relation.alias))
-        }
-        BindingKind::Cte { scope, name } => {
-            resolved.extend(scope_projections(schema, scope, relation.alias))
-        }
-        other => {
-            println!("\n\nrelation_projections Other: {:?}\n\n", other);
-        }
-    };
-    resolved
-}
-
-fn resolve_projected<'a>(
-    schema: &'a schema::Cache, scope: &ScopeGraph<'a>,
-) -> Vec<ColumnCandidate<'a>> {
-    let mut resolved = Vec::new();
-    for b in scope.projected.iter() {}
-    resolved
-}
-
-fn resolve_column_from_origin<'a>(
-    schema: &'a schema::Cache, scope: &ScopeGraph<'a>, scope_alias: Option<&'a str>,
-    column: &BoundColumn<'a>, name: Option<&'a str>,
-) -> Vec<ColumnCandidate<'a>> {
-    let mut resolved = Vec::new();
-    println!("\n\nresolve_column_from_origin: {:?}\n\n", column);
-    match &column.origin {
-        Origin::BaseColumn { id, name } => {
-            if let Some(relation) = scope.bindings.get(id) {
-                println!("\n\nrelation: {:#?}\n\n", relation);
-                // if let Some(c) = resolve_column(schema, name, relation, scope_alias) {
-                //     resolved.push(c);
-                // }
+            for label in labeler.labels(ctx, &col) {
+                b.push(base.clone().label(label.into_owned()));
             }
         }
-        Origin::Constant { dt, value } => {
-            resolved.push(ColumnCandidate {
-                dt: Some(*dt),
-                col: None,
-                name: column.alias.unwrap_or(value),
-                scope_alias,
-            });
-        }
-        Origin::Star { id } => {
-            if let Some(id) = id {
-                if let Some(relation) = scope.bindings.get(id) {
-                    resolved.extend(relation_projections(schema, scope, &relation, scope_alias));
-                }
-            }
-        }
-        other => {
-            println!(
-                "\nUNSUPPORTED_ORIGIN: \nscope_alias: {:?} \ncolumn: {:#?} \nname: {:?}\n\n",
-                scope_alias, column, name
-            );
-        }
-    };
-    resolved
+    }
+
+    fn should_complete(&self, ctx: &Context<'a>) -> bool {
+        should_complete(ctx)
+    }
 }
 
-fn resolve_column<'a>(
-    schema: &'a schema::Cache, name: &NamePath<'a>, relation: &RelationBinding<'a>,
-    scope_alias: Option<&'a str>,
-) -> Option<ColumnCandidate<'a>> {
-    match &relation.kind {
-        BindingKind::Base(table) => {
-            // let col = schema.get_columns().iter().find(|c| {
-            //     table.match_column_as_table_name(c)
-            //         && Some(&c.column_name.as_str()) == name.0.last()
-            // });
-            // Some(ColumnCandidate {
-            //     dt: col.map(|c| c.data_type),
-            //     col,
-            //     scope_alias,
-            //     name: None,
-            // })
-            None
+fn should_complete<'a>(ctx: &Context<'a>) -> bool {
+    use ClausePosition as CP;
+    use Location as L;
+    match (&ctx.cursor.location, ctx.clause.pos) {
+        // Keyword no space
+        (L::Keyword(_), _) => return false,
+        // After a space and an ident
+        (L::Space(inner), Some(CP::ExprLeft)) if matches!(**inner, L::Ident) => false,
+        // ExprLeft
+        (_, Some(CP::ExprLeft)) => true,
+        _ => false,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct LogicalColumn<'a> {
+    dt: Option<schema::DataType>,
+    source_alias: Option<&'a str>, // table/cte alias in scope
+    ident: QualifiedIdent<'a>,     // for rendering variants
+}
+
+fn discover_columns<'a>(ctx: &Context<'a>) -> Vec<LogicalColumn<'a>> {
+    let available_columns = ctx
+        .resolved_scope()
+        .available()
+        .filter(|p| p.is_referenceable())
+        .map(|p| map_projection_to_logical(*p))
+        .collect::<Vec<_>>();
+
+    if available_columns.len() == 0 {
+        return ctx
+            .schema()
+            .get_columns()
+            .into_iter()
+            .map(|c| LogicalColumn {
+                dt: Some(c.data_type),
+                source_alias: c.table_name.as_ref().map(|s| s.as_str()),
+                ident: QualifiedIdent::from(c),
+            })
+            .collect::<Vec<_>>();
+    }
+    available_columns
+}
+
+fn map_projection_to_logical<'a>(p: Projection<'a>) -> LogicalColumn<'a> {
+    let ident = match p.kind {
+        ProjectionKind::Column { schema_column, .. } => schema_column.map(QualifiedIdent::from),
+        ProjectionKind::TableFunction { .. } => None,
+        ProjectionKind::ScalarFunction { .. }
+        | ProjectionKind::Literal { .. }
+        | ProjectionKind::Expression { .. }
+        | ProjectionKind::Unresolved => None,
+    };
+
+    LogicalColumn {
+        dt: p.data_type(),
+        source_alias: p.label.table(),
+        ident: p.label,
+    }
+}
+
+trait ColumnLabelRenderer {
+    fn labels<'a>(&self, ctx: &Context<'a>, col: &LogicalColumn<'a>) -> Vec<Cow<'a, str>>;
+}
+
+struct DefaultLabelRenderer;
+
+impl ColumnLabelRenderer for DefaultLabelRenderer {
+    fn labels<'a>(&self, ctx: &Context<'a>, col: &LogicalColumn<'a>) -> Vec<Cow<'a, str>> {
+        let mut out = Vec::with_capacity(4);
+
+        // Unqualified
+        out.push(Cow::Borrowed(col.ident.name()));
+
+        // alias.col
+        if let Some(a) = col.source_alias {
+            out.push(Cow::Owned(format!("{a}.{}", col.ident.name())));
         }
-        other => {
-            println!("\n\nresolve_column Other: {:?}\n\n", other);
-            None
+
+        // table.col (if table is known & not equal to alias)
+        if let Some(t) = col.ident.table() {
+            out.push(Cow::Owned(format!("{t}.{}", col.ident.name())));
         }
+
+        // schema.table.col
+        if let (Some(s), Some(t)) = (col.ident.schema(), col.ident.table()) {
+            out.push(Cow::Owned(format!("{s}.{t}.{}", col.ident.name())));
+        }
+
+        // Optional: database.schema.table.col (if you support it)
+        // if let (Some(d), Some(s), Some(t)) = (col.ident_parts.database, col.ident_parts.schema, col.ident_parts.table) {
+        //     out.push(Cow::Owned(format!("{d}.{s}.{t}.{}", col.ident_parts.column)));
+        // }
+
+        // Simple dedup (alias==table etc.)
+        let mut seen = HashSet::with_capacity(out.len());
+        out.retain(|l| seen.insert(l.as_ref().to_string()));
+        out
+    }
+}
+
+trait ColumnDetailRenderer {
+    fn detail<'a>(&self, _ctx: &Context<'a>, col: &LogicalColumn<'a>) -> String;
+}
+
+struct DefaultDetailRenderer;
+
+impl ColumnDetailRenderer for DefaultDetailRenderer {
+    fn detail<'a>(&self, _ctx: &Context<'a>, col: &LogicalColumn<'a>) -> String {
+        let mut parts = String::new();
+        if let Some(dt) = col.dt {
+            parts.push_str(dt.to_string().as_str());
+            parts.push_str(" • ");
+        }
+        if let Some(s) = col.ident.schema() {
+            parts.push_str(s);
+            parts.push('.');
+        }
+        if let Some(t) = col.ident.table() {
+            parts.push_str(t);
+            parts.push('.');
+        }
+        parts.push_str(col.ident.name());
+        parts
     }
 }
 
@@ -199,30 +172,92 @@ fn resolve_column<'a>(
 mod tests {
     use super::*;
     use crate::dialect::ansi;
-    use crate::test_util::CompletionTest;
-    use crate::test_util::CompletionTestResult;
-    use crate::test_util::get_leaky_static_caret_cursor;
-    use crate::test_util::users_posts_schema;
+    use crate::test_complete;
+    use crate::test_util::get_caret_cursor;
 
-    fn ansi(sql: &str) -> CandidateSet<'static> {
-        let (input, cursor) = get_leaky_static_caret_cursor(sql);
-        let schema = Box::leak(Box::new(users_posts_schema()));
-        let mut ctx = Context::<'static>::build(&ansi::SPEC, schema, &input, cursor).unwrap();
-        let mut candidates = CandidateSet::default();
-        complete(&mut ctx, &mut candidates);
-        candidates
+    fn assert_not_complete(input: &str) {
+        let (sql, cursor) = get_caret_cursor(input);
+        let schema = schema::Cache::default();
+        let ctx = Context::build(&ansi::SPEC, &schema, &sql, cursor).unwrap();
+        let should_complete = should_complete(&ctx);
+        if should_complete {
+            println!("clause: {:#?}", ctx.clause);
+            println!("cursor: {:#?}", ctx.cursor);
+        }
+        assert!(!should_complete, "should not complete for: {input}");
     }
 
     #[test]
-    fn detect_scope_columns() {
-        let sql = "
-        WITH cte as (SELECT name as user_name FROM users) 
-            SELECT * 
-            FROM (SELECT 1, title FROM posts) a, 
-                (SELECT 2 as two, users.* FROM public.users) b";
+    fn completes_at_appropriate_locations() {
+        assert_not_complete("SELECT^");
+        assert_not_complete("SELECT a ^");
+        assert_not_complete("SELECT a as^");
+        assert_not_complete("SELECT a as b^");
+        assert_not_complete("SELECT a as b ^");
+        assert_not_complete("SELECT a FROM^");
+        assert_not_complete("SELECT a FROM ^");
+        assert_not_complete("SELECT a FROM a^");
+        assert_not_complete("SELECT a FROM a ^");
+        assert_not_complete("SELECT a FROM a t^");
+        assert_not_complete("SELECT a FROM a t, ^");
+        assert_not_complete("SELECT a FROM a t,^");
+        assert_not_complete("SELECT a FROM a t, ^");
+        assert_not_complete("SELECT a FROM b WHERE a ^");
+        assert_not_complete("SELECT a FROM b WHERE a =^");
+        assert_not_complete("SELECT a FROM b WHERE a = b^");
+    }
 
-        let c = ansi(sql);
-        // let c = ansi("SELECT *, ^ FROM posts");
-        panic!("{:?}", c);
+    #[test]
+    fn include_both_qualified_and_unqualified_names() {
+        let schema = schema::CacheBuilder::new()
+            .table_in("users", "public", None)
+            .column_in("id", schema::DataType::Integer, "users", "public", None)
+            .build();
+
+        // Aliased
+        test_complete!("SELECT ^ FROM users u", "SELECT ^ FROM (SELECT id FROM users) u" => {
+            completers: [ColumnProvider],
+            schemas: [schema.clone()],
+            contains: ["id", "u.id"],
+        });
+
+        // Unaliased
+        test_complete!("SELECT ^", "SELECT ^ FROM users" => {
+            completers: [ColumnProvider],
+            schemas: [schema],
+            contains: ["id", "users.id", "public.users.id"],
+        });
+    }
+
+    #[test]
+    fn include_columns_from_table_functions() {
+        use schema::DataType::*;
+        let schema = schema::CacheBuilder::new()
+            .table_function("generate_series", &[Integer, Integer], vec![("i", Integer)])
+            .build();
+
+        test_complete!("SELECT ^ FROM generate_series(1, 10)" => {
+            completers: [ColumnProvider],
+            schemas: [schema.clone()],
+            contains: ["i"],
+        });
+        test_complete!("SELECT ^ FROM generate_series(1, 10) u" => {
+            completers: [ColumnProvider],
+            schemas: [schema],
+            contains: ["i", "u.i"],
+        });
+    }
+
+    #[test]
+    fn include_columns_from_literal_scalar_functions() {
+        use schema::DataType::*;
+        let schema = schema::CacheBuilder::new()
+            .scalar_function("upper", &[Text], Text)
+            .build();
+        test_complete!("SELECT ^ FROM (SELECT 1 + 2 as a, upper('hello') as b) u" => {
+            completers: [ColumnProvider],
+            schemas: [schema],
+            contains: ["a", "b", "u.a", "u.b"],
+        });
     }
 }

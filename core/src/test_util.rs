@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use crate::complete::completion::CandidateSet;
 use crate::complete::completion::CompletionBuilder;
 use crate::complete::completion::Completions;
 use crate::complete::context::Context;
@@ -9,6 +8,7 @@ use crate::dialect::ansi;
 use crate::lex::Token;
 use crate::lex::lex;
 use crate::schema;
+use crate::schema::CacheBuilder;
 
 pub fn get_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {
     let pos = sql_with_caret.find('^');
@@ -23,38 +23,13 @@ pub fn get_caret_cursor<'a>(sql_with_caret: &'a str) -> (Cow<'a, str>, usize) {
 
 // This is a workaround to create 'static lifetimes for testing
 // In reality, we leak memory here but it's fine for tests
-pub fn get_leaky_static_caret_cursor(sql_with_caret: &str) -> (&'static str, usize) {
+pub fn leaky_static_caret_cursor(sql_with_caret: &str) -> (&'static str, usize) {
     let (text, pos) = get_caret_cursor(sql_with_caret);
     (Box::leak(text.to_string().into_boxed_str()), pos)
 }
 
-pub fn ansi_tokens<'a>(sql: &'a str) -> Vec<Token<'a>> {
+pub fn ansi_lex<'a>(sql: &'a str) -> Vec<Token<'a>> {
     lex(&ansi::SPEC, sql)
-}
-
-pub struct SchemaCacheBuilder(schema::Cache);
-impl SchemaCacheBuilder {
-    pub(crate) fn new() -> Self {
-        Self(schema::Cache::default())
-    }
-
-    pub(crate) fn add_function(
-        mut self, schema: &str, name: &str, return_type: schema::FunctionReturnType,
-        params: &[schema::DataType],
-    ) -> Self {
-        self.0.add_function(schema::Function {
-            function_name: name.to_string(),
-            parameter_types: params.to_vec(),
-            description: None,
-            schema_name: Some(schema.to_string()),
-            database_name: None,
-            return_type,
-        });
-        self
-    }
-    pub(crate) fn build(self) -> schema::Cache {
-        self.0
-    }
 }
 
 #[derive(Debug)]
@@ -102,64 +77,17 @@ impl CompletionTest {
 }
 
 pub fn users_posts_schema() -> schema::Cache {
-    let mut schema = schema::Cache::default();
-    // users table
-    schema.add_table(schema::Table {
-        table_name: "users".to_string(),
-        schema_name: Some("public".to_string()),
-        database_name: None,
-        table_type: Some(schema::TableType::Table),
-    });
-    schema.add_column(schema::Column {
-        column_name: "id".to_string(),
-        table_name: Some("users".to_string()),
-        schema_name: Some("public".to_string()),
-        data_type: schema::DataType::Integer,
-        is_nullable: None,
-    });
-    schema.add_column(schema::Column {
-        column_name: "name".to_string(),
-        table_name: Some("users".to_string()),
-        schema_name: Some("public".to_string()),
-        data_type: schema::DataType::Text,
-        is_nullable: None,
-    });
-    schema.add_column(schema::Column {
-        column_name: "email".to_string(),
-        table_name: Some("users".to_string()),
-        schema_name: Some("public".to_string()),
-        data_type: schema::DataType::Text,
-        is_nullable: None,
-    });
-
-    // posts table
-    schema.add_table(schema::Table {
-        table_name: "posts".to_string(),
-        schema_name: Some("public".to_string()),
-        database_name: None,
-        table_type: Some(schema::TableType::Table),
-    });
-    schema.add_column(schema::Column {
-        column_name: "id".to_string(),
-        table_name: Some("posts".to_string()),
-        schema_name: Some("public".to_string()),
-        data_type: schema::DataType::Integer,
-        is_nullable: None,
-    });
-    schema.add_column(schema::Column {
-        column_name: "title".to_string(),
-        table_name: Some("posts".to_string()),
-        schema_name: Some("public".to_string()),
-        data_type: schema::DataType::Text,
-        is_nullable: None,
-    });
-    schema.add_column(schema::Column {
-        column_name: "content".to_string(),
-        table_name: Some("posts".to_string()),
-        schema_name: Some("public".to_string()),
-        data_type: schema::DataType::Text,
-        is_nullable: None,
-    });
+    use schema::DataType::*;
+    let schema = CacheBuilder::new()
+        .table_in("users", "public", None)
+        .column_in("id", Integer, "users", "public", None)
+        .column_in("name", Text, "users", "public", None)
+        .column_in("email", Text, "users", "public", None)
+        .table_in("posts", "public", None)
+        .column_in("id", Integer, "posts", "public", None)
+        .column_in("title", Text, "posts", "public", None)
+        .column_in("content", Text, "posts", "public", None)
+        .build();
     schema
 }
 

@@ -1,10 +1,12 @@
 use crate::ast;
+use crate::ast::AstNode;
 use crate::complete::context::NamePath;
 use crate::complete::context::ParsedStatement;
 use crate::lex::Keyword;
 use crate::lex::Token;
 use crate::lex::TokenKind;
 use crate::span::Loc;
+use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Clause<'a> {
@@ -125,7 +127,22 @@ impl<'a> From<&ParsedStatement<'a>> for Option<ClausePosition> {
     fn from(params: &ParsedStatement<'a>) -> Self {
         // preceding tokens
         let prev = preceding_tokens(&params.tokens, params.cursor).next();
-
+        let exp = ast::Expr::find_where(params.statement_node(), |node| {
+            params.node_containing_cursor(&node)
+        });
+        if let Some(exp) = exp {
+            return match &exp.item {
+                ast::Expr::Name(_) => Some(ClausePosition::ExprLeft),
+                ast::Expr::Binary(bin) => match params.containing_cursor(bin.left.span) {
+                    true => Some(ClausePosition::ExprLeft),
+                    false => None,
+                },
+                exp => {
+                    println!("\n\nexpr: {:#?}", exp);
+                    None
+                }
+            };
+        }
         params.statement_node().find_map_rev(|node| {
             if !params.node_containing_cursor(&node) {
                 return None;
@@ -154,21 +171,14 @@ impl<'a> From<&ParsedStatement<'a>> for Option<ClausePosition> {
                     None
                 }
                 ast::Node::Projection(_) => Some(ClausePosition::ExprLeft),
+                ast::Node::Expr(expr) => match &expr.item {
+                    ast::Expr::Empty => Some(ClausePosition::ExprLeft),
+                    ast::Expr::Name(_) => Some(ClausePosition::ExprLeft),
+                    exp => None,
+                },
                 _ => None,
             }
         })
-    }
-}
-
-impl<'a> ParsedStatement<'a> {
-    fn node_containing_cursor(&self, node: &ast::Node<'_>) -> bool {
-        let eos = self.stmt.span.end;
-        let is_end = node.span().end == eos && (self.cursor - 1) == eos;
-        node.span().contains_inclusive(self.cursor) || is_end
-    }
-
-    fn statement_node(&self) -> ast::Node<'_> {
-        ast::Node::Statement(&self.stmt)
     }
 }
 

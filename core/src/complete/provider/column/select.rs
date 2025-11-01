@@ -121,8 +121,8 @@ fn get_score_qualified_column(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::CompletionTest;
-    use crate::test_util::CompletionTestResult;
+    use crate::test_utils::CompletionTest;
+    use crate::test_utils::CompletionTestResult;
 
     #[test]
     fn completes_at_appropriate_locations() {

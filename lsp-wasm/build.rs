@@ -24,7 +24,7 @@ fn main() {
         schema::Table::decl(),
         schema::Column::decl(),
         schema::Function::decl(),
-        schema::FunctionType::decl(),
+        schema::FuncReturnType::decl(),
         Queries::decl(),
     ];
 

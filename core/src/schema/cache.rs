@@ -11,6 +11,12 @@ pub struct Cache {
 
 /// Schema cache builder helpers
 impl Cache {
+    pub fn combine(mut self, other: Cache) -> Self {
+        self.columns.extend(other.columns);
+        self.tables.extend(other.tables);
+        self.functions.extend(other.functions);
+        self
+    }
     pub fn add_column(&mut self, column: schema::Column) {
         self.columns.push(column);
     }

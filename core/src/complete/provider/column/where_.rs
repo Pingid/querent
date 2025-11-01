@@ -77,8 +77,8 @@ fn should_complete(ctx: &Context<'_>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::CompletionTest;
-    use crate::test_util::CompletionTestResult;
+    use crate::test_utils::CompletionTest;
+    use crate::test_utils::CompletionTestResult;
 
     #[test]
     fn skips_at_inappropriate_locations() {

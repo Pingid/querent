@@ -179,8 +179,8 @@ pub fn detect_cursor<'txt>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::ansi_tokens;
-    use crate::test_util::get_caret_cursor;
+    use crate::test_utils::ansi_lex;
+    use crate::test_utils::get_caret_cursor;
 
     #[test]
     fn start() {
@@ -248,7 +248,7 @@ mod tests {
     fn ansi_detect_cursor(sql: &str) -> Cursor<'static> {
         let (text, pos) = get_caret_cursor(sql);
         let text_static: &'static str = Box::leak(text.to_string().into_boxed_str());
-        let tokens = ansi_tokens(text_static);
+        let tokens = ansi_lex(text_static);
         detect_cursor(text_static, &tokens, pos)
     }
 }

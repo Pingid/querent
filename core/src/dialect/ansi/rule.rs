@@ -444,7 +444,7 @@ mod tests {
     use pat::match_all;
 
     use super::*;
-    use crate::test_util::ansi_tokens;
+    use crate::test_utils::ansi_lex;
 
     #[test]
     fn start_rule() {
@@ -1404,7 +1404,7 @@ mod tests {
     }
 
     fn matches(expected: bool, rule: &Rule, sql: &str) {
-        let tokens = ansi_tokens(sql);
+        let tokens = ansi_lex(sql);
         let kinds = tokens.iter().map(|t| t.kind).collect::<Vec<Tk>>();
         let kinds = &kinds[0..kinds.len().saturating_sub(1)]; // ignore the last token (EOF)
 
