@@ -125,7 +125,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 };
                 Some(Expr::Quantified(Loc::new(
                     (start, end),
-                    QuantifiedExpr {
+                    Quantified {
                         quantifier,
                         expr: inner,
                     },
@@ -148,7 +148,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 semantic_tag: OpTag::Mul,
                 ..
             }) => {
-                let qname = self.node(|s| s.parse_qname())?;
+                let qname = self.node(|s| s.parse_qualified_name())?;
 
                 // Check if it's a function call
                 if self.tokens.current_kind() == Some(TokenKind::LeftParen) {
@@ -212,7 +212,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                             .unwrap_or(qname.span.end);
                         Some(Expr::Over(Loc::new(
                             (qname.span.start, end_pos),
-                            OverExpr {
+                            Over {
                                 name: qname,
                                 args,
                                 over,
@@ -227,7 +227,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                             .unwrap_or(qname.span.end);
                         Some(Expr::FunctionCall(Loc::new(
                             (qname.span.start, end_pos),
-                            FunctionCallExpr {
+                            FunctionCall {
                                 name: qname,
                                 distinct,
                                 args,
@@ -263,7 +263,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                     let end_pos = close_span.map(|s| s.end).unwrap_or(expr.span.end);
                     Some(Expr::Paren(Loc::new(
                         (open_span.start, end_pos),
-                        ParenExpr {
+                        Paren {
                             open: open_span,
                             expr,
                             close: close_span,
@@ -283,7 +283,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
                 let end_pos = expr.span.end;
                 Some(Expr::Unary(Loc::new(
                     (start_pos, end_pos),
-                    UnaryExpr {
+                    Unary {
                         op_tok: op_node,
                         expr,
                     },
@@ -326,7 +326,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
         Some(Expr::Binary(Loc::new(
             (start_pos, end_pos),
-            BinaryExpr {
+            Binary {
                 left: Box::new(left),
                 op: Some(op_node),
                 right,
@@ -350,7 +350,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         match (low_opt, high_opt) {
             (Some(low), Some(high)) => Some(Expr::Between(Loc::new(
                 (start_pos, end_pos),
-                BetweenExpr {
+                Between {
                     expr: Box::new(left),
                     low: Box::new(low),
                     high: Box::new(high),
@@ -360,7 +360,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             // Partial input fallback
             _ => Some(Expr::Binary(Loc::new(
                 (start_pos, end_pos),
-                BinaryExpr {
+                Binary {
                     left: Box::new(left),
                     op: Some(Loc::new((left_span_end, left_span_end + 1), OpTag::Between)),
                     right: None,
@@ -379,7 +379,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         match op_tag {
             OpTag::Like => Some(Expr::Like(Loc::new(
                 (start_pos, end_pos),
-                LikeExpr {
+                Like {
                     expr,
                     pattern,
                     not: false,
@@ -387,7 +387,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             ))),
             OpTag::Ilike => Some(Expr::ILike(Loc::new(
                 (start_pos, end_pos),
-                ILikeExpr {
+                ILike {
                     expr,
                     pattern,
                     not: false,
@@ -412,7 +412,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
         Some(Expr::Similar(Loc::new(
             (start_pos, end_pos),
-            SimilarExpr {
+            Similar {
                 expr: Box::new(left),
                 pattern,
                 escape,
@@ -445,7 +445,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
         Some(Expr::In(Loc::new(
             (start_pos, end_pos),
-            InExpr {
+            In {
                 expr: Box::new(left),
                 list,
                 not: false,
@@ -472,7 +472,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
         Some(Expr::IsNull(Loc::new(
             (start_pos, end_pos),
-            IsNullExpr {
+            IsNull {
                 expr: Box::new(left),
                 not,
             },
@@ -511,7 +511,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
         Some(Expr::Case(Loc::new(
             (start_pos, end_pos),
-            CaseExpr {
+            Case {
                 operand,
                 when_clauses,
                 else_clause,

@@ -4,7 +4,7 @@ use crate::span::Loc;
 use crate::span::Span;
 
 /// Identifier is a zero-copy string slice tracked by Span
-pub type SpannedStr = Span;
+pub type Identifier = Span;
 
 // ------------- Top-level statement -------------
 
@@ -37,8 +37,8 @@ pub struct With {
 #[derive(Debug, Clone, PartialEq)]
 #[allow(clippy::upper_case_acronyms)]
 pub struct Cte {
-    pub name: SpannedStr,
-    pub columns: Option<DelimitedList<Loc<SpannedStr>>>,
+    pub name: Identifier,
+    pub columns: Option<DelimitedList<Loc<Identifier>>>,
     pub materialized: Option<CteMaterialization>,
     pub query: Box<Loc<Query>>,
 }
@@ -115,7 +115,7 @@ impl Projection {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProjectionItem {
     pub expr: Loc<Expr>,
-    pub alias: Option<Loc<SpannedStr>>,
+    pub alias: Option<Loc<Identifier>>,
 }
 
 // ------------- FROM clause -------------
@@ -146,7 +146,7 @@ pub enum TableFactor {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NamedTableFactor {
     pub name: Loc<QualifiedName>,
-    pub alias: Option<Loc<SpannedStr>>,
+    pub alias: Option<Loc<Identifier>>,
     pub lateral: bool,
 }
 
@@ -154,15 +154,15 @@ pub struct NamedTableFactor {
 pub struct FunctionTableFactor {
     pub name: Loc<QualifiedName>,
     pub args: DelimitedList<Loc<Expr>>,
-    pub alias: Option<Loc<SpannedStr>>,
-    pub columns: Option<DelimitedList<Loc<SpannedStr>>>,
+    pub alias: Option<Loc<Identifier>>,
+    pub columns: Option<DelimitedList<Loc<Identifier>>>,
     pub lateral: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubqueryTableFactor {
     pub query: Loc<Query>,
-    pub alias: Option<Loc<SpannedStr>>,
+    pub alias: Option<Loc<Identifier>>,
     pub lateral: bool,
 }
 
@@ -193,7 +193,7 @@ pub enum JoinBase {
 #[derive(Debug, Clone, PartialEq)]
 pub enum JoinConstraint {
     On(Loc<Expr>),
-    Using(DelimitedList<Loc<SpannedStr>>),
+    Using(DelimitedList<Loc<Identifier>>),
 }
 
 // ------------- WHERE clause -------------
@@ -233,7 +233,7 @@ pub struct Window {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WindowDef {
-    pub name: SpannedStr,
+    pub name: Identifier,
     pub spec: Loc<WindowSpec>,
 }
 
@@ -270,7 +270,7 @@ pub enum FrameBound {
 #[derive(Debug, Clone, PartialEq)]
 pub enum WindowRef {
     Spec(Box<Loc<WindowSpec>>),
-    Name(Loc<SpannedStr>),
+    Name(Loc<Identifier>),
 }
 
 // ------------- ORDER BY / LIMIT / OFFSET -------------
@@ -340,53 +340,53 @@ pub struct Values {
 pub enum Expr {
     Name(Loc<QualifiedName>),
     Literal(Loc<Literal>),
-    Binary(Loc<BinaryExpr>),
-    Unary(Loc<UnaryExpr>),
-    Paren(Loc<ParenExpr>),
+    Binary(Loc<Binary>),
+    Unary(Loc<Unary>),
+    Paren(Loc<Paren>),
     Subquery(Box<Loc<Query>>),
-    IsNull(Loc<IsNullExpr>),
-    Between(Loc<BetweenExpr>),
-    Like(Loc<LikeExpr>),
-    ILike(Loc<ILikeExpr>),
-    Similar(Loc<SimilarExpr>),
-    FunctionCall(Loc<FunctionCallExpr>),
+    IsNull(Loc<IsNull>),
+    Between(Loc<Between>),
+    Like(Loc<Like>),
+    ILike(Loc<ILike>),
+    Similar(Loc<Similar>),
+    FunctionCall(Loc<FunctionCall>),
     Array(DelimitedList<Loc<Expr>>),
-    Quantified(Loc<QuantifiedExpr>),
-    Case(Loc<CaseExpr>),
-    In(Loc<InExpr>),
-    Over(Loc<OverExpr>),
+    Quantified(Loc<Quantified>),
+    Case(Loc<Case>),
+    In(Loc<In>),
+    Over(Loc<Over>),
     Exists(Box<Loc<Query>>),
     Empty,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BinaryExpr {
+pub struct Binary {
     pub left: Box<Loc<Expr>>,
     pub op: Option<Loc<OpTag>>,
     pub right: Option<Box<Loc<Expr>>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct UnaryExpr {
+pub struct Unary {
     pub op_tok: Loc<OpTag>,
     pub expr: Box<Loc<Expr>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParenExpr {
-    pub open: SpannedStr,
+pub struct Paren {
+    pub open: Identifier,
     pub expr: Box<Loc<Expr>>,
-    pub close: Option<SpannedStr>,
+    pub close: Option<Identifier>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct IsNullExpr {
+pub struct IsNull {
     pub expr: Box<Loc<Expr>>,
     pub not: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct BetweenExpr {
+pub struct Between {
     pub expr: Box<Loc<Expr>>,
     pub low: Box<Loc<Expr>>,
     pub high: Box<Loc<Expr>>,
@@ -394,28 +394,28 @@ pub struct BetweenExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LikeExpr {
+pub struct Like {
     pub expr: Box<Loc<Expr>>,
     pub pattern: Box<Loc<Expr>>,
     pub not: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ILikeExpr {
+pub struct ILike {
     pub expr: Box<Loc<Expr>>,
     pub pattern: Box<Loc<Expr>>,
     pub not: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct SimilarExpr {
+pub struct Similar {
     pub expr: Box<Loc<Expr>>,
     pub pattern: Box<Loc<Expr>>,
     pub escape: Option<Box<Loc<Expr>>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FunctionCallExpr {
+pub struct FunctionCall {
     pub name: Loc<QualifiedName>,
     pub distinct: bool,
     pub args: Loc<DelimitedList<Loc<Expr>>>,
@@ -423,7 +423,7 @@ pub struct FunctionCallExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct QuantifiedExpr {
+pub struct Quantified {
     pub quantifier: Quantifier,
     pub expr: Box<Loc<Expr>>,
 }
@@ -436,7 +436,7 @@ pub enum Quantifier {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CaseExpr {
+pub struct Case {
     pub operand: Option<Box<Loc<Expr>>>,
     pub when_clauses: Vec<WhenClause>,
     pub else_clause: Option<Box<Loc<Expr>>>,
@@ -450,7 +450,7 @@ pub struct WhenClause {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct InExpr {
+pub struct In {
     pub expr: Box<Loc<Expr>>,
     pub list: ExprList,
     pub not: bool,
@@ -463,7 +463,7 @@ pub enum ExprList {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct OverExpr {
+pub struct Over {
     pub name: Loc<QualifiedName>,
     pub args: Loc<DelimitedList<Loc<Expr>>>,
     pub over: WindowRef,
@@ -476,12 +476,12 @@ pub struct OverExpr {
 pub enum Literal {
     Number(i64),
     Float(f64),
-    String(SpannedStr),
+    String(Identifier),
     Null,
     Boolean(Boolean),
     TypedString {
         data_type: TypedLiteralKind,
-        value: SpannedStr,
+        value: Identifier,
     },
 }
 
@@ -509,7 +509,7 @@ pub struct QualifiedName {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NamePart {
-    Ident(SpannedStr),
+    Ident(Identifier),
     Star,
 }
 

@@ -2,7 +2,7 @@ use std::ops::Deref;
 use std::ops::Range;
 
 /// A span and an item
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Loc<T> {
     pub span: Span,
     pub item: T,
@@ -24,7 +24,7 @@ impl<T> Deref for Loc<T> {
 
 /// Span of a token
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     pub start: usize,
     pub end: usize,

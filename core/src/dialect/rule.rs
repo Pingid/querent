@@ -94,32 +94,3 @@ pub fn find_matches<'a>(
         .flat_map(|r| r.1.iter().copied())
         .filter(move |then| seen.insert(*then))
 }
-
-// impl Pattern<true> for Tok {
-//     type Token = TokenKind;
-//     fn match_one(
-//         &self, cursor: &mut crate::cond::Cursor<'_, Self::Token, true>,
-//     ) -> crate::cond::Match {
-//         let start = cursor.pos;
-//         if matches!(self, Tok::Debug) {
-//             println!(
-//                 "{}, {:?}",
-//                 cursor.pos.saturating_sub(1),
-//                 cursor.items.iter().enumerate().collect::<Vec<_>>()
-//             );
-
-//             return Match::Match((start, cursor.pos));
-//         }
-//         match cursor.peek() {
-//             Some(item) if test_kind(self, item) => {
-//                 if cursor.advance() {
-//                     Match::Match((start, cursor.pos))
-//                 } else {
-//                     Match::Eof
-//                 }
-//             }
-//             Some(_) => Match::NoMatch,
-//             None => Match::Eof,
-//         }
-//     }
-// }

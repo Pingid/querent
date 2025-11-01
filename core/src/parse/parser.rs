@@ -39,7 +39,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         Some(Query {
             with: self.node(|s| s.parse_with()),
             body: self.node(|s| s.parse_query_expr()),
-            tail: self.node(|s| s.parse_query_tail()),
+            tail: self.node(|s| s.parse_query_suffix()),
         })
     }
 
@@ -100,14 +100,14 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
     }
 
     fn parse_query_expr(&mut self) -> Option<QueryExpr> {
-        let left = self.node(|s| s.parse_query_core())?;
+        let left = self.node(|s| s.parse_query_primary())?;
         let set_ops = self.parse_many(|s| s.node(|s| s.parse_set_op_chain()));
         Some(QueryExpr { left, set_ops })
     }
 
     fn parse_set_op_chain(&mut self) -> Option<SetOpTerm> {
         let op = self.parse_set_op()?;
-        let right = self.node(|s| s.parse_query_core())?;
+        let right = self.node(|s| s.parse_query_primary())?;
         Some(SetOpTerm { op, right })
     }
 
@@ -130,7 +130,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         })
     }
 
-    fn parse_query_tail(&mut self) -> Option<QuerySuffix> {
+    fn parse_query_suffix(&mut self) -> Option<QuerySuffix> {
         let mut order_by: Option<Loc<OrderBy>> = None;
         let mut limit: Option<Loc<Limit>> = None;
         let mut offset: Option<Loc<Offset>> = None;
@@ -139,7 +139,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         loop {
             // Attempt ORDER BY if not set
             if order_by.is_none()
-                && let Some(ob) = self.node(|s| s.parse_order_by())
+                && let Some(ob) = self.node(|s| s.parse_order_by_clause())
             {
                 order_by = Some(ob);
                 continue;
@@ -147,7 +147,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
             // Attempt LIMIT/FETCH if not set
             if limit.is_none()
-                && let Some(lim) = self.node(|s| s.parse_limit())
+                && let Some(lim) = self.node(|s| s.parse_limit_clause())
             {
                 limit = Some(lim);
                 continue;
@@ -155,7 +155,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
             // Attempt OFFSET if not set
             if offset.is_none()
-                && let Some(off) = self.node(|s| s.parse_offset())
+                && let Some(off) = self.node(|s| s.parse_offset_clause())
             {
                 offset = Some(off);
                 continue;
@@ -175,7 +175,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         }
     }
 
-    fn parse_order_by(&mut self) -> Option<OrderBy> {
+    fn parse_order_by_clause(&mut self) -> Option<OrderBy> {
         self.eat_kws(&[Keyword::Order, Keyword::By])?;
         let items = self.comma_list1(|s| s.parse_order_by_item())?;
         Some(OrderBy { items })
@@ -194,7 +194,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         })
     }
 
-    fn parse_limit(&mut self) -> Option<Limit> {
+    fn parse_limit_clause(&mut self) -> Option<Limit> {
         // Try FETCH FIRST syntax first
         if self.eat_kw(Keyword::Fetch).is_some() {
             self.eat_kw(Keyword::First)?;
@@ -219,7 +219,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         None
     }
 
-    fn parse_offset(&mut self) -> Option<Offset> {
+    fn parse_offset_clause(&mut self) -> Option<Offset> {
         self.eat_kw(Keyword::Offset)?;
         let count = self.parse_expr()?;
         let had_rows = self.eat_kw(Keyword::Rows).is_some(); // ROWS is optional
@@ -229,16 +229,16 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         })
     }
 
-    fn parse_query_core(&mut self) -> Option<QueryPrimary> {
+    fn parse_query_primary(&mut self) -> Option<QueryPrimary> {
         match self.tokens.current_kind() {
-            Some(TokenKind::Keyword(Keyword::Select)) => Some(QueryPrimary::Select(
-                self.node_incl(|s| s.parse_select_stmt())?,
-            )),
+            Some(TokenKind::Keyword(Keyword::Select)) => {
+                Some(QueryPrimary::Select(self.node_incl(|s| s.parse_select())?))
+            }
             _ => None,
         }
     }
 
-    fn parse_select_stmt(&mut self) -> Option<Select> {
+    fn parse_select(&mut self) -> Option<Select> {
         self.eat_kw(Keyword::Select)?;
 
         let distinct = self.parse_distinct().unwrap_or(SetQuantifier::All);
@@ -246,14 +246,10 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         Some(Select {
             distinct,
             projection,
-            from: self.node(|s| s.parse_from()),
-            where_clause: self.node(|s| {
-                Some(Where {
-                    expr: s.clause_expr(Keyword::Where)?,
-                })
-            }),
-            group_by: self.node(|s| s.parse_group_by()),
-            having: self.clause_expr(Keyword::Having),
+            from: self.node(|s| s.parse_from_clause()),
+            where_clause: self.node(|s| s.parse_where_clause()),
+            group_by: self.node(|s| s.parse_group_by_clause()),
+            having: self.parse_having_clause(),
             window: self.node(|s| s.parse_window_clause()),
             qualify: None,
         })
@@ -262,19 +258,19 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
     fn parse_projection(&mut self) -> Option<Projection> {
         Some(Projection {
             list: self
-                .comma_list1(|s| s.parse_select_item())
+                .comma_list1(|s| s.parse_projection_item())
                 .unwrap_or_default(),
         })
     }
 
-    fn parse_select_item(&mut self) -> Option<ProjectionItem> {
+    fn parse_projection_item(&mut self) -> Option<ProjectionItem> {
         Some(ProjectionItem {
             expr: self.parse_expr()?,
             alias: self.parse_alias(),
         })
     }
 
-    fn parse_alias(&mut self) -> Option<Loc<SpannedStr>> {
+    fn parse_alias(&mut self) -> Option<Loc<Identifier>> {
         if self.eat_kw(Keyword::As).is_some() {
             return self.node(|s| s.parse_ident());
         }
@@ -288,7 +284,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         }
     }
 
-    fn parse_from(&mut self) -> Option<From> {
+    fn parse_from_clause(&mut self) -> Option<From> {
         self.eat_kw(Keyword::From)?;
         Some(From {
             sources: self
@@ -297,13 +293,25 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         })
     }
 
-    fn parse_group_by(&mut self) -> Option<GroupBy> {
+    fn parse_where_clause(&mut self) -> Option<Where> {
+        self.eat_kw(Keyword::Where)?;
+        Some(Where {
+            expr: self.node(|s| Some(s.parse_expr().map(|x| x.item).unwrap_or(Expr::Empty)))?,
+        })
+    }
+
+    fn parse_group_by_clause(&mut self) -> Option<GroupBy> {
         self.eat_kws(&[Keyword::Group, Keyword::By])?;
         Some(GroupBy {
             items: self
                 .comma_list1(|s| s.parse_group_by_item())
                 .unwrap_or_default(),
         })
+    }
+
+    fn parse_having_clause(&mut self) -> Option<Loc<Expr>> {
+        self.eat_kw(Keyword::Having)?;
+        self.node(|s| Some(s.parse_expr().map(|x| x.item).unwrap_or(Expr::Empty)))
     }
 
     fn parse_group_by_item(&mut self) -> Option<GroupByItem> {
@@ -365,7 +373,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         }
 
         // Named table or function call
-        let name = self.node(|s| s.parse_qname())?;
+        let name = self.node(|s| s.parse_qualified_name())?;
 
         // Function call if followed by '('
         if self.eat(TokenKind::LeftParen).is_some() {
@@ -541,7 +549,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         Some(SetQuantifier::Distinct)
     }
 
-    pub(crate) fn parse_qname(&mut self) -> Option<QualifiedName> {
+    pub(crate) fn parse_qualified_name(&mut self) -> Option<QualifiedName> {
         Some(QualifiedName {
             parts: self.parse_list1(TokenKind::Dot, |s| s.parse_name_part())?,
         })
@@ -600,7 +608,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
         )
     }
 
-    fn parse_ident(&mut self) -> Option<SpannedStr> {
+    fn parse_ident(&mut self) -> Option<Identifier> {
         match self.tokens.current_kind()? {
             TokenKind::Identifier | TokenKind::IdentifierQuoted(_) => {
                 let span = self.tokens.current()?.span;
@@ -621,7 +629,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
         Some(WindowSpec {
             partition_by,
-            order_by: self.node(|s| s.parse_order_by()),
+            order_by: self.node(|s| s.parse_order_by_clause()),
             frame: self.node(|s| s.parse_window_frame()).map(Box::new),
         })
     }
@@ -681,12 +689,6 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
 // ---------------- Utility Methods ----------------
 impl<'src, 'tok> Parser<'src, 'tok> {
-    /// Parse a clause that starts with a keyword and contains an expression
-    fn clause_expr(&mut self, kw: Keyword) -> Option<Loc<Expr>> {
-        self.eat_kw(kw)?;
-        self.node(|s| Some(s.parse_expr().map(|x| x.item).unwrap_or(Expr::Empty)))
-    }
-
     /// Parse zero or more items using a parser function
     fn parse_many<T>(&mut self, mut parse_fn: impl FnMut(&mut Self) -> Option<T>) -> Vec<T> {
         let mut items = Vec::new();
@@ -743,7 +745,7 @@ impl<'src, 'tok> Parser<'src, 'tok> {
 
     fn parse_with_span_incl<T>(
         &mut self, f: impl FnOnce(&mut Self) -> Option<T>,
-    ) -> Option<(T, SpannedStr)> {
+    ) -> Option<(T, Identifier)> {
         let start = self.tokens.prev().map(|x| x.span.end)?;
         let result = f(self)?;
         let end = self.current_pos();
@@ -757,7 +759,7 @@ impl<'src, 'tok> Parser<'src, 'tok> {
 
     fn parse_with_span<T>(
         &mut self, f: impl FnOnce(&mut Self) -> Option<T>,
-    ) -> Option<(T, SpannedStr)> {
+    ) -> Option<(T, Identifier)> {
         let start = self.tokens.current().map(|x| x.span)?;
         let result = f(self)?;
         let end = self.prev_end().unwrap_or(start.end).max(start.end);
