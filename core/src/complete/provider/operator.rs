@@ -14,7 +14,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
         return;
     };
 
-    for (raw_label, operator) in ctx.spec.operators {
+    for (raw_label, operator) in ctx.spec().operators {
         let operator = *operator;
         if !op_ctx.allows(operator) {
             continue;
@@ -29,6 +29,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
                 Some(display_detail(operator)),
             ),
             operator_score(operator),
+            None,
         );
     }
 }

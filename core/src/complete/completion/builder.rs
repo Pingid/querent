@@ -3,6 +3,7 @@ use super::Completion;
 use super::ranker::DefaultRanker;
 use super::ranker::Ranker;
 use crate::complete::completion::Completions;
+use crate::schema;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompletionBuilder {
@@ -12,6 +13,7 @@ pub struct CompletionBuilder {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompletionWithScore {
     pub completion: Completion,
+    pub data_type: Option<schema::DataType>,
     pub score: i8,
 }
 
@@ -27,10 +29,11 @@ impl CompletionBuilder {
         Self { items: vec![] }
     }
 
-    pub fn add(&mut self, item: Completion, score: i8) {
+    pub fn add(&mut self, item: Completion, score: i8, data_type: Option<schema::DataType>) {
         self.items.push(CompletionWithScore {
             completion: item,
             score,
+            data_type,
         });
     }
 

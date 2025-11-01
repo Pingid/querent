@@ -84,6 +84,11 @@ impl<'a> ColumnName<'a> {
         self.is_from_table(table)
     }
 
+    /// Returns true if this column reference can refer to the provided alias
+    pub fn matches_alias(&self, alias: Option<&'a str>) -> bool {
+        self.is_unqualified() || alias.is_some_and(|alias| self.table_name == Some(alias))
+    }
+
     /// Returns true if the column name matches (considering star expansion)
     pub fn matches_column(&self, column: &ColumnName<'a>) -> bool {
         self.is_star() || self.column_name == column.column_name
@@ -171,12 +176,12 @@ fn get_nth_last<T: Copy>(parts: &[T], n: usize) -> Option<T> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ResolvedFunction<'schema> {
-    Spec(&'static SpecFunction),
+    Spec(&'schema SpecFunction),
     Schema(&'schema schema::Function),
 }
 
 impl<'schema> ResolvedFunction<'schema> {
-    pub fn return_type(&self) -> &schema::FunctionReturnType {
+    pub fn return_type(&self) -> &'schema schema::FunctionReturnType {
         match self {
             ResolvedFunction::Spec(func) => &func.return_type,
             ResolvedFunction::Schema(func) => &func.return_type,

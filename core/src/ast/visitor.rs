@@ -26,9 +26,27 @@ pub trait AstNode<'a>: Sized + 'a {
         node.find_map(Self::try_from_node)
     }
 
+    /// Finds the first node of this type (pre-order) where the predicate is true.
+    fn find_where(node: Node<'a>, pred: impl Fn(Node<'a>) -> bool) -> Option<&'a Loc<Self>> {
+        node.find_map(|n| match pred(n) {
+            true => Self::try_from_node(n),
+            false => None,
+        })
+    }
+
     /// Finds the last node of this type (post-order).
     fn find_rev(node: Node<'a>) -> Option<&'a Loc<Self>> {
         node.find_map_rev(Self::try_from_node)
+    }
+
+    /// Finds the last node of this type (post-order) where the predicate is true.
+    fn find_where_rev(
+        node: impl Into<Node<'a>>, pred: impl Fn(Node<'a>) -> bool,
+    ) -> Option<&'a Loc<Self>> {
+        node.into().find_map_rev(|n| match pred(n) {
+            true => Self::try_from_node(n),
+            false => None,
+        })
     }
 
     /// Collects all nodes of this type (pre-order).
@@ -135,7 +153,7 @@ enum WalkCtl {
     /// Continue traversing into child nodes.
     Continue,
     /// Skip visiting the children of the current node.
-    SkipChildren,
+    Skip,
 }
 
 type Flow<T> = ControlFlow<T, WalkCtl>;
@@ -147,7 +165,7 @@ impl WalkCtl {
     }
     #[inline]
     pub fn skip<T>() -> Flow<T> {
-        Flow::<T>::Continue(WalkCtl::SkipChildren)
+        Flow::<T>::Continue(WalkCtl::Skip)
     }
 }
 
@@ -160,7 +178,7 @@ impl<'a> Node<'a> {
                 WalkCtl::Continue => {
                     child.walk_selective(vis)?;
                 }
-                WalkCtl::SkipChildren => {}
+                WalkCtl::Skip => {}
             }
             let _ = vis(VisitEvent::Exit(child))?;
             ControlFlow::Continue(())
@@ -178,7 +196,7 @@ impl<'a> Node<'a> {
                 WalkCtl::Continue => {
                     child.walk_selective(vis)?;
                 }
-                WalkCtl::SkipChildren => {}
+                WalkCtl::Skip => {}
             }
             ControlFlow::Continue(())
         })

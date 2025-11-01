@@ -133,6 +133,7 @@ mod tests {
                 detail: None,
             },
             score,
+            data_type: None,
         }
     }
 

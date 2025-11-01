@@ -19,32 +19,31 @@
 //!   accessible at the cursor position based on the query structure
 
 use crate::ast;
+use crate::complete::context::resolved::ResolvedScope;
 use crate::dialect::DialectSpec;
 use crate::lex::Token;
-use crate::lex::TokenKind;
 use crate::lex::lex;
 use crate::parse::parse_statement_at_cursor;
 use crate::schema;
 use crate::span::Loc;
 
-mod cursor;
-pub use cursor::*;
-
 mod clause;
-pub use clause::*;
-
+mod cursor;
+mod resolved;
 mod scope;
+
+pub use clause::*;
+pub use cursor::*;
 pub use scope::*;
 
 #[derive(Debug)]
 pub struct Context<'a> {
-    pub text: &'a str,
-    pub tokens: Vec<Token<'a>>,
-    pub schema: &'a schema::Cache,
-    pub spec: &'a DialectSpec,
+    schema: &'a schema::Cache,
+    spec: &'a DialectSpec,
     pub cursor: Cursor<'a>,
     pub scope: Scope<'a>,
     pub clause: Clause<'a>,
+    pub resolved_scope: ResolvedScope<'a>,
 }
 
 impl<'a> Context<'a> {
@@ -55,7 +54,7 @@ impl<'a> Context<'a> {
         let Some(stmt) = parse_statement_at_cursor(&tokens, cursor) else {
             return None;
         };
-        let params = ContextBuildParams {
+        let params = ParsedStatement {
             text,
             tokens,
             schema,
@@ -66,20 +65,40 @@ impl<'a> Context<'a> {
         let clause = Clause::from(&params);
         let cursor = Cursor::from(&params);
         let scope = Scope::from(&params);
+        let resolved_scope = ResolvedScope::from(&params);
         Some(Self {
-            text,
-            tokens: params.tokens,
             schema: params.schema,
             spec: params.spec,
             cursor,
             scope,
             clause,
+            resolved_scope,
         })
+    }
+
+    pub fn schema(&self) -> &'a schema::Cache {
+        self.schema
+    }
+
+    pub fn spec(&self) -> &'a DialectSpec {
+        self.spec
+    }
+
+    pub fn cursor(&self) -> &Cursor<'a> {
+        &self.cursor
+    }
+
+    pub fn clause(&self) -> &Clause<'a> {
+        &self.clause
+    }
+
+    pub fn resolved_scope(&self) -> &ResolvedScope<'a> {
+        &self.resolved_scope
     }
 }
 
 #[derive(Debug)]
-pub struct ContextBuildParams<'a> {
+pub struct ParsedStatement<'a> {
     pub text: &'a str,
     pub tokens: Vec<Token<'a>>,
     pub schema: &'a schema::Cache,
@@ -88,18 +107,8 @@ pub struct ContextBuildParams<'a> {
     pub stmt: Loc<ast::Statement>,
 }
 
-impl<'a> ContextBuildParams<'a> {
-    pub fn proceeding_tokens(&self) -> impl Iterator<Item = &Token<'a>> {
-        self.tokens
-            .iter()
-            .rev()
-            .filter(|t| !matches!(t.kind, TokenKind::Eof) && t.span.end <= self.cursor)
-            .take_while(|t| self.cursor >= t.span.start)
-    }
-}
-
 #[cfg(test)]
-impl ContextBuildParams<'static> {
+impl ParsedStatement<'static> {
     pub fn new_ansi_static(text: &str) -> Option<Self> {
         use crate::test_util::ansi_tokens;
         use crate::test_util::get_leaky_static_caret_cursor;

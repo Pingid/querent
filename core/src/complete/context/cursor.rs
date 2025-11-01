@@ -1,4 +1,4 @@
-use crate::complete::context::ContextBuildParams;
+use crate::complete::context::ParsedStatement;
 use crate::lex::Keyword;
 use crate::lex::OpTag;
 use crate::lex::Token;
@@ -53,8 +53,8 @@ impl<'txt> Cursor<'txt> {
     }
 }
 
-impl<'txt> From<&ContextBuildParams<'txt>> for Cursor<'txt> {
-    fn from(params: &ContextBuildParams<'txt>) -> Self {
+impl<'txt> From<&ParsedStatement<'txt>> for Cursor<'txt> {
+    fn from(params: &ParsedStatement<'txt>) -> Self {
         detect_cursor(params.text, &params.tokens, params.cursor)
     }
 }

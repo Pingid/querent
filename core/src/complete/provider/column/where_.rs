@@ -30,6 +30,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
                 Some(col.detail()),
             ),
             col.score(),
+            col.data_type(),
         );
     }
 
@@ -51,6 +52,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
                 Some(col.detail()),
             ),
             20,
+            col.data_type(),
         );
     }
 }

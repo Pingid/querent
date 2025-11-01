@@ -1,5 +1,5 @@
 use crate::complete::context::Context;
-use crate::complete::context::Qualifier;
+use crate::complete::context::NamePath;
 use crate::complete::context::ResolvedColumn;
 use crate::complete::context::ResolvedColumnSource;
 use crate::schema;
@@ -9,7 +9,7 @@ pub struct AvailableColumn<'a> {
     name: String,
     score: i8,
     source_alias: Option<&'a str>,
-    qualifier: Qualifier<'a>,
+    qualifier: NamePath<'a>,
     source: AvailableColumnSource<'a>,
 }
 
@@ -62,7 +62,7 @@ impl<'a> From<&'a schema::Column> for AvailableColumn<'a> {
             score: 0,
             name: col.column_name.clone(),
             source_alias: None,
-            qualifier: Qualifier::default(),
+            qualifier: NamePath::default(),
             source: AvailableColumnSource::Schema(col),
         }
     }
@@ -82,7 +82,7 @@ impl<'a> AvailableColumn<'a> {
     }
 
     pub fn schema_name(&self) -> Option<&'a str> {
-        self.qualifier.schema
+        self.qualifier.schema_name()
     }
 
     pub fn data_type(&self) -> Option<schema::DataType> {
@@ -95,13 +95,14 @@ impl<'a> AvailableColumn<'a> {
 
     /// Alias or else qualifier or else schema table name
     pub fn source_name(&self) -> Option<String> {
-        self.source_alias
-            .map(|x| x.to_string())
-            .or_else(|| self.qualifier.table.map(|x| x.to_string()))
-            .or_else(|| match &self.source {
-                AvailableColumnSource::Schema(c) => c.table_name.clone(),
-                AvailableColumnSource::Unresolved { .. } => None,
-            })
+        None
+        // self.source_alias
+        //     .map(|x| x.to_string())
+        //     .or_else(|| self.qualifier.table.map(|x| x.to_string()))
+        //     .or_else(|| match &self.source {
+        //         AvailableColumnSource::Schema(c) => c.table_name.clone(),
+        //         AvailableColumnSource::Unresolved { .. } => None,
+        //     })
     }
 
     /// Check if the column qualifier matches the other qualifier
@@ -123,7 +124,7 @@ impl<'a> AvailableColumn<'a> {
     pub fn detail(&self) -> String {
         match &self.source {
             AvailableColumnSource::Schema(c) => {
-                detail(&Qualifier::from(*c), &c.column_name, &Some(c.data_type))
+                detail(&NamePath::from(*c), &c.column_name, &Some(c.data_type))
             }
             AvailableColumnSource::Unresolved { ty } => detail(&self.qualifier, &self.name, &ty),
         }
@@ -131,7 +132,7 @@ impl<'a> AvailableColumn<'a> {
 }
 
 /// Get formatted detail for the column
-fn detail(qualifier: &Qualifier, name: &str, ty: &Option<schema::DataType>) -> String {
+fn detail(qualifier: &NamePath, name: &str, ty: &Option<schema::DataType>) -> String {
     let q = qualifier.to_string();
     let q = match q.is_empty() {
         false => format!("{}.{}", q, name),
@@ -152,7 +153,7 @@ impl<'a> Context<'a> {
 
         // If no columns are available, add all columns from the schema.
         if available.is_empty() {
-            for col in self.schema.get_columns().iter() {
+            for col in self.schema().get_columns().iter() {
                 cols.push(AvailableColumn::from(col));
             }
         }
@@ -163,7 +164,7 @@ impl<'a> Context<'a> {
         }
 
         // Filter out columns that don't match the qualifier.
-        cols.retain(|col| col.matches_qualifier(&self.cursor.qualifier));
+        cols.retain(|col| col.matches_qualifier(&self.cursor().qualifier));
 
         cols
     }

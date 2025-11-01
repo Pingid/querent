@@ -1,7 +1,8 @@
 use crate::ast;
-use crate::complete::context::ContextBuildParams;
 use crate::complete::context::NamePath;
+use crate::complete::context::ParsedStatement;
 use crate::lex::Keyword;
+use crate::lex::Token;
 use crate::lex::TokenKind;
 use crate::span::Loc;
 
@@ -13,16 +14,16 @@ pub struct Clause<'a> {
     pub has_space: bool,
 }
 
-impl<'a> From<&ContextBuildParams<'a>> for Clause<'a> {
-    fn from(params: &ContextBuildParams<'a>) -> Self {
+impl<'a> From<&ParsedStatement<'a>> for Clause<'a> {
+    fn from(params: &ParsedStatement<'a>) -> Self {
         let kind = ClauseKind::from(params);
         let pos = <Option<ClausePosition>>::from(params);
         let func = <Option<FunctionParam<'a>>>::from(params);
-        let has_space = params
-            .proceeding_tokens()
+        let has_space = preceding_tokens(&params.tokens, params.cursor)
             .next()
             .map(|t| t.span.end < params.cursor)
             .unwrap_or(false);
+
         Clause {
             kind,
             pos,
@@ -58,8 +59,8 @@ pub enum ClauseKind {
     Using,
 }
 
-impl<'a> From<&ContextBuildParams<'a>> for ClauseKind {
-    fn from(params: &ContextBuildParams<'a>) -> Self {
+impl<'a> From<&ParsedStatement<'a>> for ClauseKind {
+    fn from(params: &ParsedStatement<'a>) -> Self {
         params
             .statement_node()
             .find_map_rev(|node| {
@@ -85,14 +86,14 @@ pub struct FunctionParam<'a> {
     pub arg: usize,
 }
 
-impl<'a> From<&ContextBuildParams<'a>> for Option<FunctionParam<'a>> {
-    fn from(params: &ContextBuildParams<'a>) -> Self {
+impl<'a> From<&ParsedStatement<'a>> for Option<FunctionParam<'a>> {
+    fn from(params: &ParsedStatement<'a>) -> Self {
         params.statement_node().find_map_rev(|node| {
             if !params.node_containing_cursor(&node) {
                 return None;
             }
             match node {
-                ast::Node::FunctionCallExpr(n) => {
+                ast::Node::FunctionCall(n) => {
                     if !n.args.span.contains_inclusive(params.cursor) {
                         return None;
                     }
@@ -120,9 +121,11 @@ pub enum ClausePosition {
     Alias,
 }
 
-impl<'a> From<&ContextBuildParams<'a>> for Option<ClausePosition> {
-    fn from(params: &ContextBuildParams<'a>) -> Self {
-        let prev = params.proceeding_tokens().next();
+impl<'a> From<&ParsedStatement<'a>> for Option<ClausePosition> {
+    fn from(params: &ParsedStatement<'a>) -> Self {
+        // preceding tokens
+        let prev = preceding_tokens(&params.tokens, params.cursor).next();
+
         params.statement_node().find_map_rev(|node| {
             if !params.node_containing_cursor(&node) {
                 return None;
@@ -141,7 +144,7 @@ impl<'a> From<&ContextBuildParams<'a>> for Option<ClausePosition> {
                     }
                     None
                 }
-                ast::Node::BinaryExpr(binary) => {
+                ast::Node::Binary(binary) => {
                     if binary.op.is_some() {
                         let left_end = binary.left.span.end;
                         if params.cursor > left_end {
@@ -157,7 +160,7 @@ impl<'a> From<&ContextBuildParams<'a>> for Option<ClausePosition> {
     }
 }
 
-impl<'a> ContextBuildParams<'a> {
+impl<'a> ParsedStatement<'a> {
     fn node_containing_cursor(&self, node: &ast::Node<'_>) -> bool {
         let eos = self.stmt.span.end;
         let is_end = node.span().end == eos && (self.cursor - 1) == eos;
@@ -185,12 +188,21 @@ fn get_delimited_list_item_index<T>(list: &ast::DelimitedList<Loc<T>>, cursor: u
     index
 }
 
+fn preceding_tokens<'a, 'b>(
+    tokens: &'b [Token<'a>], cursor: usize,
+) -> impl Iterator<Item = &'b Token<'a>> {
+    tokens
+        .iter()
+        .rev()
+        .filter(move |t| !matches!(t.kind, TokenKind::Eof) && t.span.end <= cursor)
+        .take_while(move |t| cursor >= t.span.start)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn ansi_detect_clause(sql: &str) -> Option<Clause<'static>> {
-        let params = ContextBuildParams::new_ansi_static(sql)?;
+        let params = ParsedStatement::new_ansi_static(sql)?;
         Some(Clause::from(&params))
     }
 

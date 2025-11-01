@@ -17,7 +17,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
     let mut tables = Vec::new();
 
     // Add all tables from the schema
-    for table in ctx.schema.get_tables() {
+    for table in ctx.schema().get_tables() {
         tables.push(AvailableTable {
             name: table.table_name.clone(),
             score: 0,
@@ -68,6 +68,7 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
                 Some(detail),
             ),
             t.score,
+            None,
         );
     }
 }

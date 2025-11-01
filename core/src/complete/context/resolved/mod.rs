@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::ast::AstNode;
 use crate::ast::{self};
-use crate::complete::context::ContextBuildParams;
-// use crate::dialect::DialectSpec;
+use crate::complete::context::ParsedStatement;
+use crate::dialect::DialectSpec;
 use crate::schema;
 use crate::span::Loc;
 
@@ -23,15 +23,17 @@ pub struct ResolvedScope<'a> {
 }
 
 impl<'a> ResolvedScope<'a> {
-    pub fn build(text: &'a str, schema: &'a schema::Cache, ast: &'a Loc<ast::Query>) -> Self {
-        ScopeResolver::new(text, schema, ast).resolve()
+    pub fn build<'ast>(
+        text: &'a str, schema: &'a schema::Cache, spec: &'a DialectSpec, ast: &'ast Loc<ast::Query>,
+    ) -> Self {
+        ScopeResolver::new(text, schema, spec, ast).resolve()
     }
 
     pub fn projected_columns(&self) -> &Vec<ColumnBinding<'a>> {
         &self.projected
     }
 
-    pub fn available_columns(&'a self) -> Vec<(Option<&'a str>, &'a ColumnBinding<'a>)> {
+    pub fn available_columns(&self) -> Vec<(Option<&'a str>, &ColumnBinding<'a>)> {
         self.bindings
             .values()
             .flat_map(|b| match &b.kind {
@@ -67,12 +69,17 @@ impl<'a> ResolvedScope<'a> {
     }
 }
 
-impl<'a> From<&ContextBuildParams<'a>> for ResolvedScope<'a> {
-    fn from(params: &ContextBuildParams<'a>) -> Self {
+impl<'a> From<&ParsedStatement<'a>> for ResolvedScope<'a> {
+    fn from(params: &ParsedStatement<'a>) -> Self {
+        let cursor = params.cursor;
         match ast::Query::find_where_rev(ast::Node::Statement(&params.stmt), |node| {
-            node.span().contains_inclusive(params.cursor)
+            node.span().contains_inclusive(cursor)
         }) {
-            Some(query) => ResolvedScope::build(params.text, params.schema, &query),
+            Some(query) => {
+                let text: &'a str = params.text;
+                let schema: &'a schema::Cache = params.schema;
+                ScopeResolver::new(text, schema, params.spec, query).resolve()
+            }
             None => Default::default(),
         }
     }

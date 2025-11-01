@@ -1,6 +1,7 @@
 use crate::complete::context::resolved::ColumnName;
 use crate::complete::context::resolved::ResolvedScope;
 use crate::complete::context::resolved::TableName;
+use crate::complete::context::resolved::identifier::ResolvedFunction;
 use crate::schema;
 
 /// Unique handles so aliases & nested bindings are unambiguous.
@@ -29,7 +30,8 @@ pub enum BindingKind<'a> {
     },
     Func {
         name: &'a str,
-        definition: Option<&'a schema::Function>,
+        definition: Option<ResolvedFunction<'a>>,
+        columns: Vec<ColumnBinding<'a>>,
     },
 }
 
@@ -39,11 +41,5 @@ pub struct ColumnBinding<'a> {
     pub col: Option<&'a schema::Column>,
     pub name: ColumnName<'a>,
     pub alias: Option<&'a str>,
-    pub origin: Option<ColumnOrigin>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ColumnOrigin {
-    Binding(BindingId),
-    Star(Option<BindingId>),
+    pub origin: Option<BindingId>,
 }

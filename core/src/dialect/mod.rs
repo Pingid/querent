@@ -3,8 +3,7 @@ use crate::lex::Keyword;
 use crate::lex::Operator;
 use crate::lex::QuoteStyle;
 use crate::lex::TokenKind;
-use crate::schema::DataType;
-use crate::schema::FunctionType;
+use crate::schema;
 
 pub mod ansi;
 pub mod postgres;
@@ -168,11 +167,10 @@ pub enum CommentStyle {
     Hash,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpecFunction {
     pub function_name: &'static str,
-    pub parameter_types: &'static [DataType],
-    pub function_type: FunctionType,
-    pub return_type: DataType,
+    pub parameter_types: &'static [schema::DataType],
+    pub return_type: schema::FunctionReturnType,
     pub description: &'static str,
 }

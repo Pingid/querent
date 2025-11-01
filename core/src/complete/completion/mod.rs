@@ -1,9 +1,11 @@
 use crate::span::Span;
 
 mod builder;
+mod candidate;
 mod ranker;
 
 pub use builder::*;
+pub use candidate::*;
 
 #[derive(Debug, Default, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

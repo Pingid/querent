@@ -21,7 +21,10 @@
 //!    provide the final set of accessible tables and their columns for
 //!    completion.
 mod graph;
+// mod name_path;
+// mod resolve;
 mod scope;
 
 pub use graph::*;
+// pub use resolve::ResolvedScope;
 pub use scope::*;

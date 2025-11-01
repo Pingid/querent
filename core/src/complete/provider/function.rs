@@ -29,28 +29,28 @@ pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
         completion.insert_text_format = InsertTextFormat::Snippet;
         completion.insert_text = func.insert_text();
 
-        if expected_data_type.is_some() && Some(expected_data_type.unwrap()) == func.return_type() {
-            builder.add(completion, 10);
-        } else {
-            builder.add(completion, 0);
-        }
+        // if expected_data_type.is_some() && Some(expected_data_type.unwrap()) == func.return_type() {
+        //     builder.add(completion, 10, func.return_type());
+        // } else {
+        //     builder.add(completion, 0, func.return_type());
+        // }
     }
 }
 
 impl<'a> Context<'a> {
     pub fn functions(&self) -> impl Iterator<Item = AvailableFunction<'a>> {
-        self.spec
+        self.spec()
             .functions
             .values()
             .map(|func| AvailableFunction::Spec(func))
             .chain(
-                self.schema
+                self.schema()
                     .get_functions()
                     .iter()
                     .map(|func| AvailableFunction::Schema(func)),
             )
-            .filter(|func| match (func.function_type(), self.clause.kind) {
-                (schema::FunctionType::Scalar, ClauseKind::Select) => true,
+            .filter(|func| match (func.return_type(), self.clause.kind) {
+                (schema::FunctionReturnType::Scalar(_), ClauseKind::Select) => true,
                 _ => false,
             })
     }
@@ -63,12 +63,6 @@ pub enum AvailableFunction<'schema> {
 }
 
 impl<'schema> AvailableFunction<'schema> {
-    fn function_type(&self) -> schema::FunctionType {
-        match self {
-            AvailableFunction::Spec(func) => func.function_type,
-            AvailableFunction::Schema(func) => func.function_type,
-        }
-    }
     pub fn function_name(&self) -> String {
         match self {
             AvailableFunction::Spec(func) => func.function_name.to_string(),
@@ -81,10 +75,10 @@ impl<'schema> AvailableFunction<'schema> {
             AvailableFunction::Schema(func) => func.parameter_types.to_vec(),
         }
     }
-    fn return_type(&self) -> Option<schema::DataType> {
+    fn return_type(&self) -> &schema::FunctionReturnType {
         match self {
-            AvailableFunction::Spec(func) => Some(func.return_type),
-            AvailableFunction::Schema(func) => Some(func.return_type),
+            AvailableFunction::Spec(func) => &func.return_type,
+            AvailableFunction::Schema(func) => &func.return_type,
         }
     }
 
@@ -142,9 +136,8 @@ mod tests {
                     .add_function(
                         "public",
                         "foo",
-                        schema::FunctionType::Scalar,
+                        schema::FunctionReturnType::Scalar(schema::DataType::Text),
                         &[schema::DataType::Text],
-                        schema::DataType::Text,
                     )
                     .build(),
             )

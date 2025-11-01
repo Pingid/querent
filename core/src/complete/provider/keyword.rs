@@ -10,7 +10,7 @@ use crate::lex::TokenKind;
 pub fn complete(ctx: &Context, builder: &mut CompletionBuilder) {
     let follow_tokens = follow_tokens(ctx);
 
-    for next in ctx.spec.resolve_follow_rules(&follow_tokens) {
+    for next in ctx.spec().resolve_follow_rules(&follow_tokens) {
         let is_snippet = match next {
             Next::Seq(seq) => seq.iter().any(|next| matches!(next, Next::Query)),
             _ => false,
@@ -27,7 +27,7 @@ pub fn complete(ctx: &Context, builder: &mut CompletionBuilder) {
         if is_snippet {
             completion.insert_text_format = InsertTextFormat::Snippet;
         }
-        builder.add(completion, score);
+        builder.add(completion, score, None);
     }
 }
 

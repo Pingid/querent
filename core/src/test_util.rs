@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use crate::complete::completion::CandidateSet;
 use crate::complete::completion::CompletionBuilder;
 use crate::complete::completion::Completions;
 use crate::complete::context::Context;
@@ -38,13 +39,12 @@ impl SchemaCacheBuilder {
     }
 
     pub(crate) fn add_function(
-        mut self, schema: &str, name: &str, function_type: schema::FunctionType,
-        params: &[schema::DataType], return_type: schema::DataType,
+        mut self, schema: &str, name: &str, return_type: schema::FunctionReturnType,
+        params: &[schema::DataType],
     ) -> Self {
         self.0.add_function(schema::Function {
             function_name: name.to_string(),
             parameter_types: params.to_vec(),
-            function_type,
             description: None,
             schema_name: Some(schema.to_string()),
             database_name: None,
@@ -79,66 +79,7 @@ impl CompletionTest {
     }
 
     pub fn with_users_posts(self) -> Self {
-        let mut schema = schema::Cache::default();
-        // users table
-        schema.add_table(schema::Table {
-            table_name: "users".to_string(),
-            schema_name: Some("public".to_string()),
-            database_name: None,
-            table_type: Some(schema::TableType::Table),
-        });
-        schema.add_column(schema::Column {
-            column_name: "id".to_string(),
-            table_name: Some("users".to_string()),
-            schema_name: Some("public".to_string()),
-            data_type: schema::DataType::Integer,
-            is_nullable: None,
-        });
-        schema.add_column(schema::Column {
-            column_name: "name".to_string(),
-            table_name: Some("users".to_string()),
-            schema_name: Some("public".to_string()),
-            data_type: schema::DataType::Text,
-            is_nullable: None,
-        });
-        schema.add_column(schema::Column {
-            column_name: "email".to_string(),
-            table_name: Some("users".to_string()),
-            schema_name: Some("public".to_string()),
-            data_type: schema::DataType::Text,
-            is_nullable: None,
-        });
-
-        // posts table
-        schema.add_table(schema::Table {
-            table_name: "posts".to_string(),
-            schema_name: Some("public".to_string()),
-            database_name: None,
-            table_type: Some(schema::TableType::Table),
-        });
-        schema.add_column(schema::Column {
-            column_name: "id".to_string(),
-            table_name: Some("posts".to_string()),
-            schema_name: Some("public".to_string()),
-            data_type: schema::DataType::Integer,
-            is_nullable: None,
-        });
-        schema.add_column(schema::Column {
-            column_name: "title".to_string(),
-            table_name: Some("posts".to_string()),
-            schema_name: Some("public".to_string()),
-            data_type: schema::DataType::Text,
-            is_nullable: None,
-        });
-        schema.add_column(schema::Column {
-            column_name: "content".to_string(),
-            table_name: Some("posts".to_string()),
-            schema_name: Some("public".to_string()),
-            data_type: schema::DataType::Text,
-            is_nullable: None,
-        });
-
-        self.with_schema(schema)
+        self.with_schema(users_posts_schema())
     }
 
     pub fn run_with(
@@ -158,6 +99,68 @@ impl CompletionTest {
             completions: builder.build(&ctx),
         }
     }
+}
+
+pub fn users_posts_schema() -> schema::Cache {
+    let mut schema = schema::Cache::default();
+    // users table
+    schema.add_table(schema::Table {
+        table_name: "users".to_string(),
+        schema_name: Some("public".to_string()),
+        database_name: None,
+        table_type: Some(schema::TableType::Table),
+    });
+    schema.add_column(schema::Column {
+        column_name: "id".to_string(),
+        table_name: Some("users".to_string()),
+        schema_name: Some("public".to_string()),
+        data_type: schema::DataType::Integer,
+        is_nullable: None,
+    });
+    schema.add_column(schema::Column {
+        column_name: "name".to_string(),
+        table_name: Some("users".to_string()),
+        schema_name: Some("public".to_string()),
+        data_type: schema::DataType::Text,
+        is_nullable: None,
+    });
+    schema.add_column(schema::Column {
+        column_name: "email".to_string(),
+        table_name: Some("users".to_string()),
+        schema_name: Some("public".to_string()),
+        data_type: schema::DataType::Text,
+        is_nullable: None,
+    });
+
+    // posts table
+    schema.add_table(schema::Table {
+        table_name: "posts".to_string(),
+        schema_name: Some("public".to_string()),
+        database_name: None,
+        table_type: Some(schema::TableType::Table),
+    });
+    schema.add_column(schema::Column {
+        column_name: "id".to_string(),
+        table_name: Some("posts".to_string()),
+        schema_name: Some("public".to_string()),
+        data_type: schema::DataType::Integer,
+        is_nullable: None,
+    });
+    schema.add_column(schema::Column {
+        column_name: "title".to_string(),
+        table_name: Some("posts".to_string()),
+        schema_name: Some("public".to_string()),
+        data_type: schema::DataType::Text,
+        is_nullable: None,
+    });
+    schema.add_column(schema::Column {
+        column_name: "content".to_string(),
+        table_name: Some("posts".to_string()),
+        schema_name: Some("public".to_string()),
+        data_type: schema::DataType::Text,
+        is_nullable: None,
+    });
+    schema
 }
 
 #[derive(Debug)]
