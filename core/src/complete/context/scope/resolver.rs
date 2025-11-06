@@ -100,6 +100,28 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
         let alias = self.extract_alias(named.alias);
         let name = self.table_name(&named.name);
         let table = self.lookup_table(&name);
+        // If this named reference matches an existing CTE binding, reuse its columns,
+        // propagating to the provided alias (if any) so that completions work with the alias.
+        if let Some((_, existing)) = self.graph.get_bind_by_alias(name.name()) {
+            if let BindKind::Cte { .. } = existing.kind {
+                // If the CTE is referenced with an alias, create a new binding for the alias.
+                // If there's no alias, the original CTE binding already exists; avoid duplicating it.
+                if let Some(cte_alias) = alias {
+                    let available = existing
+                        .available
+                        .iter()
+                        .map(|p| p.propagate(alias))
+                        .collect();
+                    self.graph.bind(
+                        Some(cte_alias),
+                        // Treat as a base-like binding without a concrete schema table
+                        BindKind::Base { name, table: None },
+                        available,
+                    );
+                }
+                return;
+            }
+        }
         let id = self.graph.new_bind_id();
 
         let label = |c: &'a schema::Column| match alias {

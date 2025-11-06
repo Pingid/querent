@@ -1,5 +1,5 @@
 use crate::complete::Completer;
-use crate::complete::candidate::Candidate;
+use crate::complete::candidate::CandidateBuilder;
 use crate::complete::candidate::CandidateSet;
 use crate::complete::context::ClausePosition;
 use crate::complete::context::Context;
@@ -7,16 +7,54 @@ use crate::complete::context::Location;
 use crate::complete::context::QualifiedIdent;
 use crate::schema;
 
+#[derive(Default)]
 pub struct ColumnProvider;
+
 impl<'a> Completer<'a> for ColumnProvider {
     fn complete(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
         let cols = discover_columns(ctx);
         let detailer = DefaultDetailRenderer;
+        let qualifier = ctx.cursor().qualifier.as_ref();
+
 
         for col in cols {
+            // If we have a qualifier (e.g., "users.^" or "u.^"), filter columns
+            if let Some(qual_parts) = qualifier {
+                // For now, handle single-part qualifiers (table name or alias)
+                if qual_parts.len() == 1 {
+                    let qual = qual_parts[0];
+
+                    // Check if this column matches the qualifier in any of its variants
+                    // This handles cases like "users.id" matching "users" or "u.id" matching "u"
+                    let matches_qualifier = col.ident.variants().iter().any(|variant| {
+                        // Match if the variant has the qualifier as parent and no schema
+                        // (e.g., "users" in "users.id", or "u" in "u.id")
+                        variant.parent == Some(qual) && variant.schema.is_none()
+                    });
+
+                    if matches_qualifier {
+                        // Only suggest unqualified name when after "table."
+                        let name_label = QualifiedIdent::from_str(
+                            crate::complete::context::IdentKind::Column,
+                            col.ident.name(),
+                        );
+                        b.push(
+                            CandidateBuilder::column(name_label, col.ident, col.dt)
+                                .detail(detailer.detail(ctx, &col))
+                                .build(),
+                        );
+                    }
+                }
+                // Skip to next column when we have a qualifier
+                continue;
+            }
+
+            // No qualifier - suggest all variants
             for label in col.ident.variants() {
                 b.push(
-                    Candidate::column(label, col.ident, col.dt).detail(detailer.detail(ctx, &col)),
+                    CandidateBuilder::column(label, col.ident, col.dt)
+                        .detail(detailer.detail(ctx, &col))
+                        .build(),
                 );
             }
         }
@@ -30,12 +68,17 @@ impl<'a> Completer<'a> for ColumnProvider {
 fn should_complete<'a>(ctx: &Context<'a>) -> bool {
     use ClausePosition as CP;
     use Location as L;
+
     match (&ctx.cursor().location, ctx.clause().pos) {
         // Keyword no space
-        (L::Keyword(_), _) => return false,
-        // After a space and an ident
+        (L::Keyword(_), _) => false,
+        // After a space and an ident - block column completions
         (L::Space(inner), Some(CP::ExprLeft)) if matches!(**inner, L::Ident) => false,
-        // ExprLeft
+        // After comma without space - block column completions
+        (L::Comma, Some(CP::ExprLeft)) => false,
+        // After comma and space - allow column completions
+        (L::Space(inner), Some(CP::ExprLeft)) if matches!(**inner, L::Comma) => true,
+        // Other ExprLeft positions - allow column completions
         (_, Some(CP::ExprLeft)) => true,
         _ => false,
     }
@@ -48,28 +91,27 @@ struct LogicalColumn<'a> {
 }
 
 fn discover_columns<'a>(ctx: &Context<'a>) -> Vec<LogicalColumn<'a>> {
-    let available_columns = ctx
-        .scope()
-        .available()
-        .filter(|p| p.is_referenceable())
+    let avail = ctx.scope().available().filter(|p| p.is_referenceable());
+    let cols: Vec<_> = avail
         .map(|p| LogicalColumn {
             dt: p.data_type(),
             ident: p.label,
         })
-        .collect::<Vec<_>>();
+        .collect();
 
-    if available_columns.len() == 0 {
-        return ctx
-            .schema()
-            .get_columns()
-            .into_iter()
-            .map(|c| LogicalColumn {
-                dt: Some(c.data_type),
-                ident: QualifiedIdent::from(c),
-            })
-            .collect::<Vec<_>>();
+    if !cols.is_empty() {
+        return cols;
     }
-    available_columns
+
+    return ctx
+        .schema()
+        .get_columns()
+        .into_iter()
+        .map(|c| LogicalColumn {
+            dt: Some(c.data_type),
+            ident: QualifiedIdent::from(c),
+        })
+        .collect();
 }
 
 trait ColumnDetailRenderer {

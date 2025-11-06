@@ -1,3 +1,5 @@
+use smol_str::SmolStr;
+
 use super::util::FieldSetFormatter;
 use super::util::fmt_list;
 use super::util::some_eq;
@@ -11,6 +13,9 @@ use crate::complete::types::CompletionKind;
 /// return an error if the criteria are not met.
 pub trait Matcher: Send + Sync + 'static {
     fn check(&self, items: &[Completion]) -> Result<(), String>;
+
+    /// Convert to Any for downcasting in format_expected
+    fn as_any(&self) -> &dyn std::any::Any;
 }
 
 /// A collection of matchers that all must pass for a test to succeed.
@@ -32,18 +37,59 @@ impl Expect {
         }
         Ok(())
     }
+
+    /// Formats the expected completions for display in error messages
+    pub fn format_expected(&self) -> String {
+        if self.0.is_empty() {
+            return "(no expectations set)\n".to_string();
+        }
+
+        self.0
+            .iter()
+            .map(|matcher| {
+                // Try to downcast to known matcher types for better formatting
+                if let Some(starts) = matcher.as_any().downcast_ref::<Starts>() {
+                    format!("Starts with: {:?}\n", starts.0)
+                } else if let Some(contains) = matcher.as_any().downcast_ref::<Contains>() {
+                    format!("Contains: {} items\n", contains.0.len())
+                } else if let Some(in_order) = matcher.as_any().downcast_ref::<InOrder>() {
+                    format!("In order: {} items\n", in_order.0.len())
+                } else if let Some(_) = matcher.as_any().downcast_ref::<Empty>() {
+                    "Empty (no completions expected)\n".to_string()
+                } else {
+                    "(custom matcher)\n".to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
 }
 
 /// Matcher that expects no completions.
 ///
 /// This matcher fails if any completions are present in the result set.
-pub struct Empty;
+pub struct Empty(pub Option<Vec<CompletionKind>>);
 impl Matcher for Empty {
     fn check(&self, items: &[Completion]) -> Result<(), String> {
-        if items.len() > 0 {
-            return Err(format!("Expected no completions, got {}", items.len()));
+        if self.0.is_none() && items.len() > 0 {
+            return Err(format!(
+                "Expected no completions, got {}:\n{}",
+                items.len(),
+                fmt_list(items)
+            ));
+        }
+        if let Some(kinds) = &self.0 {
+            for kind in kinds {
+                if items.iter().any(|item| item.kind == *kind) {
+                    return Err(format!("Expected no completions of kind {:?}", kind));
+                }
+            }
         }
         Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -67,6 +113,10 @@ impl Matcher for Starts {
             )),
         }
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
 
 /// Matcher that verifies specific completions are present.
@@ -82,6 +132,10 @@ impl Matcher for Contains {
             }
         }
         Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 }
 
@@ -102,14 +156,19 @@ impl Matcher for InOrder {
             if let Some(last) = last
                 && idx < last
             {
-                println!("idx: {}, last: {}, len: {}", idx, last, items.len());
                 return out_of_order(items, idx, last);
             }
             last = Some(idx);
         }
         Ok(())
     }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
 }
+
+// pub struct
 
 fn missing(items: &[Completion], missing: &CandidateMatch) -> Result<(), String> {
     Err(format!("Missing ({})\ngot: {}", missing, fmt_list(&items),))
@@ -131,10 +190,10 @@ fn out_of_order(items: &[Completion], idx: usize, last: usize) -> Result<(), Str
 /// that are `Some` will be checked against the actual completion.
 #[derive(Debug, Default, Clone)]
 pub struct CandidateMatch {
-    pub label: Option<String>,
+    pub label: Option<SmolStr>,
     pub kind: Option<CompletionKind>,
-    pub detail: Option<String>,
-    pub insert_text: Option<String>,
+    pub detail: Option<SmolStr>,
+    pub insert_text: Option<SmolStr>,
 }
 
 /// Macro for creating a `CandidateMatch` with specified fields.
@@ -179,7 +238,7 @@ impl CandidateMatch {
 impl From<&str> for CandidateMatch {
     fn from(s: &str) -> Self {
         Self {
-            label: Some(s.to_string()),
+            label: Some(s.into()),
             ..Default::default()
         }
     }

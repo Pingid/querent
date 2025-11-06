@@ -142,12 +142,12 @@ fn completion_from_engine(
     };
 
     let mut edit = lsp_types::CompletionItem {
-        label: completion.label,
-        insert_text: Some(completion.insert_text.clone()),
-        filter_text: completion.filter_text,
+        label: completion.label.to_string(),
+        insert_text: Some(completion.insert_text.to_string()),
+        filter_text: completion.filter_text.map(|s| s.to_string()),
         kind: Some(kind),
         sort_text: Some(format!("{:05}", index)),
-        detail: completion.detail,
+        detail: completion.detail.map(|s| s.to_string()),
         ..Default::default()
     };
     match completion.insert_text_format {
@@ -163,12 +163,12 @@ fn completion_from_engine(
                         character: end.1 as u32,
                     },
                 },
-                new_text: completion.insert_text,
+                new_text: completion.insert_text.to_string(),
             }));
         }
         InsertTextFormat::Snippet => {
             edit.insert_text_format = Some(lsp_types::InsertTextFormat::SNIPPET);
-            edit.insert_text = Some(completion.insert_text);
+            edit.insert_text = Some(completion.insert_text.to_string());
         }
     }
     edit

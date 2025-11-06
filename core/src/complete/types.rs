@@ -1,3 +1,5 @@
+use smol_str::SmolStr;
+
 use crate::span::Span;
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -9,10 +11,10 @@ pub struct Completions {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Completion {
-    pub label: String,
-    pub detail: Option<String>,
-    pub insert_text: String,
-    pub filter_text: Option<String>,
+    pub label: SmolStr,
+    pub detail: Option<SmolStr>,
+    pub insert_text: SmolStr,
+    pub filter_text: Option<SmolStr>,
     pub kind: CompletionKind,
     pub replace: Span,
     pub commit_characters: Vec<char>,
@@ -29,8 +31,8 @@ pub enum InsertTextFormat {
 
 impl Completion {
     pub fn new(
-        kind: CompletionKind, label: String, replace: Span, commit_characters: Option<Vec<char>>,
-        detail: Option<String>,
+        kind: CompletionKind, label: SmolStr, replace: Span, commit_characters: Option<Vec<char>>,
+        detail: Option<SmolStr>,
     ) -> Self {
         Self {
             label: label.clone(),

@@ -139,7 +139,7 @@ impl<'a> ParsedStatement<'a> {
         span.contains_inclusive(self.cursor) || is_end
     }
 
-    pub fn statement_node(&self) -> ast::Node<'_> {
+    pub fn ast_node(&self) -> ast::Node<'_> {
         ast::Node::Statement(&self.stmt)
     }
 }

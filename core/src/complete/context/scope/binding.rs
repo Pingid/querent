@@ -52,6 +52,15 @@ impl<'a> Scope<'a> {
     pub fn projected(&self) -> &[Projection<'a>] {
         &self.projected
     }
+
+    pub fn ctes(&self) -> impl Iterator<Item = &'a str> {
+        self.bindings
+            .iter()
+            .filter_map(|(_, bind)| match &bind.kind {
+                BindKind::Cte { name, .. } => Some(*name),
+                _ => None,
+            })
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -226,10 +235,10 @@ impl<'schema> FunctionRef<'schema> {
             FunctionRef::Schema(func) => func.function_name.as_str(),
         }
     }
-    pub fn parameter_types(&self) -> Vec<schema::DataType> {
+    pub fn parameter_types(&self) -> &'schema [schema::DataType] {
         match self {
-            FunctionRef::Spec(func) => func.parameter_types.to_vec(),
-            FunctionRef::Schema(func) => func.parameter_types.to_vec(),
+            FunctionRef::Spec(func) => &func.parameter_types,
+            FunctionRef::Schema(func) => &func.parameter_types,
         }
     }
     pub fn description(&self) -> Option<&str> {

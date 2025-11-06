@@ -9,27 +9,33 @@ ropey = "1.6.1"
 strsim = "0.11.1"
 pat = { path = "../pat" }
 
-# Feature dependencies
-ts-rs = { version = "11", optional = true }
+# Serialization
 serde = { workspace = true, features = ["derive"], optional = true }
+smol_str = { version = "0.3.4", features = ["serde"] }
+ts-rs = { version = "11", optional = true }
+
 tracing = "0.1.41"
-thiserror = "2.0.17"
-enum_dispatch = "0.3.13"
+
+# Benchmark dependencies
+reqwest = { version = "0.12", features = [
+    "blocking",
+    "rustls-tls",
+], optional = true }
+criterion = { version = "0.7", optional = true }
 
 [features]
 serde = ["dep:serde"]
 typescript = ["dep:ts-rs"]
+test-utils = []
+bench = ["dep:reqwest", "dep:criterion"]
 
 [build-dependencies]
 phf_codegen = "0.13"
 
 [dev-dependencies]
 proptest = "1.5"
-criterion = "0.7"
-reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
-futures = { version = "0.3", features = ["executor"] }
-assert2 = "0.3.16"
 
 [[bench]]
 name = "parse"
 harness = false
+required-features = ["bench"]

@@ -2,7 +2,8 @@
 members = [
     "core",
     "lsp",
-    "lsp-wasm", "pat",
+    "lsp-wasm",
+    "pat",
     # "lsp-catalog",
     # "lsp-engine-tcp",
     # "lsp-server",
@@ -11,9 +12,10 @@ resolver = "2"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
+tracing = { version = "0.1.41" }
 serde_json = "1.0"
 
-[profile.dev]
-codegen-units = 256
-codegen-backend = "cranelift"
-incremental = true
+# [profile.dev]
+# codegen-units = 256
+# codegen-backend = "cranelift"
+# incremental = true

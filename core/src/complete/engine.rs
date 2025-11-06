@@ -31,6 +31,6 @@ pub fn complete(spec: &DialectSpec, schema: &schema::Cache, doc: &Content) -> Co
         return candidates.empty();
     };
     DefaultProviders.complete(&mut ctx, &mut candidates);
-    DefaultRanker::new().complete(&mut ctx, &mut candidates);
+    DefaultRanker::default().complete(&mut ctx, &mut candidates);
     candidates.completions()
 }

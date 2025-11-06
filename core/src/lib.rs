@@ -7,7 +7,7 @@ pub mod parse;
 pub mod schema;
 pub mod span;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils {
     pub use crate::complete::test_util::*;
 }

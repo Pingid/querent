@@ -64,7 +64,7 @@ pub enum ClauseKind {
 impl<'a> From<&ParsedStatement<'a>> for ClauseKind {
     fn from(params: &ParsedStatement<'a>) -> Self {
         params
-            .statement_node()
+            .ast_node()
             .find_map_rev(|node| {
                 if !params.node_containing_cursor(&node) {
                     return None;
@@ -90,7 +90,7 @@ pub struct FunctionParam<'a> {
 
 impl<'a> From<&ParsedStatement<'a>> for Option<FunctionParam<'a>> {
     fn from(params: &ParsedStatement<'a>) -> Self {
-        params.statement_node().find_map_rev(|node| {
+        params.ast_node().find_map_rev(|node| {
             if !params.node_containing_cursor(&node) {
                 return None;
             }
@@ -131,7 +131,7 @@ impl<'a> From<&ParsedStatement<'a>> for Option<ClausePosition> {
     fn from(params: &ParsedStatement<'a>) -> Self {
         // preceding tokens
         let prev = preceding_tokens(&params.tokens, params.cursor).next();
-        let exp = ast::Expr::find_where(params.statement_node(), |node| {
+        let exp = ast::Expr::find_where(params.ast_node(), |node| {
             params.node_containing_cursor(&node)
         });
         if let Some(exp) = exp {
@@ -150,7 +150,7 @@ impl<'a> From<&ParsedStatement<'a>> for Option<ClausePosition> {
                 _ => None,
             };
         }
-        params.statement_node().find_map_rev(|node| {
+        params.ast_node().find_map_rev(|node| {
             if !params.node_containing_cursor(&node) {
                 return None;
             }
@@ -181,7 +181,7 @@ impl<'a> From<&ParsedStatement<'a>> for Option<ClausePosition> {
                 ast::Node::Expr(expr) => match &expr.item {
                     ast::Expr::Empty => Some(ClausePosition::ExprLeft),
                     ast::Expr::Name(_) => Some(ClausePosition::ExprLeft),
-                    exp => None,
+                    _ => None,
                 },
                 _ => None,
             }

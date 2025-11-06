@@ -3,7 +3,7 @@
 //! Works over any token slice and can run **forward** or **backward** via a
 //! const generic. Core pieces:
 //!
-//! - [`Cond`]: enum of pattern combinators
+//! - [`Pat`]: enum of pattern combinators
 //! - [`Cursor`]: bidirectional cursor over a slice (with fuel to prevent loops)
 //! - [`Pattern`]: trait for things that can consume from a [`Cursor`]
 //!
@@ -24,7 +24,7 @@
 //!
 //! # Example
 //! ```rust
-//! use querent_core::cond::{Cond, Predicate, match_all};
+//! use pat::{Pat, Predicate, match_all};
 //!
 //! struct Char(char);
 //!
@@ -33,14 +33,14 @@
 //! fn test(&self, t: &Self::Token) -> bool { self.0 == *t }
 //! }
 //!
-//! static ABC: [Cond<Char>; 3] = [
-//! Cond::atom(Char('a')),
-//! Cond::atom(Char('b')),
-//! Cond::atom(Char('c')),
+//! static ABC: [Pat<Char>; 3] = [
+//! Pat::atom(Char('a')),
+//! Pat::atom(Char('b')),
+//! Pat::atom(Char('c')),
 //! ];
 //!
 //! let input = ['a', 'b', 'c', 'd'];
-//! let res = match_all::<false, _>(&Cond::seq(&ABC), &input);
+//! let res = match_all::<false, _>(&Pat::seq(&ABC), &input);
 //! assert!(res.is_ok());
 //! ```
 
@@ -138,7 +138,8 @@ impl<'a, P: 'a> Pat<'a, P> {
 }
 
 impl<'a, T, P: 'a, const BACKWARD: bool> Pattern<BACKWARD> for Pat<'a, P>
-where P: Pattern<BACKWARD, Token = T>
+where
+    P: Pattern<BACKWARD, Token = T>,
 {
     type Token = T;
 
@@ -206,7 +207,7 @@ where P: Pattern<BACKWARD, Token = T>
                         Match::Match((s, e)) => {
                             best = Some(match (best, BACKWARD) {
                                 (None, _) => (s, e),
-                                (Some((bs, be)), false) if e > be => (s, e),
+                                (Some((_, be)), false) if e > be => (s, e),
                                 (Some((bs, be)), true) if s.min(e) < bs.min(be) => (s, e),
                                 (Some(prev), _) => prev,
                             });
@@ -411,7 +412,8 @@ pub trait Predicate {
 }
 
 impl<T, P, const BACKWARD: bool> Pattern<BACKWARD> for P
-where P: Predicate<Token = T>
+where
+    P: Predicate<Token = T>,
 {
     type Token = T;
 
@@ -437,14 +439,18 @@ where P: Predicate<Token = T>
 
 /// Match from a given `offset`.
 pub fn match_from<const BACKWARD: bool, P>(p: &Pat<P>, items: &[P::Token], offset: usize) -> Match
-where P: Pattern<BACKWARD> {
+where
+    P: Pattern<BACKWARD>,
+{
     let mut cursor = Cursor::<_, BACKWARD>::new(items);
     cursor.pos = offset;
     p.match_one(&mut cursor)
 }
 
 pub fn match_all<const BACKWARD: bool, P>(p: &Pat<P>, items: &[P::Token]) -> Match
-where P: Pattern<BACKWARD> {
+where
+    P: Pattern<BACKWARD>,
+{
     p.match_one(&mut Cursor::<_, BACKWARD>::new(items))
 }
 
