@@ -1,7 +1,7 @@
 use crate::complete::Completer;
-use crate::complete::completion::CandidateSet;
-use crate::complete::completion::Completion;
+use crate::complete::candidate::CandidateSet;
 use crate::complete::context::Context;
+use crate::complete::types::Completion;
 use crate::dialect::DialectSpec;
 use crate::dialect::{self};
 use crate::schema;
@@ -12,6 +12,7 @@ mod util;
 
 pub use matcher::*;
 pub use schemas::*;
+pub use util::*;
 
 /// A test scenario for validating SQL completion functionality.
 ///
@@ -64,11 +65,11 @@ impl TestScenario {
                     completer.complete(&mut ctx, &mut candidates);
                 }
                 let completions = candidates.completions();
-                match self.expect.check(&completions) {
+                match self.expect.check(&completions.items) {
                     Ok(()) => {}
                     Err(e) => panic!(" QUERY: {}\n  SPEC: {}\nFAILED: {}", sql, spec.name, e),
                 };
-                results.extend(completions);
+                results.extend(completions.items);
             }
         }
         results

@@ -29,22 +29,19 @@ use crate::span::Span;
 
 mod clause;
 mod cursor;
-mod resolved;
 mod scope;
 
 pub use clause::*;
 pub use cursor::*;
-pub use resolved::*;
 pub use scope::*;
 
 #[derive(Debug)]
 pub struct Context<'a> {
     schema: &'a schema::Cache,
     spec: &'a DialectSpec,
-    pub cursor: Cursor<'a>,
-    pub scope: Scope<'a>,
-    pub clause: Clause<'a>,
-    pub resolved_scope: ScopeGraph<'a>,
+    scope: Scope<'a>,
+    cursor: Cursor<'a>,
+    clause: Clause<'a>,
 }
 
 impl<'a> Context<'a> {
@@ -65,15 +62,13 @@ impl<'a> Context<'a> {
         };
         let clause = Clause::from(&params);
         let cursor = Cursor::from(&params);
-        let scope = Scope::from(&params);
-        let resolved_scope = ScopeGraph::from(&params);
+        let resolved_scope = Scope::from(&params);
         Some(Self {
             schema: params.schema,
             spec: params.spec,
             cursor,
-            scope,
             clause,
-            resolved_scope,
+            scope: resolved_scope,
         })
     }
 
@@ -93,16 +88,33 @@ impl<'a> Context<'a> {
         &self.clause
     }
 
-    pub fn resolved_scope(&self) -> &ScopeGraph<'a> {
-        &self.resolved_scope
+    pub fn scope(&self) -> &Scope<'a> {
+        &self.scope
     }
 
-    // pub fn expected_data_type(&self) -> Option<schema::DataType> {
-    //     let func = self.clause.func.as_ref()?;
-    //     let func_name = func.name.to_string();
-    //     let func_def = self.functions().find(|f| f.function_name() == func_name)?;
-    //     func_def.parameter_types().get(func.arg).copied()
-    // }
+    pub fn expected_data_type(&self) -> Option<schema::DataType> {
+        let func = self.clause.func.as_ref()?;
+        let func_name = func.name.to_string();
+        let func_def = self.functions().find(|f| f.function_name() == func_name)?;
+        func_def.parameter_types().get(func.arg).copied()
+    }
+
+    pub fn functions(&self) -> impl Iterator<Item = FunctionRef<'a>> {
+        self.spec()
+            .functions
+            .values()
+            .map(|func| FunctionRef::Spec(func))
+            .chain(
+                self.schema()
+                    .get_functions()
+                    .iter()
+                    .map(|func| FunctionRef::Schema(func)),
+            )
+            .filter(|func| match (func.return_type(), self.clause.kind) {
+                (schema::FuncReturnType::Scalar(_), ClauseKind::Select) => true,
+                _ => false,
+            })
+    }
 }
 
 #[derive(Debug)]

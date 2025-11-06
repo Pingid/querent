@@ -1,5 +1,5 @@
-use crate::complete::completion::Candidate;
-use crate::complete::completion::CandidateKind;
+use crate::complete::candidate::Candidate;
+use crate::complete::candidate::CandidateKind;
 use crate::complete::context::Context;
 use crate::complete::rank::Ranker;
 

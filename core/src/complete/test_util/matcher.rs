@@ -1,8 +1,8 @@
 use super::util::FieldSetFormatter;
 use super::util::fmt_list;
 use super::util::some_eq;
-use crate::complete::completion::Completion;
-use crate::complete::completion::CompletionKind;
+use crate::complete::types::Completion;
+use crate::complete::types::CompletionKind;
 
 /// Trait for implementing completion matchers.
 ///

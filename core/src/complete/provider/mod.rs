@@ -1,17 +1,14 @@
-use super::completion::CompletionBuilder;
-use super::context::Context;
+use crate::complete::Completer;
+use crate::complete::candidate::CandidateSet;
+use crate::complete::context::Context;
 
 mod column;
-mod function;
-mod helpers;
-mod keyword;
-mod operator;
-mod table;
+pub use column::*;
 
-pub fn complete(ctx: &mut Context<'_>, builder: &mut CompletionBuilder) {
-    keyword::complete(ctx, builder);
-    table::complete(ctx, builder);
-    column::complete(ctx, builder);
-    operator::complete(ctx, builder);
-    function::complete(ctx, builder);
+pub struct DefaultProviders;
+
+impl<'a> Completer<'a> for DefaultProviders {
+    fn complete(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
+        ColumnProvider.complete(ctx, b);
+    }
 }

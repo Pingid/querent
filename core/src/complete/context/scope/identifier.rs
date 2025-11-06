@@ -1,3 +1,4 @@
+use crate::ast;
 use crate::schema;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +52,16 @@ impl<'a> QualifiedIdent<'a> {
             schema: None,
             database: None,
         }
+    }
+
+    pub fn from_qualified_name(kind: IdentKind, text: &'a str, name: &ast::QualifiedName) -> Self {
+        let parts = name
+            .parts
+            .items
+            .iter()
+            .map(|part| part.span.as_str(text))
+            .collect::<Vec<_>>();
+        Self::from_slice(kind, &parts).unwrap()
     }
 
     /// Get the column name for a column identifier
@@ -143,6 +154,25 @@ impl<'a> QualifiedIdent<'a> {
             }
             _ => false,
         }
+    }
+
+    pub fn variants(&self) -> Vec<QualifiedIdent<'a>> {
+        let mut out = Vec::with_capacity(4);
+        let mut parts = vec![self.name];
+        out.push(QualifiedIdent::from_slice(self.kind, &parts).unwrap());
+        if let Some(p) = self.parent {
+            parts.insert(0, p);
+            out.push(QualifiedIdent::from_slice(self.kind, &parts).unwrap());
+        }
+        if let Some(s) = self.schema {
+            parts.insert(0, s);
+            out.push(QualifiedIdent::from_slice(self.kind, &parts).unwrap());
+        }
+        if let Some(d) = self.database {
+            parts.insert(0, d);
+            out.push(QualifiedIdent::from_slice(self.kind, &parts).unwrap());
+        }
+        out
     }
 
     pub fn ident_variants(&self) -> Vec<String> {

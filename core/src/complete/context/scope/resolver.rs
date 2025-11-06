@@ -1,8 +1,8 @@
 use crate::ast::AstNode;
 use crate::ast::{self};
-use crate::complete::context::resolved::binding::*;
-use crate::complete::context::resolved::identifier::IdentKind;
-use crate::complete::context::resolved::identifier::QualifiedIdent;
+use crate::complete::context::scope::binding::*;
+use crate::complete::context::scope::identifier::IdentKind;
+use crate::complete::context::scope::identifier::QualifiedIdent;
 use crate::dialect::DialectSpec;
 use crate::schema;
 use crate::span::Loc;
@@ -13,13 +13,13 @@ pub struct ScopeGraphBuilder<'a, 'ast> {
     text: &'a str,
     schema: &'a schema::Cache,
     spec: &'a DialectSpec,
-    graph: ScopeGraph<'a>,
+    graph: Scope<'a>,
 }
 
 impl ScopeGraphBuilder<'_, '_> {
     pub fn build_graph<'a, 'ast>(
         text: &'a str, schema: &'a schema::Cache, spec: &'a DialectSpec, ast: &'ast Loc<ast::Query>,
-    ) -> ScopeGraph<'a> {
+    ) -> Scope<'a> {
         ScopeGraphBuilder::new(text, schema, spec, ast).resolve()
     }
 }
@@ -34,12 +34,12 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
             text,
             schema,
             spec,
-            graph: ScopeGraph::default(),
+            graph: Scope::default(),
         }
     }
 
     /// Resolves all CTEs, FROM clauses, and projections in the query
-    pub fn resolve(mut self) -> ScopeGraph<'a> {
+    pub fn resolve(mut self) -> Scope<'a> {
         self.resolve_cte();
         self.resolve_from();
         self.resolve_projected();
@@ -220,46 +220,82 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
         &self, name: &Loc<ast::QualifiedName>, alias: Option<&'a str>,
     ) -> Vec<Projection<'a>> {
         let column_name = self.column_name(name);
+
+        // Handle wildcard expansion
         if column_name.is_wildcard() {
-            return self
-                .graph
-                .available()
-                .filter(|p| match (column_name.table(), p.label.table()) {
-                    (Some(table), Some(label_table)) => table == label_table,
-                    _ => true,
-                })
-                .map(|p| *p)
-                .collect::<Vec<_>>();
+            return self.expand_wildcard(&column_name);
         }
 
-        let projection = column_name
-            .table()
-            .and_then(|table| self.graph.get_bind_by_alias(table))
-            .or_else(|| self.find_binding_by_column_name(column_name.name()))
-            .and_then(|(_, bind)| {
-                bind.available
-                    .iter()
-                    .find(|p| p.label.name() == column_name.name())
-                    .and_then(|p| p.project(column_name, alias))
-            });
-
-        projection
-            .or_else(|| match self.graph.bindings.len() {
-                0 => self
-                    .lookup_schema_columns(&column_name)
-                    .next()
-                    .map(|c| Projection {
-                        label: QualifiedIdent::from(c),
-                        kind: ProjectionKind::Column {
-                            source: None,
-                            schema_column: Some(c),
-                        },
-                    }),
-                _ => None,
-            })
-            .or_else(|| self.synthetic_projection_column(alias, column_name))
+        // Try to resolve from existing bindings, schema, or create synthetic
+        self.resolve_single_column(&column_name, alias)
             .map(|p| vec![p])
             .unwrap_or_default()
+    }
+
+    /// Expands wildcard projections (e.g., *, table.*)
+    fn expand_wildcard(&self, column_name: &QualifiedIdent<'a>) -> Vec<Projection<'a>> {
+        self.graph
+            .available()
+            .filter(|p| match (column_name.table(), p.label.table()) {
+                (Some(table), Some(label_table)) => table == label_table,
+                _ => true,
+            })
+            .map(|p| *p)
+            .collect()
+    }
+
+    /// Resolves a single column from bindings, schema, or creates a synthetic projection
+    fn resolve_single_column(
+        &self, column_name: &QualifiedIdent<'a>, alias: Option<&'a str>,
+    ) -> Option<Projection<'a>> {
+        // First, try to resolve from existing bindings
+        self.resolve_from_bindings(column_name, alias)
+            // If no bindings, try schema lookup (only when no bindings exist)
+            .or_else(|| self.resolve_from_schema_if_no_bindings(column_name))
+            // Finally, create a synthetic projection
+            .or_else(|| self.synthetic_projection_column(alias, *column_name))
+    }
+
+    /// Attempts to resolve a column from existing table bindings
+    fn resolve_from_bindings(
+        &self, column_name: &QualifiedIdent<'a>, alias: Option<&'a str>,
+    ) -> Option<Projection<'a>> {
+        // If column has a table qualifier, look for that specific binding
+        let binding = if let Some(table) = column_name.table() {
+            self.graph.get_bind_by_alias(table)
+        } else {
+            // Otherwise, find any binding that has this column
+            self.find_binding_by_column_name(column_name.name())
+        };
+
+        // Find the matching column in the binding's available projections
+        binding.and_then(|(_, bind)| {
+            bind.available
+                .iter()
+                .find(|p| p.label.name() == column_name.name())
+                .and_then(|p| p.project(*column_name, alias))
+        })
+    }
+
+    /// Resolves from schema when no table bindings exist (for simple queries without FROM)
+    fn resolve_from_schema_if_no_bindings(
+        &self, column_name: &QualifiedIdent<'a>,
+    ) -> Option<Projection<'a>> {
+        // Only attempt schema lookup if there are no bindings
+        // (e.g., "SELECT title" without FROM clause)
+        if self.graph.bindings.is_empty() {
+            self.lookup_schema_columns(column_name)
+                .next()
+                .map(|c| Projection {
+                    label: QualifiedIdent::from(c),
+                    kind: ProjectionKind::Column {
+                        source: None,
+                        schema_column: Some(c),
+                    },
+                })
+        } else {
+            None
+        }
     }
 
     /// Resolves literal value projections (e.g., 1, 'text', true)
@@ -341,7 +377,7 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
     ) -> Option<Projection<'a>> {
         alias.or_else(|| Some(name.name())).map(|label| Projection {
             label: QualifiedIdent::from_str(IdentKind::Column, label),
-            kind: ProjectionKind::Unresolved,
+            kind: ProjectionKind::Unknown,
         })
     }
 
@@ -465,17 +501,17 @@ mod tests {
     use super::*;
     use crate::complete::context::ParsedStatement;
     use crate::schema::CacheBuilder;
-    use crate::test_utils::users_posts_schema;
+    use crate::test_utils::posts_schema;
+    use crate::test_utils::users_schema;
 
-    fn resolve_with_schema(sql: &str, schema: schema::Cache) -> ScopeGraph<'_> {
+    fn resolve_with_schema(sql: &str, schema: schema::Cache) -> Scope<'_> {
         let mut stmt = ParsedStatement::new_ansi_static(sql).unwrap();
         stmt.schema = Box::leak(Box::new(schema));
-        ScopeGraph::from(&stmt)
+        Scope::from(&stmt)
     }
 
     fn assert_projected_in_scope(
-        scope: &ScopeGraph<'_>, sql: &str, projected: &[&str],
-        data_types: &[Option<schema::DataType>],
+        scope: &Scope<'_>, sql: &str, projected: &[&str], data_types: &[Option<schema::DataType>],
     ) {
         let actual_columns: Vec<_> = scope.projected.iter().map(|c| c.label.name()).collect();
         // println!("actual_columns: {:#?}", scope.projected);
@@ -496,7 +532,7 @@ mod tests {
     }
 
     fn assert_projected(sql: &str, projected: &[&str], data_types: &[Option<schema::DataType>]) {
-        let scope = resolve_with_schema(sql, users_posts_schema());
+        let scope = resolve_with_schema(sql, users_schema().combine(posts_schema()));
         assert_projected_in_scope(&scope, sql, projected, data_types);
     }
 

@@ -1,7 +1,8 @@
-use crate::complete::completion::Completion;
-use crate::complete::completion::CompletionKind;
-use crate::complete::completion::InsertTextFormat;
 use crate::complete::context::QualifiedIdent;
+use crate::complete::types::Completion;
+use crate::complete::types::CompletionKind;
+use crate::complete::types::Completions;
+use crate::complete::types::InsertTextFormat;
 use crate::schema;
 use crate::span::Span;
 
@@ -14,10 +15,18 @@ impl<'a> CandidateSet<'a> {
     pub fn push(&mut self, candidate: Candidate<'a>) {
         self.items.push(candidate);
     }
-    pub fn completions(mut self) -> Vec<Completion> {
-        self.items
-            .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-        self.items.into_iter().map(|c| c.completion).collect()
+    pub fn completions(mut self) -> Completions {
+        self.items.sort_by(|a, b| {
+            b.score
+                .total_cmp(&a.score)
+                .then_with(|| a.completion.label.cmp(&b.completion.label))
+        });
+        Completions {
+            items: self.items.into_iter().map(|c| c.completion).collect(),
+        }
+    }
+    pub fn empty(self) -> Completions {
+        Completions { items: vec![] }
     }
 }
 
@@ -45,6 +54,13 @@ impl<'a> Candidate<'a> {
             score: 0.0,
             kind,
         }
+    }
+
+    pub fn column(
+        label: QualifiedIdent<'a>, ident: QualifiedIdent<'a>, dt: Option<schema::DataType>,
+    ) -> Self {
+        Self::new(CandidateKind::Column(ColumnCandidate { label, ident, dt }))
+            .label(label.to_string())
     }
 
     pub fn label(mut self, label: impl Into<String>) -> Self {
@@ -110,9 +126,12 @@ impl<'a> CandidateKind<'a> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ColumnCandidate<'a> {
+    /// The completion label
+    pub label: QualifiedIdent<'a>,
+    /// The identifier of the column
     pub ident: QualifiedIdent<'a>,
+    /// The data type of the column
     pub dt: Option<schema::DataType>,
-    pub scope_alias: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Copy)]

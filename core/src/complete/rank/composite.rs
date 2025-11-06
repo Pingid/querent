@@ -1,4 +1,4 @@
-use crate::complete::completion::Candidate;
+use crate::complete::candidate::Candidate;
 use crate::complete::context::Context;
 use crate::complete::rank::Ranker;
 
@@ -18,6 +18,11 @@ impl<'a, R: Ranker<'a>> CompositeRanker<R> {
 }
 
 impl<'a, R: Ranker<'a>> Ranker<'a> for CompositeRanker<R> {
+    fn prepare(&mut self, ctx: &Context<'a>) {
+        for (r, _) in &mut self.parts {
+            r.prepare(ctx);
+        }
+    }
     fn score(&self, ctx: &Context<'a>, cand: &Candidate<'a>) -> f32 {
         self.parts.iter().map(|(r, w)| w * r.score(ctx, cand)).sum()
     }

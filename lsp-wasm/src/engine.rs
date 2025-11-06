@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use querent_core::complete::Engine;
-use querent_core::complete::completion::Completion;
+use querent_core::complete::engine::Engine;
+use querent_core::complete::types::Completion;
 use querent_core::dialect::DialectKind;
 use querent_core::schema;
 use querent_lsp::CompletionProvider;

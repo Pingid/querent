@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::lock::Mutex;
-use querent_core::complete::completion::Completion;
-use querent_core::complete::completion::CompletionKind;
-use querent_core::complete::completion::InsertTextFormat;
+use querent_core::complete::types::Completion;
+use querent_core::complete::types::CompletionKind;
+use querent_core::complete::types::InsertTextFormat;
 use querent_core::doc::Content;
 use serde_json::json;
 

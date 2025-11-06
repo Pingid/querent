@@ -1,12 +1,12 @@
 use crate::ast;
 use crate::ast::AstNode;
-use crate::complete::context::NamePath;
+use crate::complete::context::IdentKind;
 use crate::complete::context::ParsedStatement;
+use crate::complete::context::QualifiedIdent;
 use crate::lex::Keyword;
 use crate::lex::Token;
 use crate::lex::TokenKind;
 use crate::span::Loc;
-use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Clause<'a> {
@@ -84,7 +84,7 @@ impl<'a> From<&ParsedStatement<'a>> for ClauseKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionParam<'a> {
-    pub name: NamePath<'a>,
+    pub name: QualifiedIdent<'a>,
     pub arg: usize,
 }
 
@@ -101,7 +101,11 @@ impl<'a> From<&ParsedStatement<'a>> for Option<FunctionParam<'a>> {
                     }
                     let arg = get_delimited_list_item_index(&n.args, params.cursor);
                     Some(FunctionParam {
-                        name: NamePath::from_qualified_name(params.text, &n.name),
+                        name: QualifiedIdent::from_qualified_name(
+                            IdentKind::Function,
+                            params.text,
+                            &n.name,
+                        ),
                         arg,
                     })
                 }
@@ -135,12 +139,15 @@ impl<'a> From<&ParsedStatement<'a>> for Option<ClausePosition> {
                 ast::Expr::Name(_) => Some(ClausePosition::ExprLeft),
                 ast::Expr::Binary(bin) => match params.containing_cursor(bin.left.span) {
                     true => Some(ClausePosition::ExprLeft),
-                    false => None,
+                    false => Some(ClausePosition::ExprRight),
                 },
-                exp => {
-                    println!("\n\nexpr: {:#?}", exp);
+                ast::Expr::FunctionCall(func) => {
+                    if params.containing_cursor(func.args.span) {
+                        return Some(ClausePosition::ExprLeft);
+                    }
                     None
                 }
+                _ => None,
             };
         }
         params.statement_node().find_map_rev(|node| {
@@ -250,14 +257,6 @@ mod tests {
         assert_clause!("SELECT * FROM users WHERE^", kind, Where);
         assert_clause!("SELECT * FROM users WHERE ^", kind, Where);
         assert_clause!("SELECT * FROM users GROUP BY ^", kind, GroupBy);
-        // assert_kind(
-        //     ClauseKind::Having,
-        //     "SELECT * FROM users GROUP BY id HAVING ^",
-        // );
-        // assert_kind(ClauseKind::Window, "SELECT * FROM users WINDOW ^");
-        // assert_kind(ClauseKind::OrderBy, "SELECT * FROM users ORDER BY ^");
-        // assert_kind(ClauseKind::Using, "SELECT * FROM users JOIN posts USING
-        // ^");
     }
 
     #[test]

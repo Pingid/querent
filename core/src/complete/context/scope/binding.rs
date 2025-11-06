@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
 use crate::complete::context::IdentKind;
-use crate::complete::context::resolved::identifier::QualifiedIdent;
+use crate::complete::context::scope::identifier::QualifiedIdent;
 use crate::dialect::SpecFunction;
 use crate::schema;
 
 #[derive(Debug, Default)]
-pub struct ScopeGraph<'a> {
+pub struct Scope<'a> {
     pub projected: Vec<Projection<'a>>,
     pub bindings: Vec<(BindId, Bind<'a>)>,
     pub by_name: HashMap<&'a str, BindId>,
 }
 
-impl<'a> ScopeGraph<'a> {
+impl<'a> Scope<'a> {
     pub fn bind(
         &mut self, alias: Option<&'a str>, kind: BindKind<'a>, available: Vec<Projection<'a>>,
     ) -> BindId {
@@ -74,14 +74,14 @@ pub struct Bind<'a> {
 pub enum BindKind<'a> {
     Cte {
         name: &'a str,
-        scope: Box<ScopeGraph<'a>>,
+        scope: Box<Scope<'a>>,
     },
     Base {
         name: QualifiedIdent<'a>,
         table: Option<&'a schema::Table>,
     },
     Sub {
-        scope: Box<ScopeGraph<'a>>,
+        scope: Box<Scope<'a>>,
     },
     Func {
         name: &'a str,
@@ -109,7 +109,7 @@ impl<'a> Projection<'a> {
             ProjectionKind::ScalarFunction { alias, .. } => alias.is_some(),
             ProjectionKind::Literal { alias, .. } => alias.is_some(),
             ProjectionKind::Expression { alias, .. } => alias.is_some(),
-            ProjectionKind::Unresolved => true,
+            ProjectionKind::Unknown => true,
         }
     }
 
@@ -184,8 +184,8 @@ pub enum ProjectionKind<'a> {
         data_type: Option<schema::DataType>,
     },
 
-    /// Unresolved identifier (e.g., col1, col2, etc.)
-    Unresolved,
+    /// Unknown identifier (e.g., col1, col2, etc.)
+    Unknown,
 }
 
 impl<'a> Projection<'a> {
@@ -196,7 +196,7 @@ impl<'a> Projection<'a> {
             ProjectionKind::ScalarFunction { return_type, .. } => return_type.clone(),
             ProjectionKind::Literal { data_type, .. } => data_type.clone(),
             ProjectionKind::Expression { data_type, .. } => data_type.clone(),
-            ProjectionKind::Unresolved => None,
+            ProjectionKind::Unknown => None,
         }
     }
     pub fn schema_column(&self) -> Option<&'a schema::Column> {

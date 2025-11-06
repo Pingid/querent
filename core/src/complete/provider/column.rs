@@ -1,16 +1,9 @@
-use std::borrow::Cow;
-use std::collections::HashSet;
-
 use crate::complete::Completer;
-use crate::complete::completion::Candidate;
-use crate::complete::completion::CandidateKind;
-use crate::complete::completion::CandidateSet;
-use crate::complete::completion::ColumnCandidate;
+use crate::complete::candidate::Candidate;
+use crate::complete::candidate::CandidateSet;
 use crate::complete::context::ClausePosition;
 use crate::complete::context::Context;
 use crate::complete::context::Location;
-use crate::complete::context::Projection;
-use crate::complete::context::ProjectionKind;
 use crate::complete::context::QualifiedIdent;
 use crate::schema;
 
@@ -18,20 +11,13 @@ pub struct ColumnProvider;
 impl<'a> Completer<'a> for ColumnProvider {
     fn complete(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
         let cols = discover_columns(ctx);
-        let labeler = DefaultLabelRenderer;
-        let detailr = DefaultDetailRenderer;
+        let detailer = DefaultDetailRenderer;
 
         for col in cols {
-            let base = Candidate::new(CandidateKind::Column(ColumnCandidate {
-                dt: col.dt,
-                scope_alias: col.source_alias,
-                ident: col.ident,
-            }));
-            let detail = detailr.detail(ctx, &col);
-            let base = base.detail(detail);
-
-            for label in labeler.labels(ctx, &col) {
-                b.push(base.clone().label(label.into_owned()));
+            for label in col.ident.variants() {
+                b.push(
+                    Candidate::column(label, col.ident, col.dt).detail(detailer.detail(ctx, &col)),
+                );
             }
         }
     }
@@ -44,7 +30,7 @@ impl<'a> Completer<'a> for ColumnProvider {
 fn should_complete<'a>(ctx: &Context<'a>) -> bool {
     use ClausePosition as CP;
     use Location as L;
-    match (&ctx.cursor.location, ctx.clause.pos) {
+    match (&ctx.cursor().location, ctx.clause().pos) {
         // Keyword no space
         (L::Keyword(_), _) => return false,
         // After a space and an ident
@@ -58,16 +44,18 @@ fn should_complete<'a>(ctx: &Context<'a>) -> bool {
 #[derive(Debug, Clone)]
 struct LogicalColumn<'a> {
     dt: Option<schema::DataType>,
-    source_alias: Option<&'a str>, // table/cte alias in scope
-    ident: QualifiedIdent<'a>,     // for rendering variants
+    ident: QualifiedIdent<'a>, // for rendering variants
 }
 
 fn discover_columns<'a>(ctx: &Context<'a>) -> Vec<LogicalColumn<'a>> {
     let available_columns = ctx
-        .resolved_scope()
+        .scope()
         .available()
         .filter(|p| p.is_referenceable())
-        .map(|p| map_projection_to_logical(*p))
+        .map(|p| LogicalColumn {
+            dt: p.data_type(),
+            ident: p.label,
+        })
         .collect::<Vec<_>>();
 
     if available_columns.len() == 0 {
@@ -77,69 +65,11 @@ fn discover_columns<'a>(ctx: &Context<'a>) -> Vec<LogicalColumn<'a>> {
             .into_iter()
             .map(|c| LogicalColumn {
                 dt: Some(c.data_type),
-                source_alias: c.table_name.as_ref().map(|s| s.as_str()),
                 ident: QualifiedIdent::from(c),
             })
             .collect::<Vec<_>>();
     }
     available_columns
-}
-
-fn map_projection_to_logical<'a>(p: Projection<'a>) -> LogicalColumn<'a> {
-    let ident = match p.kind {
-        ProjectionKind::Column { schema_column, .. } => schema_column.map(QualifiedIdent::from),
-        ProjectionKind::TableFunction { .. } => None,
-        ProjectionKind::ScalarFunction { .. }
-        | ProjectionKind::Literal { .. }
-        | ProjectionKind::Expression { .. }
-        | ProjectionKind::Unresolved => None,
-    };
-
-    LogicalColumn {
-        dt: p.data_type(),
-        source_alias: p.label.table(),
-        ident: p.label,
-    }
-}
-
-trait ColumnLabelRenderer {
-    fn labels<'a>(&self, ctx: &Context<'a>, col: &LogicalColumn<'a>) -> Vec<Cow<'a, str>>;
-}
-
-struct DefaultLabelRenderer;
-
-impl ColumnLabelRenderer for DefaultLabelRenderer {
-    fn labels<'a>(&self, ctx: &Context<'a>, col: &LogicalColumn<'a>) -> Vec<Cow<'a, str>> {
-        let mut out = Vec::with_capacity(4);
-
-        // Unqualified
-        out.push(Cow::Borrowed(col.ident.name()));
-
-        // alias.col
-        if let Some(a) = col.source_alias {
-            out.push(Cow::Owned(format!("{a}.{}", col.ident.name())));
-        }
-
-        // table.col (if table is known & not equal to alias)
-        if let Some(t) = col.ident.table() {
-            out.push(Cow::Owned(format!("{t}.{}", col.ident.name())));
-        }
-
-        // schema.table.col
-        if let (Some(s), Some(t)) = (col.ident.schema(), col.ident.table()) {
-            out.push(Cow::Owned(format!("{s}.{t}.{}", col.ident.name())));
-        }
-
-        // Optional: database.schema.table.col (if you support it)
-        // if let (Some(d), Some(s), Some(t)) = (col.ident_parts.database, col.ident_parts.schema, col.ident_parts.table) {
-        //     out.push(Cow::Owned(format!("{d}.{s}.{t}.{}", col.ident_parts.column)));
-        // }
-
-        // Simple dedup (alias==table etc.)
-        let mut seen = HashSet::with_capacity(out.len());
-        out.retain(|l| seen.insert(l.as_ref().to_string()));
-        out
-    }
 }
 
 trait ColumnDetailRenderer {
@@ -173,17 +103,13 @@ mod tests {
     use super::*;
     use crate::dialect::ansi;
     use crate::test_complete;
-    use crate::test_util::get_caret_cursor;
+    use crate::test_utils::get_caret_cursor;
 
     fn assert_not_complete(input: &str) {
         let (sql, cursor) = get_caret_cursor(input);
         let schema = schema::Cache::default();
         let ctx = Context::build(&ansi::SPEC, &schema, &sql, cursor).unwrap();
         let should_complete = should_complete(&ctx);
-        if should_complete {
-            println!("clause: {:#?}", ctx.clause);
-            println!("cursor: {:#?}", ctx.cursor);
-        }
         assert!(!should_complete, "should not complete for: {input}");
     }
 

@@ -12,7 +12,7 @@ pub struct Cursor<'txt> {
     /// The location of the cursor.
     pub location: Location,
     /// The text before the cursor. Empty if proceding a space.
-    pub fragment: String,
+    pub fragment: &'txt str,
     /// The span into text to replace.
     pub replace: Span,
     /// The tokens from the start of the statement to the cursor.
@@ -66,7 +66,7 @@ pub fn detect_cursor<'txt>(
         return Cursor {
             position,
             location: Location::Start,
-            fragment: String::new(),
+            fragment: "",
             replace: Span::new(position, position),
             preceding: vec![],
             current_keyword: None,
@@ -95,7 +95,7 @@ pub fn detect_cursor<'txt>(
         return Cursor {
             position,
             location: Location::Start,
-            fragment: String::new(),
+            fragment: "",
             replace: Span::new(position, position),
             preceding: vec![],
             current_keyword: None,
@@ -118,15 +118,15 @@ pub fn detect_cursor<'txt>(
 
     let (fragment, replace) = if !after_space {
         match token.kind {
-            TokenKind::Identifier => (token.text.to_string(), token.span),
+            TokenKind::Identifier => (token.text, token.span),
             TokenKind::IdentifierQuoted(q) => (
-                q.strip_quotes(token.text).to_string(),
+                q.strip_quotes(token.text),
                 (token.span.start + 1..token.span.end - 1).into(),
             ),
-            _ => (String::new(), Span::new(position, position)),
+            _ => ("", Span::new(position, position)),
         }
     } else {
-        (String::new(), Span::new(position, position))
+        ("", Span::new(position, position))
     };
 
     let mut preceding = Vec::new();
@@ -179,7 +179,8 @@ pub fn detect_cursor<'txt>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::ansi_lex;
+    use crate::dialect::ansi;
+    use crate::lex::lex;
     use crate::test_utils::get_caret_cursor;
 
     #[test]
@@ -248,7 +249,7 @@ mod tests {
     fn ansi_detect_cursor(sql: &str) -> Cursor<'static> {
         let (text, pos) = get_caret_cursor(sql);
         let text_static: &'static str = Box::leak(text.to_string().into_boxed_str());
-        let tokens = ansi_lex(text_static);
+        let tokens = lex(&ansi::SPEC, text_static);
         detect_cursor(text_static, &tokens, pos)
     }
 }
