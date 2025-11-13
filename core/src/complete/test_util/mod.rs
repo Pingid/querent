@@ -14,7 +14,7 @@ mod v2;
 pub use matcher::*;
 pub use schemas::*;
 pub use util::*;
-
+pub use v2::*;
 /// A test scenario for validating SQL completion functionality.
 ///
 /// This struct encapsulates all the components needed to test SQL completions,
@@ -56,7 +56,7 @@ impl TestScenario {
     }
 
     #[track_caller]
-    pub fn run<'a>(&'a self, mut completer: impl Completer<'a> + 'a) -> Vec<Completion> {
+    pub fn run<'a>(&'a self, mut completer: impl Completer + 'a) -> Vec<Completion> {
         let mut results = vec![];
         for (sql, cursor) in &self.values {
             let schema = &self.schema;
@@ -139,45 +139,24 @@ impl TestScenario {
     }
 }
 
-#[derive(Default)]
-pub struct CompleterSet<'a> {
-    items: Vec<Box<dyn Completer<'a> + 'a>>,
+#[derive(Debug, Default)]
+pub struct CompleterSet {
+    items: Vec<Box<dyn Completer>>,
 }
 
-impl<'a> CompleterSet<'a> {
-    pub fn add<P: Completer<'a> + Default + 'a>(mut self) -> Self {
+impl CompleterSet {
+    pub fn add<P: Completer + Default + 'static>(mut self) -> Self {
         self.items.push(Box::new(P::default()));
         self
     }
 }
 
-impl<'a> Completer<'a> for CompleterSet<'a> {
-    fn complete(&mut self, ctx: &mut Context<'a>, candidates: &mut CandidateSet<'a>) {
+impl Completer for CompleterSet {
+    fn complete<'a>(&mut self, ctx: &mut Context<'a>, candidates: &mut CandidateSet<'a>) {
         for item in self.items.iter_mut() {
             if item.should_complete(ctx) {
                 item.complete(ctx, candidates);
             }
-        }
-    }
-
-    #[cfg(test)]
-    fn debug_scores(&self) -> Option<std::collections::HashMap<String, Vec<(String, f32, f32)>>> {
-        // Collect debug scores from all completers that have them
-        let mut all_scores = std::collections::HashMap::new();
-        for item in &self.items {
-            if let Some(scores) = item.debug_scores() {
-                for (label, ranker_scores) in scores {
-                    all_scores
-                        .entry(label)
-                        .or_insert_with(Vec::new)
-                        .extend(ranker_scores);
-                }
-            }
-        }
-        if all_scores.is_empty() {
-            None
-        } else {
-            Some(all_scores)
         }
     }
 }

@@ -261,6 +261,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "docloom"
+version = "0.0.1"
+source = "git+https://github.com/pingid/docloom.git?rev=bde8952#bde8952248fd2c35deb6e9f003a808db11c44f80"
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1082,6 +1087,7 @@ name = "querent-core"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "docloom",
  "pat",
  "phf",
  "phf_codegen",

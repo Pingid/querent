@@ -1,9 +1,6 @@
 use crate::complete::Completer;
 use crate::complete::candidate::Candidate;
-use crate::complete::candidate::CandidateKind;
 use crate::complete::candidate::CandidateSet;
-use crate::complete::candidate::ColumnCandidate;
-use crate::complete::candidate::TableCandidate;
 use crate::complete::candidate::Score;
 use crate::complete::context::Context;
 use crate::complete::rank::composite::CompositeRanker;
@@ -16,56 +13,30 @@ mod composite;
 mod keyword;
 mod table_qualifier;
 
-pub trait Ranker<'a> {
-    fn prepare(&mut self, _ctx: &Context<'a>) {}
-    fn score(&self, ctx: &Context<'a>, cand: &Candidate<'a>) -> f32;
-
-    #[cfg(test)]
-    fn debug_scores(&self) -> std::collections::HashMap<String, Vec<(String, f32, f32)>> {
-        std::collections::HashMap::new()
-    }
+pub trait Ranker {
+    type State<'ctx>;
+    fn init_state<'ctx>(&mut self, ctx: &Context<'ctx>) -> Self::State<'ctx>;
+    fn score<'ctx>(
+        &self, cand: &Candidate<'ctx>, state: &mut Self::State<'ctx>, ctx: &Context<'ctx>,
+    ) -> f32;
 }
 
-impl<'a, T: Ranker<'a>> Completer<'a> for T {
-    fn complete(&mut self, ctx: &mut Context<'a>, builder: &mut CandidateSet<'a>) {
-        self.prepare(ctx);
+impl<T: Ranker + std::fmt::Debug> Completer for T {
+    fn complete<'ctx>(&mut self, ctx: &mut Context<'ctx>, builder: &mut CandidateSet<'ctx>) {
+        // Create per-call state that can borrow from `ctx`
+        let mut state = self.init_state(ctx);
 
+        // Score each candidate using the same state
         for cand in builder.items.iter_mut() {
-            cand.score = Score(self.score(ctx, cand));
+            let score = self.score(cand, &mut state, ctx);
+            cand.score = Score(score);
         }
     }
 }
 
-/// Rankers that only score columns.
-pub trait ColumnRanker<'a> {
-    fn prepare(&mut self, _ctx: &Context<'a>) {}
-    fn score_column(
-        &self, ctx: &Context<'a>, cand: &Candidate<'a>, col: &ColumnCandidate<'a>,
-    ) -> f32;
-}
-
-impl<'a, R: ColumnRanker<'a>> Ranker<'a> for R {
-    fn prepare(&mut self, ctx: &Context<'a>) {
-        self.prepare(ctx);
-    }
-    fn score(&self, ctx: &Context<'a>, cand: &Candidate<'a>) -> f32 {
-        match cand.kind {
-            CandidateKind::Column(col) => self.score_column(ctx, cand, &col),
-            _ => 0.0,
-        }
-    }
-}
-
-/// Rankers that only score tables.
-pub trait TableRanker<'a> {
-    fn prepare(&mut self, _ctx: &Context<'a>) {}
-    fn score_table(
-        &self, ctx: &Context<'a>, cand: &Candidate<'a>, table: &TableCandidate<'a>,
-    ) -> f32;
-}
-
-pub struct DefaultRanker<'a>(CompositeRanker<any::AnyRanker<'a>>);
-impl<'a> Default for DefaultRanker<'a> {
+#[derive(Debug)]
+pub struct DefaultRanker(CompositeRanker<any::AnyRanker>);
+impl Default for DefaultRanker {
     fn default() -> Self {
         Self(
             CompositeRanker::new()
@@ -85,11 +56,14 @@ impl<'a> Default for DefaultRanker<'a> {
     }
 }
 
-impl<'a> Ranker<'a> for DefaultRanker<'a> {
-    fn prepare(&mut self, ctx: &Context<'a>) {
-        self.0.prepare(ctx);
+impl Ranker for DefaultRanker {
+    type State<'ctx> = <CompositeRanker<any::AnyRanker> as Ranker>::State<'ctx>;
+    fn init_state<'ctx>(&mut self, ctx: &Context<'ctx>) -> Self::State<'ctx> {
+        self.0.init_state(ctx)
     }
-    fn score(&self, ctx: &Context<'a>, cand: &Candidate<'a>) -> f32 {
-        self.0.score(ctx, cand)
+    fn score<'ctx>(
+        &self, cand: &Candidate<'ctx>, state: &mut Self::State<'ctx>, ctx: &Context<'ctx>,
+    ) -> f32 {
+        self.0.score(cand, state, ctx)
     }
 }

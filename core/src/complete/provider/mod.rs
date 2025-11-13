@@ -12,11 +12,11 @@ pub use function::*;
 pub use keyword::*;
 pub use table::*;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct DefaultProviders;
 
-impl<'a> Completer<'a> for DefaultProviders {
-    fn complete(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
+impl Completer for DefaultProviders {
+    fn complete<'a>(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
         if ColumnProvider.should_complete(ctx) {
             ColumnProvider.complete(ctx, b);
         }

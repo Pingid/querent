@@ -9,47 +9,59 @@ use crate::complete::rank::table_qualifier::*;
 
 macro_rules! any_ranker_impls {
     ( $( $Variant:ident ( $Ty:ty ) ),+ $(,)? ) => {
-        pub enum AnyRanker<'a> {
+        #[derive(Debug)]
+        pub enum AnyRanker {
             $( $Variant($Ty), )*
         }
 
-        impl<'a> Ranker<'a> for AnyRanker<'a> {
-            fn prepare(&mut self, ctx: &Context<'a>) {
+        pub enum AnyRankerState<'ctx> {
+            $( $Variant(<$Ty as Ranker>::State<'ctx>), )*
+        }
+
+        impl Ranker for AnyRanker {
+            type State<'ctx> = AnyRankerState<'ctx>;
+            fn init_state<'ctx>(&mut self, ctx: &Context<'ctx>) -> Self::State<'ctx> {
                 match self {
-                    $( AnyRanker::$Variant(r) => r.prepare(ctx), )*
+                    $( AnyRanker::$Variant(r) => AnyRankerState::$Variant(r.init_state(ctx)), )*
                 }
             }
-            fn score(&self, ctx: &Context<'a>, cand: &Candidate<'a>) -> f32 {
-                match self {
-                    $( AnyRanker::$Variant(r) => Ranker::score(r, ctx, cand), )*
+            fn score<'ctx>(
+                &self, cand: &Candidate<'ctx>, state: &mut Self::State<'ctx>, ctx: &Context<'ctx>,
+            ) -> f32 {
+                match (self, state) {
+                    $( ( AnyRanker::$Variant(r), AnyRankerState::$Variant(s) ) => {
+                        r.score(cand, s, ctx)
+                    } )*
+                    _ => 0.0,
                 }
             }
         }
 
-        impl<'a> std::fmt::Debug for AnyRanker<'a> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    $( AnyRanker::$Variant(r) => write!(f, "{:?}", r), )*
-                }
-            }
-        }
+        // impl std::fmt::Debug for AnyRanker {
+        //     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        //         match self {
+        //             $( AnyRanker::$Variant(r) => write!(f, "{:?}", r), )*
+        //         }
+        //     }
+        // }
 
         $(
-            impl<'a> From<$Ty> for AnyRanker<'a> {
+            impl From<$Ty> for AnyRanker {
                 fn from(r: $Ty) -> Self { AnyRanker::$Variant(r) }
             }
 
-            impl<'a> std::fmt::Debug for $Ty {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    write!(f, "{:?}", stringify!($Ty))
-                }
-            }
+            // // cheap Debug for leaf rankers if they don't have one
+            // impl std::fmt::Debug for $Ty {
+            //     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            //         write!(f, "{}", stringify!($Ty))
+            //     }
+            // }
         )*
     }
 }
 
 any_ranker_impls!(
-    ColumnSource(ColumnSourceRank<'a>),
+    ColumnSource(ColumnSourceRank),
     ColumnQualified(ColumnQualifiedRank),
     TableQualified(TableQualifiedRank),
     KindMatch(KindMatchRank),

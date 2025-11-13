@@ -4,9 +4,15 @@ use crate::complete::context::Context;
 use crate::complete::rank::Ranker;
 use crate::lex::Keyword;
 
+#[derive(Debug, Default)]
 pub struct KeywordMatchRank;
-impl<'a> Ranker<'a> for KeywordMatchRank {
-    fn score(&self, _: &Context<'_>, cand: &Candidate) -> f32 {
+impl Ranker for KeywordMatchRank {
+    type State<'ctx> = ();
+    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {
+    }
+    fn score<'ctx>(
+        &self, cand: &Candidate<'ctx>, _state: &mut Self::State<'ctx>, _ctx: &Context<'ctx>,
+    ) -> f32 {
         let CandidateKind::Keyword(Some(keyword)) = cand.kind else {
             return 0.0;
         };

@@ -1,20 +1,26 @@
 use std::collections::HashSet;
 
-use crate::complete::candidate::Candidate;
-use crate::complete::candidate::ColumnCandidate;
+use crate::complete::candidate::{Candidate, CandidateKind};
 use crate::complete::context::Context;
-use crate::complete::rank::ColumnRanker;
+use crate::complete::rank::Ranker;
 
 /// Prioritize columns from the same source as other projected columns.
 /// Slightly prefer columns not already projected.
-#[derive(Default)]
-pub struct ColumnSourceRank<'a> {
-    sources: Option<HashSet<&'a str>>,
-    projected: Option<Vec<(&'a str, Option<&'a str>)>>, // (column_name, table_name)
+#[derive(Debug, Default)]
+pub struct ColumnSourceRankState<'a> {
+    sources: HashSet<&'a str>,
+    projected: Vec<(&'a str, Option<&'a str>)>, // (column_name, table_name)
 }
 
-impl<'a> ColumnRanker<'a> for ColumnSourceRank<'a> {
-    fn prepare(&mut self, ctx: &Context<'a>) {
+#[derive(Debug, Default)]
+pub struct ColumnSourceRank;
+impl Ranker for ColumnSourceRank {
+    type State<'ctx>
+        = ColumnSourceRankState<'ctx>
+    where
+        Self: 'ctx;
+
+    fn init_state<'ctx>(&mut self, ctx: &Context<'ctx>) -> Self::State<'ctx> {
         let mut sources = HashSet::new();
         let mut projected = Vec::new();
         for p in ctx.scope().projected() {
@@ -26,28 +32,28 @@ impl<'a> ColumnRanker<'a> for ColumnSourceRank<'a> {
             }
             projected.push((p.label.name(), p.label.table()));
         }
-        self.sources = Some(sources);
-        self.projected = Some(projected);
+        ColumnSourceRankState { sources, projected }
     }
-    fn score_column(&self, _: &Context<'_>, _: &Candidate, col: &ColumnCandidate<'_>) -> f32 {
+    fn score<'ctx>(
+        &self, cand: &Candidate<'ctx>, state: &mut Self::State<'ctx>, _ctx: &Context<'ctx>,
+    ) -> f32 {
+        let CandidateKind::Column(col) = &cand.kind else {
+            return 0.0;
+        };
+
         // Get the table this column belongs to
         // For columns with aliases (like u.name where u is an alias for users),
         // col.label.table() gives us the alias "u"
         let col_table = col.label.table().or(col.ident.table());
 
         // Check if this exact column (name + table) is already projected
-        let is_exact_match_projected =
-            self.projected
-                .as_ref()
-                .unwrap()
-                .iter()
-                .any(|(name, proj_table)| {
-                    *name == col.label.name() &&
+        let is_exact_match_projected = state.projected.iter().any(|(name, proj_table)| {
+            *name == col.label.name() &&
             // Check if tables match - either exact match or one is an alias of the other
             // When u.name is projected, proj_table is Some("u")
             // When checking u.name column, col_table is Some("u")
             *proj_table == col_table
-                });
+        });
 
         // If this exact qualified column is already projected, give it lower priority
         // but not too low - user might want to reference it again
@@ -56,16 +62,14 @@ impl<'a> ColumnRanker<'a> for ColumnSourceRank<'a> {
         }
 
         // Check if this column name is already projected (but possibly from different table)
-        let is_name_projected = self
+        let is_name_projected = state
             .projected
-            .as_ref()
-            .unwrap()
             .iter()
             .any(|(name, _)| *name == col.label.name());
 
         // Check if this column comes from a source that's already in use
         let from_used_source = if let Some(source) = col_table {
-            self.sources.as_ref().unwrap().contains(source)
+            state.sources.contains(source)
         } else {
             false
         };
@@ -73,7 +77,7 @@ impl<'a> ColumnRanker<'a> for ColumnSourceRank<'a> {
         match (
             is_name_projected,
             from_used_source,
-            self.sources.as_ref().unwrap().is_empty(),
+            state.sources.is_empty(),
         ) {
             // When no columns are projected yet or no sources identified, neutral score
             (_, _, true) => 0.7,

@@ -9,9 +9,10 @@ use crate::complete::context::QualifiedIdent;
 use crate::lex::Keyword;
 use crate::lex::TokenKind;
 
+#[derive(Debug, Default)]
 pub struct TableProvider;
-impl<'a> Completer<'a> for TableProvider {
-    fn complete(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
+impl Completer for TableProvider {
+    fn complete<'a>(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
         // Check if we're completing after a schema qualifier (e.g., "public.^")
         let qualifier = ctx.cursor().qualifier.as_ref();
 
@@ -48,7 +49,7 @@ impl<'a> Completer<'a> for TableProvider {
         }
     }
 
-    fn should_complete(&self, ctx: &Context<'a>) -> bool {
+    fn should_complete<'a>(&self, ctx: &Context<'a>) -> bool {
         match ctx.clause().kind {
             ClauseKind::From => match &ctx.cursor().location {
                 // After FROM/JOIN keyword with space, or after comma

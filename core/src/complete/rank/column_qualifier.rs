@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 
-use crate::complete::candidate::Candidate;
-use crate::complete::candidate::ColumnCandidate;
+use crate::complete::candidate::{Candidate, CandidateKind};
 use crate::complete::context::Context;
-use crate::complete::rank::ColumnRanker;
+use crate::complete::rank::Ranker;
 
 /// ### Prioritize unqualified names when:
 /// - There's only one table in the FROM clause
@@ -15,24 +14,20 @@ use crate::complete::rank::ColumnRanker;
 /// - The column exists in multiple tables (ambiguous)
 /// - The user has started typing a table name or alias followed by a dot
 /// - The query is complex with subqueries or CTEs.
-pub struct ColumnQualifiedRank {
+pub struct ColumnQualifiedRankState {
     prioritize_unqualified: bool,
     has_table_qualified_projections: bool,
 }
 
-impl Default for ColumnQualifiedRank {
-    fn default() -> Self {
-        Self {
+#[derive(Debug, Default)]
+pub struct ColumnQualifiedRank;
+impl Ranker for ColumnQualifiedRank {
+    type State<'ctx> = ColumnQualifiedRankState;
+    fn init_state<'ctx>(&mut self, ctx: &Context<'ctx>) -> Self::State<'ctx> {
+        let mut state = ColumnQualifiedRankState {
             prioritize_unqualified: true,
             has_table_qualified_projections: false,
-        }
-    }
-}
-
-impl<'a> ColumnRanker<'a> for ColumnQualifiedRank {
-    fn prepare(&mut self, ctx: &Context<'a>) {
-        self.prioritize_unqualified = true;
-        self.has_table_qualified_projections = false;
+        };
 
         // Check if we have any bindings (FROM clause tables)
         // If there are no bindings, we're in a query without FROM clause
@@ -51,14 +46,14 @@ impl<'a> ColumnRanker<'a> for ColumnQualifiedRank {
                 for p in projections {
                     if p.label.parent.is_some() {
                         // Found a table-qualified column in the existing projections
-                        self.prioritize_unqualified = false;
-                        self.has_table_qualified_projections = true;
-                        return;
+                        state.prioritize_unqualified = false;
+                        state.has_table_qualified_projections = true;
+                        return state;
                     }
                 }
                 // If we have projections but none are qualified, keep unqualified as priority
                 // This handles cases like "SELECT name, ^ FROM users" where name is unqualified
-                return;
+                return state;
             }
         }
 
@@ -66,14 +61,21 @@ impl<'a> ColumnRanker<'a> for ColumnQualifiedRank {
         let mut names = HashSet::new();
         for p in ctx.scope().available() {
             if !names.insert(p.label.name()) {
-                self.prioritize_unqualified = false;
-                return;
+                state.prioritize_unqualified = false;
+                return state;
             }
         }
+        state
     }
-    fn score_column(&self, _: &Context<'_>, _: &Candidate, col: &ColumnCandidate<'_>) -> f32 {
+    fn score<'ctx>(
+        &self, cand: &Candidate<'ctx>, state: &mut Self::State<'ctx>, _ctx: &Context<'ctx>,
+    ) -> f32 {
+        let CandidateKind::Column(col) = &cand.kind else {
+            return 0.0;
+        };
+        // let So
         // If we detected table-qualified names in existing projections
-        if self.has_table_qualified_projections {
+        if state.has_table_qualified_projections {
             // Prioritize table-qualified columns
             if col.label.parent.is_some() && col.label.schema.is_none() {
                 return 1.0; // Table-qualified only (e.g., users.name)
@@ -86,22 +88,22 @@ impl<'a> ColumnRanker<'a> for ColumnQualifiedRank {
 
         // Original logic for when no existing pattern is detected
         match (
-            self.prioritize_unqualified,
+            state.prioritize_unqualified,
             col.label.parent,
             col.label.schema,
             col.label.database,
         ) {
             // When prioritizing unqualified names
-            (true, None, None, _) => 1.0,           // Unqualified - highest
-            (true, Some(_), None, None) => 0.7,     // Table-qualified - still good
-            (true, _, Some(_), None) => 0.5,        // Schema-qualified - lower
-            (true, _, _, Some(_)) => 0.4,           // Database-qualified - lowest
+            (true, None, None, _) => 1.0,       // Unqualified - highest
+            (true, Some(_), None, None) => 0.7, // Table-qualified - still good
+            (true, _, Some(_), None) => 0.5,    // Schema-qualified - lower
+            (true, _, _, Some(_)) => 0.4,       // Database-qualified - lowest
             // When prioritizing qualified names
-            (false, Some(_), None, None) => 1.0,    // Table-qualified - highest
+            (false, Some(_), None, None) => 1.0, // Table-qualified - highest
             (false, Some(_), Some(_), None) => 0.8, // Schema.table-qualified
-            (false, Some(_), _, Some(_)) => 0.6,    // Database.schema.table-qualified
-            (false, None, None, _) => 0.5,          // Unqualified - still usable
-            (false, _, _, _) => 0.3,                // Other combinations
+            (false, Some(_), _, Some(_)) => 0.6, // Database.schema.table-qualified
+            (false, None, None, _) => 0.5,       // Unqualified - still usable
+            (false, _, _, _) => 0.3,             // Other combinations
         }
     }
 }

@@ -13,6 +13,7 @@ pat = { path = "../pat" }
 serde = { workspace = true, features = ["derive"], optional = true }
 smol_str = { version = "0.3.4", features = ["serde"] }
 ts-rs = { version = "11", optional = true }
+docloom = { git = "https://github.com/pingid/docloom.git", rev = "bde8952", optional = true }
 
 tracing = "0.1.41"
 
@@ -26,7 +27,7 @@ criterion = { version = "0.7", optional = true }
 [features]
 serde = ["dep:serde"]
 typescript = ["dep:ts-rs"]
-test-utils = []
+test-utils = ["dep:docloom"]
 bench = ["dep:reqwest", "dep:criterion"]
 
 [build-dependencies]

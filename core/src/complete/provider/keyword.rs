@@ -8,9 +8,10 @@ use crate::complete::context::Context;
 use crate::dialect::rule::Next;
 use crate::lex::Keyword;
 
+#[derive(Debug, Default)]
 pub struct KeywordProvider;
-impl<'a> Completer<'a> for KeywordProvider {
-    fn complete(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
+impl Completer for KeywordProvider {
+    fn complete<'a>(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
         for n in ctx.spec().resolve_follow_rules(&ctx.cursor().preceding) {
             b.push(n.to_candidate());
         }

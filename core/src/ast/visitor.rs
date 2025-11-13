@@ -313,7 +313,7 @@ impl<'a> Node<'a> {
     pub fn preorder(&'a self) -> impl Iterator<Item = Node<'a>> + 'a {
         let mut stack = vec![*self];
         std::iter::from_fn(move || {
-            while let Some(top) = stack.pop() {
+            if let Some(top) = stack.pop() {
                 let mut first_child: Option<Node<'a>> = None;
                 let mut rest: Vec<Node<'a>> = Vec::new();
                 let _ = top.walk_selective(&mut |ev| match ev {
@@ -334,9 +334,10 @@ impl<'a> Node<'a> {
                 if let Some(c) = first_child {
                     stack.push(c);
                 }
-                return Some(top);
+                Some(top)
+            } else {
+                None
             }
-            None
         })
     }
 

@@ -13,34 +13,24 @@ pub mod types;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_util;
 
-pub trait Completer<'a> {
-    fn complete(&mut self, ctx: &mut Context<'a>, builder: &mut CandidateSet<'a>);
+pub trait Completer: std::fmt::Debug {
+    fn complete<'a>(&mut self, ctx: &mut Context<'a>, builder: &mut CandidateSet<'a>);
 
-    fn should_complete(&self, _ctx: &Context<'a>) -> bool {
+    fn should_complete<'a>(&self, _ctx: &Context<'a>) -> bool {
         true
-    }
-
-    #[cfg(test)]
-    /// Returns a map of candidate labels to ranker name, score, and weight.
-    fn debug_scores(&self) -> Option<std::collections::HashMap<String, Vec<(String, f32, f32)>>> {
-        None
     }
 }
 
-#[derive(Default)]
-pub struct DefaultCompleter<'a> {
-    ranker: DefaultRanker<'a>,
+#[derive(Debug, Default)]
+pub struct DefaultCompleter {
+    ranker: DefaultRanker,
     providers: DefaultProviders,
 }
 
-impl<'a> Completer<'a> for DefaultCompleter<'a> {
-    fn complete(&mut self, ctx: &mut Context<'a>, builder: &mut CandidateSet<'a>) {
+impl Completer for DefaultCompleter {
+    fn complete<'a>(&mut self, ctx: &mut Context<'a>, builder: &mut CandidateSet<'a>) {
         self.providers.complete(ctx, builder);
         self.ranker.complete(ctx, builder);
-    }
-    #[cfg(test)]
-    fn debug_scores(&self) -> Option<std::collections::HashMap<String, Vec<(String, f32, f32)>>> {
-        self.ranker.debug_scores()
     }
 }
 

@@ -11,7 +11,9 @@ pub use parser::*;
 pub fn parse_statement<'txt, 'tok>(
     tape: impl Into<TokenTape<'txt, 'tok>>,
 ) -> Option<Loc<ast::Statement>>
-where 'txt: 'tok {
+where
+    'txt: 'tok,
+{
     let mut parser = Parser::new(tape);
     parser.parse_statement()
 }
@@ -19,7 +21,9 @@ where 'txt: 'tok {
 pub fn parse_statement_at_cursor<'txt, 'tok>(
     tape: impl Into<TokenTape<'txt, 'tok>>, cursor: usize,
 ) -> Option<Loc<ast::Statement>>
-where 'txt: 'tok {
+where
+    'txt: 'tok,
+{
     let mut tape = tape.into();
     advance_to_statement_start(&mut tape, cursor);
     parse_statement(tape)

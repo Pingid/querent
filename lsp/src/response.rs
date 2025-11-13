@@ -42,7 +42,9 @@ impl std::ops::DerefMut for LspResponse {
 
 impl LspResponse {
     pub fn result<R>(id: Option<u64>, result: R) -> Self
-    where R: Serialize {
+    where
+        R: Serialize,
+    {
         Self(LspResponseEnvelope::new(
             id,
             Some(serde_json::to_value(result).unwrap()),
@@ -51,7 +53,9 @@ impl LspResponse {
     }
 
     pub fn error<E>(id: Option<u64>, error: E) -> Self
-    where E: Serialize {
+    where
+        E: Serialize,
+    {
         Self(LspResponseEnvelope::new(
             id,
             None,

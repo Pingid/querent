@@ -7,15 +7,14 @@ use crate::complete::context::Location;
 use crate::complete::context::QualifiedIdent;
 use crate::schema;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ColumnProvider;
 
-impl<'a> Completer<'a> for ColumnProvider {
-    fn complete(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
+impl Completer for ColumnProvider {
+    fn complete<'a>(&mut self, ctx: &mut Context<'a>, b: &mut CandidateSet<'a>) {
         let cols = discover_columns(ctx);
         let detailer = DefaultDetailRenderer;
         let qualifier = ctx.cursor().qualifier.as_ref();
-
 
         for col in cols {
             // If we have a qualifier (e.g., "users.^" or "u.^"), filter columns
@@ -60,7 +59,7 @@ impl<'a> Completer<'a> for ColumnProvider {
         }
     }
 
-    fn should_complete(&self, ctx: &Context<'a>) -> bool {
+    fn should_complete<'a>(&self, ctx: &Context<'a>) -> bool {
         should_complete(ctx)
     }
 }
