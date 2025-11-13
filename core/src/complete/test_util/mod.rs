@@ -9,6 +9,7 @@ use crate::schema;
 mod matcher;
 mod schemas;
 mod util;
+mod v2;
 
 pub use matcher::*;
 pub use schemas::*;

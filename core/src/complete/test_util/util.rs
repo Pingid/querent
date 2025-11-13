@@ -55,14 +55,18 @@ pub fn fmt_debug_scores(
                         output.push_str("(no scores)");
                     } else {
                         output.push('\n');
-                        let total_score: f32 = ranker_scores.iter()
+                        let total_score: f32 = ranker_scores
+                            .iter()
                             .map(|(_, score, weight)| score * weight)
                             .sum();
 
                         for (ranker, score, weight) in ranker_scores {
                             output.push_str(&format!(
                                 "  - {}: {:.3} × {:.1} = {:.3}\n",
-                                ranker, score, weight, score * weight
+                                ranker,
+                                score,
+                                weight,
+                                score * weight
                             ));
                         }
                         output.push_str(&format!("  Total: {:.3}\n", total_score));
@@ -77,14 +81,19 @@ pub fn fmt_debug_scores(
 }
 
 /// Errors if the two options are Some and are not equal.
-pub fn some_eq<T: PartialEq + std::fmt::Debug>(
+pub fn some_eq_result<T: PartialEq + std::fmt::Debug>(
     label: &str, a: Option<T>, b: Option<T>,
 ) -> Result<(), String> {
+    match some_eq(&a, &b) {
+        true => Ok(()),
+        false => Err(format!("{} mismatch: expected {:?}, got {:?}", label, a, b)),
+    }
+}
+
+pub fn some_eq<T: PartialEq>(a: &Option<T>, b: &Option<T>) -> bool {
     match (a, b) {
-        (Some(x), Some(y)) if x != y => {
-            Err(format!("{} mismatch: expected {:?}, got {:?}", label, x, y))
-        }
-        _ => Ok(()),
+        (Some(x), Some(y)) => x == y,
+        _ => false,
     }
 }
 
