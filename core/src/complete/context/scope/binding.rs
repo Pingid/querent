@@ -5,11 +5,15 @@ use crate::complete::context::scope::identifier::QualifiedIdent;
 use crate::dialect::SpecFunction;
 use crate::schema;
 
+
 #[derive(Debug, Default)]
 pub struct Scope<'a> {
     pub projected: Vec<Projection<'a>>,
     pub bindings: Vec<(BindId, Bind<'a>)>,
     pub by_name: HashMap<&'a str, BindId>,
+    pub order_by: Vec<QualifiedIdent<'a>>,
+    pub group_by: Vec<QualifiedIdent<'a>>,
+    pub where_focus: Vec<&'a str>,
 }
 
 impl<'a> Scope<'a> {
@@ -51,6 +55,18 @@ impl<'a> Scope<'a> {
 
     pub fn projected(&self) -> &[Projection<'a>] {
         &self.projected
+    }
+
+    pub fn order_by(&self) -> &[QualifiedIdent<'a>] {
+        &self.order_by
+    }
+
+    pub fn group_by(&self) -> &[QualifiedIdent<'a>] {
+        &self.group_by
+    }
+
+    pub fn where_focus(&self) -> &[&'a str] {
+        &self.where_focus
     }
 
     pub fn ctes(&self) -> impl Iterator<Item = &'a str> {

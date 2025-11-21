@@ -275,12 +275,12 @@ const JOIN_AFTER_FROM_RULE: Rule = Rule(
     ]),
     &[
         Next::Kw(Kw::Join),
-        Next::Kw(Kw::Inner),
-        Next::Kw(Kw::Left),
-        Next::Kw(Kw::Right),
-        Next::Kw(Kw::Full),
-        Next::Kw(Kw::Cross),
-        Next::Kw(Kw::Natural),
+        Next::KwSeq(&[Kw::Inner, Kw::Join]),
+        Next::KwSeq(&[Kw::Left, Kw::Join]),
+        Next::KwSeq(&[Kw::Right, Kw::Join]),
+        Next::KwSeq(&[Kw::Full, Kw::Join]),
+        Next::KwSeq(&[Kw::Cross, Kw::Join]),
+        Next::KwSeq(&[Kw::Natural, Kw::Join]),
     ],
 );
 

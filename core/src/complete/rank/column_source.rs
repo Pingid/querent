@@ -1,8 +1,8 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::complete::candidate::Candidate;
 use crate::complete::candidate::CandidateKind;
-use crate::complete::context::Context;
+use crate::complete::context::{ClauseKind, Context, QualifiedIdent};
 use crate::complete::rank::Ranker;
 
 /// Prioritize columns from the same source as other projected columns.
@@ -11,6 +11,8 @@ use crate::complete::rank::Ranker;
 pub struct ColumnSourceRankState<'a> {
     sources: HashSet<&'a str>,
     projected: Vec<(&'a str, Option<&'a str>)>, // (column_name, table_name)
+    focus_ranks: HashMap<&'a str, usize>,
+    group_keys: Vec<QualifiedIdent<'a>>,
 }
 
 #[derive(Debug, Default)]
@@ -32,10 +34,25 @@ impl Ranker for ColumnSourceRank {
             }
             projected.push((p.label.name(), p.label.table()));
         }
-        ColumnSourceRankState { sources, projected }
+        let focus_ranks = ctx
+            .scope()
+            .where_focus()
+            .iter()
+            .enumerate()
+            .map(|(idx, alias)| (*alias, idx))
+            .collect();
+
+        let group_keys = ctx.scope().group_by().iter().copied().collect();
+
+        ColumnSourceRankState {
+            sources,
+            projected,
+            focus_ranks,
+            group_keys,
+        }
     }
     fn score<'ctx>(
-        &self, cand: &Candidate<'ctx>, state: &mut Self::State<'ctx>, _ctx: &Context<'ctx>,
+        &self, cand: &Candidate<'ctx>, state: &mut Self::State<'ctx>, ctx: &Context<'ctx>,
     ) -> f32 {
         let CandidateKind::Column(col) = &cand.kind else {
             return 0.0;
@@ -74,7 +91,7 @@ impl Ranker for ColumnSourceRank {
             false
         };
 
-        match (
+        let mut score = match (
             is_name_projected,
             from_used_source,
             state.sources.is_empty(),
@@ -89,7 +106,33 @@ impl Ranker for ColumnSourceRank {
             (false, true, false) => 1.0,
             // Not projected, from different source - still good score
             (false, false, false) => 0.6,
+        };
+
+        let matches_group_key = state
+            .group_keys
+            .iter()
+            .any(|group_key| group_key.matches(&col.ident));
+
+        if let Some(table) = col_table {
+            if let Some(rank) = state.focus_ranks.get(table) {
+                let bonus = match *rank {
+                    0 => 0.35,
+                    1 => 0.2,
+                    _ => 0.1,
+                };
+                score += bonus;
+            }
         }
+
+        if col.label.parent.is_some() && matches_group_key {
+            score -= 0.05;
+        }
+
+        if matches!(ctx.clause().kind, ClauseKind::Select) && matches_group_key {
+            score += 0.4;
+        }
+
+        score
     }
 }
 
@@ -108,14 +151,28 @@ mod tests {
         // other posts columns should be ranked higher than users columns,
         // but "title" itself should be ranked low since it's already selected
         ScenarioComp::default()
-            .completer(DefaultProviders)
             .completer(ColumnSourceRank)
+            .completer(DefaultProviders)
             .spec(ansi::SPEC.clone())
             .with((posts_schema(), users_schema()))
             .query("SELECT title, ^")
             .in_order(["posts.id", "users.id"])
             .in_order(["posts.content", "users.id"])
             .in_order(["users.id", "posts.title"])
+            .run();
+    }
+
+    #[test]
+    fn prioritizes_alias_from_where_clause() {
+        ScenarioComp::default()
+            .completer(ColumnSourceRank)
+            .completer(DefaultProviders)
+            .spec(ansi::SPEC.clone())
+            .with((users_schema(), posts_schema()))
+            .query(
+                "SELECT ^ FROM users u JOIN posts p ON u.id = p.id WHERE u.email = 'tom@gmail.com'",
+            )
+            .in_order(["u.email", "p.content"])
             .run();
     }
 }

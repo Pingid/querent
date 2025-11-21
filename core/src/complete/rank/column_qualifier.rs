@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use crate::complete::candidate::Candidate;
 use crate::complete::candidate::CandidateKind;
+use crate::complete::context::ClauseKind;
 use crate::complete::context::Context;
 use crate::complete::rank::Ranker;
 
@@ -36,7 +37,10 @@ impl Ranker for ColumnQualifiedRank {
         // since they'll be resolved from schema with table names added
         let has_bindings = !ctx.scope().bindings.is_empty();
 
-        if has_bindings {
+        let skip_projection_bias =
+            matches!(ctx.clause().kind, ClauseKind::Where | ClauseKind::OrderBy);
+
+        if has_bindings && !skip_projection_bias {
             // Check if any existing projections use table-qualified names
             // We only check for table qualification (parent) since schema/database
             // might be added during resolution even for originally unqualified names

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::ast::AstNode;
 use crate::ast::{self};
 use crate::complete::context::scope::binding::*;
@@ -13,27 +15,31 @@ pub struct ScopeGraphBuilder<'a, 'ast> {
     text: &'a str,
     schema: &'a schema::Cache,
     spec: &'a DialectSpec,
+    cursor: Option<usize>,
     graph: Scope<'a>,
 }
 
 impl ScopeGraphBuilder<'_, '_> {
     pub fn build_graph<'a, 'ast>(
-        text: &'a str, schema: &'a schema::Cache, spec: &'a DialectSpec, ast: &'ast Loc<ast::Query>,
+        text: &'a str, schema: &'a schema::Cache, spec: &'a DialectSpec,
+        ast: &'ast Loc<ast::Query>, cursor: Option<usize>,
     ) -> Scope<'a> {
-        ScopeGraphBuilder::new(text, schema, spec, ast).resolve()
+        ScopeGraphBuilder::new(text, schema, spec, ast, cursor).resolve()
     }
 }
 
 impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
     /// Creates a new scope resolver for the given query AST
     pub fn new(
-        text: &'a str, schema: &'a schema::Cache, spec: &'a DialectSpec, ast: &'ast Loc<ast::Query>,
+        text: &'a str, schema: &'a schema::Cache, spec: &'a DialectSpec,
+        ast: &'ast Loc<ast::Query>, cursor: Option<usize>,
     ) -> Self {
         Self {
             ast,
             text,
             schema,
             spec,
+            cursor,
             graph: Scope::default(),
         }
     }
@@ -42,7 +48,10 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
     pub fn resolve(mut self) -> Scope<'a> {
         self.resolve_cte();
         self.resolve_from();
+        self.resolve_where();
+        self.resolve_group_by();
         self.resolve_projected();
+        self.resolve_order_by();
         self.graph
     }
 
@@ -50,7 +59,7 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
     fn resolve_cte(&mut self) {
         for cte in ast::Cte::find_all_same_query(self.node()) {
             let name = self.extract_text(cte.item.name);
-            let scope = Self::build_graph(self.text, self.schema, self.spec, &cte.item.query);
+            let scope = Self::build_graph(self.text, self.schema, self.spec, &cte.item.query, None);
             let available = scope
                 .projected()
                 .iter()
@@ -67,11 +76,62 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
         }
     }
 
+    /// Collects columns referenced in GROUP BY clauses.
+    fn resolve_group_by(&mut self) {
+        for group_by in ast::GroupBy::find_all_same_query(self.node()) {
+            for item in group_by.items.items.iter() {
+                if let ast::GroupByItem::Expr(expr) = &item.item {
+                    if let ast::Expr::Name(name) = &expr.item {
+                        let ident = QualifiedIdent::from_qualified_name(
+                            IdentKind::Column,
+                            self.text,
+                            name,
+                        );
+                        if !self
+                            .graph
+                            .group_by
+                            .iter()
+                            .any(|existing| existing.matches(&ident))
+                        {
+                            self.graph.group_by.push(ident);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Resolves all table references in the FROM clause
     fn resolve_from(&mut self) {
         for factor in ast::TableFactor::find_all_same_query(self.node()) {
             self.resolve_table_factor(&factor);
         }
+    }
+
+    /// Detects aliases referenced in WHERE clause expressions to inform ranking.
+    fn resolve_where(&mut self) {
+        let clauses = ast::Where::find_all_same_query(self.node());
+        if clauses.is_empty() {
+            return;
+        }
+
+        let mut alias_counts: HashMap<&'a str, usize> = HashMap::new();
+        for clause in clauses {
+            self.collect_expr_aliases(&clause.expr, &mut alias_counts);
+        }
+
+        if alias_counts.is_empty() {
+            return;
+        }
+
+        let mut ranked: Vec<(&'a str, usize)> = alias_counts.into_iter().collect();
+        ranked.sort_by(|(alias_a, count_a), (alias_b, count_b)| {
+            count_b
+                .cmp(count_a)
+                .then_with(|| alias_a.cmp(alias_b))
+        });
+
+        self.graph.where_focus = ranked.into_iter().map(|(alias, _)| alias).collect();
     }
 
     /// Resolves all projected columns in the SELECT clause
@@ -80,6 +140,135 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
             let alias = self.extract_alias(item.alias);
             let projections = self.resolve_projection_item(&item, alias);
             self.graph.projected.extend(projections);
+        }
+    }
+
+    /// Collects ORDER BY columns that appear before the cursor
+    fn resolve_order_by(&mut self) {
+        let Some(cursor) = self.cursor else {
+            return;
+        };
+
+        let Some(order_by) =
+            ast::OrderBy::find_where(self.node(), |node| self.contains_cursor(node.span()))
+        else {
+            return;
+        };
+
+        let index = get_delimited_list_item_index(&order_by.items, cursor);
+        for item in order_by.items.items.iter().take(index) {
+            if let ast::Expr::Name(name) = &item.item.expr.item {
+                let ident = QualifiedIdent::from_qualified_name(IdentKind::Column, self.text, name);
+                if !self
+                    .graph
+                    .order_by
+                    .iter()
+                    .any(|existing| existing.matches(&ident))
+                {
+                    self.graph.order_by.push(ident);
+                }
+            }
+        }
+    }
+
+    fn collect_expr_aliases(
+        &self, expr: &Loc<ast::Expr>, counts: &mut HashMap<&'a str, usize>,
+    ) {
+        use ast::Expr::*;
+
+        match &expr.item {
+            Name(name) => self.register_alias(name, counts),
+            Binary(bin) => {
+                self.collect_expr_aliases(&bin.left, counts);
+                if let Some(right) = &bin.right {
+                    self.collect_expr_aliases(right, counts);
+                }
+            }
+            Unary(unary) => self.collect_expr_aliases(&unary.expr, counts),
+            Paren(paren) => self.collect_expr_aliases(&paren.expr, counts),
+            IsNull(is_null) => self.collect_expr_aliases(&is_null.expr, counts),
+            Between(between) => {
+                self.collect_expr_aliases(&between.expr, counts);
+                self.collect_expr_aliases(&between.low, counts);
+                self.collect_expr_aliases(&between.high, counts);
+            }
+            Like(like) => {
+                self.collect_expr_aliases(&like.expr, counts);
+                self.collect_expr_aliases(&like.pattern, counts);
+            }
+            ILike(ilike) => {
+                self.collect_expr_aliases(&ilike.expr, counts);
+                self.collect_expr_aliases(&ilike.pattern, counts);
+            }
+            Similar(similar) => {
+                self.collect_expr_aliases(&similar.expr, counts);
+                self.collect_expr_aliases(&similar.pattern, counts);
+                if let Some(escape) = &similar.escape {
+                    self.collect_expr_aliases(escape, counts);
+                }
+            }
+            FunctionCall(func) => {
+                for arg in func.args.item.items.iter() {
+                    self.collect_expr_aliases(arg, counts);
+                }
+                if let Some(filter) = &func.filter {
+                    self.collect_expr_aliases(filter, counts);
+                }
+            }
+            Array(items) => {
+                for item in items.items.iter() {
+                    self.collect_expr_aliases(item, counts);
+                }
+            }
+            Quantified(q) => self.collect_expr_aliases(&q.expr, counts),
+            Case(case_expr) => {
+                if let Some(op) = &case_expr.operand {
+                    self.collect_expr_aliases(op, counts);
+                }
+                for when in &case_expr.when_clauses {
+                    self.collect_expr_aliases(&when.when, counts);
+                    self.collect_expr_aliases(&when.then, counts);
+                }
+                if let Some(else_expr) = &case_expr.else_clause {
+                    self.collect_expr_aliases(else_expr, counts);
+                }
+            }
+            In(in_expr) => {
+                self.collect_expr_aliases(&in_expr.expr, counts);
+                match &in_expr.list {
+                    ast::ExprList::Exprs(exprs) => {
+                        for item in exprs {
+                            self.collect_expr_aliases(item, counts);
+                        }
+                    }
+                    ast::ExprList::Subquery(_) => {}
+                }
+            }
+            Over(over) => {
+                for arg in over.args.item.items.iter() {
+                    self.collect_expr_aliases(arg, counts);
+                }
+                if let Some(filter) = &over.filter {
+                    self.collect_expr_aliases(filter, counts);
+                }
+            }
+            Subquery(_) | Exists(_) => {}
+            Literal(_) | Empty => {}
+        }
+    }
+
+    fn register_alias(
+        &self, name: &Loc<ast::QualifiedName>, counts: &mut HashMap<&'a str, usize>,
+    ) {
+        let ident = self.column_name(name);
+        if ident.is_wildcard() {
+            return;
+        }
+
+        if let Some(alias) = ident.table() {
+            if self.graph.get_bind_by_alias(alias).is_some() {
+                *counts.entry(alias).or_default() += 1;
+            }
         }
     }
 
@@ -193,7 +382,7 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
 
     /// Resolves a subquery used as a table source
     fn resolve_table_subquery(&mut self, subquery: &ast::SubqueryTableFactor) {
-        let scope = Self::build_graph(self.text, self.schema, self.spec, &subquery.query);
+        let scope = Self::build_graph(self.text, self.schema, self.spec, &subquery.query, None);
         let alias = self.extract_alias(subquery.alias);
         let available = scope
             .projected()
@@ -357,7 +546,7 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
     fn resolve_subquery_projection(
         &mut self, subquery: &Loc<ast::Query>, alias: Option<&'a str>,
     ) -> Vec<Projection<'a>> {
-        let scope = Self::build_graph(self.text, self.schema, self.spec, subquery);
+        let scope = Self::build_graph(self.text, self.schema, self.spec, subquery, None);
         scope
             .projected()
             .first()
@@ -512,6 +701,16 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
         name.into().as_str(self.text)
     }
 
+    fn contains_cursor(&self, span: impl Into<Span>) -> bool {
+        let Some(cursor) = self.cursor else {
+            return false;
+        };
+        let span = span.into();
+        let eos = self.ast.span.end;
+        let is_end = span.end == eos && cursor.saturating_sub(1) == eos;
+        span.contains_inclusive(cursor) || is_end
+    }
+
     /// Returns the root AST node for traversal
     fn node(&self) -> ast::Node<'ast> {
         ast::Node::Query(self.ast)
@@ -632,6 +831,16 @@ mod tests {
     }
 
     #[test]
+    fn captures_where_focus_aliases() {
+        let schema = users_schema().combine(posts_schema());
+        let scope = resolve_with_schema(
+            "SELECT ^ FROM users u JOIN posts p ON u.id = p.id WHERE u.email = 'tom@gmail.com'",
+            schema,
+        );
+        assert_eq!(scope.where_focus(), &["u"]);
+    }
+
+    #[test]
     fn test_function_projection() {
         use schema::DataType::*;
         let schema = CacheBuilder::new()
@@ -654,4 +863,20 @@ mod tests {
             &[Some(Integer)],
         );
     }
+}
+
+fn get_delimited_list_item_index<T>(list: &ast::DelimitedList<Loc<T>>, cursor: usize) -> usize {
+    let mut index = 0;
+    for (i, item) in list.items.iter().enumerate() {
+        let sep = list.seps.get(i).map(|s| s.span);
+        if let Some(sep) = sep {
+            if cursor >= sep.end {
+                index = i + 1;
+            }
+        }
+        if cursor < item.span.start {
+            return index;
+        }
+    }
+    index
 }

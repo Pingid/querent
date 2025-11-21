@@ -9,8 +9,7 @@ use crate::complete::rank::Ranker;
 pub struct KindMatchRank;
 impl Ranker for KindMatchRank {
     type State<'ctx> = ();
-    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {
-    }
+    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {}
     fn score<'ctx>(
         &self, cand: &Candidate<'ctx>, _: &mut Self::State<'ctx>, _ctx: &Context<'ctx>,
     ) -> f32 {
@@ -28,8 +27,7 @@ impl Ranker for KindMatchRank {
 pub struct IgnoreRank;
 impl Ranker for IgnoreRank {
     type State<'ctx> = ();
-    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {
-    }
+    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {}
     fn score<'ctx>(
         &self, cand: &Candidate<'ctx>, _: &mut Self::State<'ctx>, _ctx: &Context<'ctx>,
     ) -> f32 {
@@ -44,8 +42,7 @@ impl Ranker for IgnoreRank {
 pub struct TypeCompatRank;
 impl Ranker for TypeCompatRank {
     type State<'ctx> = ();
-    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {
-    }
+    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {}
     fn score<'ctx>(
         &self, cand: &Candidate<'ctx>, _: &mut Self::State<'ctx>, ctx: &Context<'ctx>,
     ) -> f32 {
@@ -72,8 +69,7 @@ impl Ranker for TypeCompatRank {
 pub struct ExactMatchRanker;
 impl Ranker for ExactMatchRanker {
     type State<'ctx> = ();
-    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {
-    }
+    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {}
     fn score<'ctx>(
         &self, cand: &Candidate<'ctx>, _: &mut Self::State<'ctx>, ctx: &Context<'ctx>,
     ) -> f32 {
@@ -101,8 +97,7 @@ impl Ranker for ExactMatchRanker {
 pub struct PrefixMatchRanker;
 impl Ranker for PrefixMatchRanker {
     type State<'ctx> = ();
-    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {
-    }
+    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {}
     fn score<'ctx>(
         &self, cand: &Candidate<'ctx>, _: &mut Self::State<'ctx>, ctx: &Context<'ctx>,
     ) -> f32 {
@@ -133,8 +128,7 @@ impl Ranker for PrefixMatchRanker {
 pub struct FuzzyMatchRanker;
 impl Ranker for FuzzyMatchRanker {
     type State<'ctx> = ();
-    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {
-    }
+    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {}
     fn score<'ctx>(
         &self, cand: &Candidate<'ctx>, _: &mut Self::State<'ctx>, ctx: &Context<'ctx>,
     ) -> f32 {

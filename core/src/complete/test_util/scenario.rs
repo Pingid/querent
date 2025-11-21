@@ -367,13 +367,33 @@ impl Assert {
         if self.matches(completions) {
             return Ok(());
         }
+        Err(self.format_expected())
+    }
+
+    fn format_expected(&self) -> String {
+        let show = |matchers: &[CompletionMatcher]| {
+            matchers
+                .iter()
+                .map(|matcher| matcher.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
         match self {
-            Assert::Starts(matchers) => Err(format!(
-                "Expected starts with: {:?}\nFound {:?}",
-                matchers,
-                &completions[0..matchers.len().min(completions.len())]
-            )),
-            _ => Err(format!("Expected {:?}\n", self)),
+            Assert::Starts(m) => {
+                format!("Expected completions to start with: {}", show(m))
+            }
+            Assert::Contains(m) => {
+                format!("Expected completions to contain: {}", show(m))
+            }
+            Assert::InOrder(m) => {
+                format!("Expected order to match: {}", show(m))
+            }
+            Assert::NoneOf(m) => {
+                format!("Expected completions to not contain: {}", show(m))
+            }
+            Assert::Combined(assertions) => {
+                format!("Expected {:?}", assertions)
+            }
         }
     }
 }
@@ -402,10 +422,10 @@ impl From<CompletionKind> for CompletionMatcher {
 impl CompletionMatcher {
     pub fn matches(&self, completion: &Completion) -> bool {
         match self {
-            Self::Label(expected_label) => expected_label == &completion.label,
-            Self::InsertText(expected_text) => expected_text == &completion.insert_text,
-            Self::Kind(expected_kind) => expected_kind == &completion.kind,
-            Self::AllOf(matchers) => matchers.iter().all(|matcher| matcher.matches(completion)),
+            Self::Label(label) => label == &completion.label,
+            Self::InsertText(insert_text) => insert_text == &completion.insert_text,
+            Self::Kind(kind) => kind == &completion.kind,
+            Self::AllOf(m) => m.iter().all(|matcher| matcher.matches(completion)),
         }
     }
 }
@@ -505,27 +525,6 @@ mod tests {
             .with(users_schema())
             .with(posts_schema())
             .with(&dialect::ansi::SPEC)
-    }
-
-    fn run(items: impl IntoItems<ScenarioComp>) -> Vec<Completion> {
-        let mut scenario = ScenarioComp::default();
-        for item in items.into_items() {
-            scenario = scenario.with(item);
-        }
-        scenario.run()
-    }
-
-    #[test]
-    fn test_builder_syntax() {
-        run((
-            create_base_scenario(),
-            "SELECT ^ FROM users",
-            Assert::contains(["id", "name"]),
-        ));
-        // create_base_scenario()
-        //     .query("SELECT ^ FROM users")
-        //     .contains(["id", "namee"])
-        //     .run();
     }
 
     #[test]

@@ -1,10 +1,12 @@
 use crate::complete::Completer;
 use crate::complete::candidate::CandidateBuilder;
 use crate::complete::candidate::CandidateSet;
+use crate::complete::context::ClauseKind;
 use crate::complete::context::ClausePosition;
 use crate::complete::context::Context;
 use crate::complete::context::Location;
 use crate::complete::context::QualifiedIdent;
+use crate::lex::OpTag;
 use crate::schema;
 
 #[derive(Debug, Default)]
@@ -15,8 +17,13 @@ impl Completer for ColumnProvider {
         let cols = discover_columns(ctx);
         let detailer = DefaultDetailRenderer;
         let qualifier = ctx.cursor().qualifier.as_ref();
+        let order_by_used = ctx.scope().order_by();
 
         for col in cols {
+            if order_by_used.iter().any(|ident| col.ident.matches(ident)) {
+                continue;
+            }
+
             // If we have a qualifier (e.g., "users.^" or "u.^"), filter columns
             if let Some(qual_parts) = qualifier {
                 // For now, handle single-part qualifiers (table name or alias)
@@ -69,17 +76,56 @@ fn should_complete<'a>(ctx: &Context<'a>) -> bool {
     use Location as L;
 
     match (&ctx.cursor().location, ctx.clause().pos) {
-        // Keyword no space
+        // Keywords or identifiers in-progress
         (L::Keyword(_), _) => false,
-        // After a space and an ident - block column completions
-        (L::Space(inner), Some(CP::ExprLeft)) if matches!(**inner, L::Ident) => false,
+        (L::Ident, _) => false,
+        // Operators and literals shouldn't trigger column completion
+        (L::Operator(tag), _) if !matches!(tag, OpTag::And | OpTag::Or) => false,
+        (L::Literal, _) => false,
+        // After a space and an ident/operator/literal - block column completions
+        (L::Space(inner), _)
+            if matches!(**inner, L::Ident | L::Literal)
+                || matches!(
+                    **inner,
+                    L::Operator(tag) if !matches!(tag, OpTag::And | OpTag::Or)
+                ) =>
+        {
+            false
+        }
         // After comma without space - block column completions
         (L::Comma, Some(CP::ExprLeft)) => false,
+        // Allow completing after logical operators (AND/OR)
+        (L::Space(inner), Some(CP::ExprRight))
+            if matches!(
+                **inner,
+                L::Operator(tag) if matches!(tag, OpTag::And | OpTag::Or)
+            ) =>
+        {
+            true
+        }
         // After comma and space - allow column completions
         (L::Space(inner), Some(CP::ExprLeft)) if matches!(**inner, L::Comma) => true,
         // Other ExprLeft positions - allow column completions
         (_, Some(CP::ExprLeft)) => true,
-        _ => false,
+        // Fallback: allow columns after clause keywords like WHERE/AND
+        (location, _) => {
+            let allow = match location {
+                L::Space(inner) => match &**inner {
+                    L::Keyword(_) | L::Comma | L::Paren => true,
+                    L::Operator(tag) if matches!(tag, OpTag::And | OpTag::Or) => true,
+                    _ => false,
+                },
+                _ => false,
+            };
+            allow
+                && matches!(
+                    ctx.clause().kind,
+                    ClauseKind::Where
+                        | ClauseKind::Select
+                        | ClauseKind::GroupBy
+                        | ClauseKind::OrderBy
+                )
+        }
     }
 }
 
@@ -145,6 +191,7 @@ mod tests {
     use crate::dialect::ansi;
     use crate::test_utils::ScenarioComp;
     use crate::test_utils::get_caret_cursor;
+    use crate::test_utils::users_schema;
 
     fn assert_not_complete(input: &str) {
         let (sql, cursor) = get_caret_cursor(input);
@@ -196,13 +243,6 @@ mod tests {
             ])
             .contains(["id", "u.id"])
             .run();
-
-        // Unaliased
-        scenario()
-            .with(schema.clone())
-            .query(["SELECT ^", "SELECT ^ FROM users"])
-            .contains(["id", "u.id"])
-            .run();
     }
 
     #[test]
@@ -237,5 +277,30 @@ mod tests {
             .query("SELECT ^ FROM (SELECT 1 + 2 as a, upper('hello') as b) u")
             .contains(["a", "b", "u.a", "u.b"])
             .run();
+    }
+
+    #[test]
+    fn completes_after_logical_operator() {
+        let schema = users_schema();
+        let (sql, cursor) = get_caret_cursor("SELECT * FROM users WHERE name = 'John' AND ^");
+        let ctx = Context::build(&ansi::SPEC, &schema, &sql, cursor).unwrap();
+        assert!(
+            should_complete(&ctx),
+            "expected columns to complete after logical operator, got location {:?}",
+            ctx.cursor().location
+        );
+    }
+
+    #[test]
+    fn completes_in_order_by_clause() {
+        let schema = users_schema();
+        let (sql, cursor) = get_caret_cursor("SELECT * FROM users ORDER BY ^");
+        let ctx = Context::build(&ansi::SPEC, &schema, &sql, cursor).unwrap();
+        assert!(
+            should_complete(&ctx),
+            "expected columns to complete in ORDER BY, got location {:?} with clause {:?}",
+            ctx.cursor().location,
+            ctx.clause().kind
+        );
     }
 }

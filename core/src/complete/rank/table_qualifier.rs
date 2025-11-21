@@ -6,7 +6,6 @@ use crate::complete::rank::Ranker;
 /// Ranks table completions based on qualification level.
 /// Prioritizes unqualified names (e.g., "users") over qualified names (e.g., "public.users")
 /// when there's no ambiguity.
-///
 #[derive(Debug, Default)]
 pub struct TableQualifiedRankState {
     prioritize_unqualified: bool,

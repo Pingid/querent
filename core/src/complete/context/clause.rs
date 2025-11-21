@@ -70,6 +70,7 @@ impl<'a> From<&ParsedStatement<'a>> for ClauseKind {
                     return None;
                 }
                 match node {
+                    ast::Node::OrderBy(_) | ast::Node::OrderByItem(_) => Some(ClauseKind::OrderBy),
                     ast::Node::Projection(_) => Some(ClauseKind::Select),
                     ast::Node::With(_) => Some(ClauseKind::With),
                     ast::Node::From(_) => Some(ClauseKind::From),
@@ -78,6 +79,7 @@ impl<'a> From<&ParsedStatement<'a>> for ClauseKind {
                     _ => None,
                 }
             })
+            .or_else(|| detect_clause_kind_from_tokens(params))
             .unwrap_or(ClauseKind::Statement)
     }
 }
@@ -213,6 +215,20 @@ fn preceding_tokens<'a, 'b>(
         .rev()
         .filter(move |t| !matches!(t.kind, TokenKind::Eof) && t.span.end <= cursor)
         .take_while(move |t| cursor >= t.span.start)
+}
+
+fn detect_clause_kind_from_tokens(params: &ParsedStatement<'_>) -> Option<ClauseKind> {
+    use crate::lex::Keyword;
+
+    let mut saw_by = false;
+    for token in preceding_tokens(&params.tokens, params.cursor) {
+        match token.kind {
+            TokenKind::Keyword(Keyword::By) => saw_by = true,
+            TokenKind::Keyword(Keyword::Order) if saw_by => return Some(ClauseKind::OrderBy),
+            _ => {}
+        }
+    }
+    None
 }
 #[cfg(test)]
 mod tests {

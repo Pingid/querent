@@ -17,7 +17,13 @@ impl<'a> From<&ParsedStatement<'a>> for Scope<'a> {
             Some(query) => {
                 let text: &'a str = params.text;
                 let schema: &'a schema::Cache = params.schema;
-                ScopeGraphBuilder::build_graph(text, schema, params.spec, query)
+                ScopeGraphBuilder::build_graph(
+                    text,
+                    schema,
+                    params.spec,
+                    query,
+                    Some(params.cursor),
+                )
             }
             None => Default::default(),
         }

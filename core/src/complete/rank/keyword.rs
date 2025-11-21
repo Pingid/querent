@@ -8,8 +8,7 @@ use crate::lex::Keyword;
 pub struct KeywordMatchRank;
 impl Ranker for KeywordMatchRank {
     type State<'ctx> = ();
-    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {
-    }
+    fn init_state<'ctx>(&mut self, _ctx: &Context<'ctx>) -> Self::State<'ctx> {}
     fn score<'ctx>(
         &self, cand: &Candidate<'ctx>, _state: &mut Self::State<'ctx>, _ctx: &Context<'ctx>,
     ) -> f32 {
