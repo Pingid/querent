@@ -38,16 +38,16 @@ impl Completer for DefaultCompleter {
 mod tests {
     use super::*;
     use crate::dialect::ansi;
-    use crate::test_complete;
+    use crate::test_utils::ScenarioComp;
 
     #[test]
     fn keyword_completes_partial_at_start() {
         // Complete partial keyword at statement start
-        test_complete!("SELE^" => {
-            contains: ["SELECT"],
-            specs: [ansi::SPEC],
-            starts: ["SELECT"],
-            completers: [DefaultCompleter],
-        });
+        ScenarioComp::default()
+            .completer(DefaultCompleter::default())
+            .spec(ansi::SPEC.clone())
+            .query("SELE^")
+            .starts(["SELECT"])
+            .run();
     }
 }

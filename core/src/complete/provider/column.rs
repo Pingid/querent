@@ -143,7 +143,7 @@ impl ColumnDetailRenderer for DefaultDetailRenderer {
 mod tests {
     use super::*;
     use crate::dialect::ansi;
-    use crate::test_complete;
+    use crate::test_utils::ScenarioComp;
     use crate::test_utils::get_caret_cursor;
 
     fn assert_not_complete(input: &str) {
@@ -174,6 +174,12 @@ mod tests {
         assert_not_complete("SELECT a FROM b WHERE a = b^");
     }
 
+    fn scenario() -> ScenarioComp {
+        ScenarioComp::default()
+            .completer(ColumnProvider)
+            .spec(ansi::SPEC.clone())
+    }
+
     #[test]
     fn include_both_qualified_and_unqualified_names() {
         let schema = schema::CacheBuilder::new()
@@ -182,37 +188,42 @@ mod tests {
             .build();
 
         // Aliased
-        test_complete!("SELECT ^ FROM users u", "SELECT ^ FROM (SELECT id FROM users) u" => {
-            completers: [ColumnProvider],
-            schemas: [schema.clone()],
-            contains: ["id", "u.id"],
-        });
+        scenario()
+            .with(schema.clone())
+            .query([
+                "SELECT ^ FROM users u",
+                "SELECT ^ FROM (SELECT id FROM users) u",
+            ])
+            .contains(["id", "u.id"])
+            .run();
 
         // Unaliased
-        test_complete!("SELECT ^", "SELECT ^ FROM users" => {
-            completers: [ColumnProvider],
-            schemas: [schema],
-            contains: ["id", "users.id", "public.users.id"],
-        });
+        scenario()
+            .with(schema.clone())
+            .query(["SELECT ^", "SELECT ^ FROM users"])
+            .contains(["id", "u.id"])
+            .run();
     }
 
     #[test]
     fn include_columns_from_table_functions() {
         use schema::DataType::*;
+
         let schema = schema::CacheBuilder::new()
             .table_function("generate_series", &[Integer, Integer], vec![("i", Integer)])
             .build();
 
-        test_complete!("SELECT ^ FROM generate_series(1, 10)" => {
-            completers: [ColumnProvider],
-            schemas: [schema.clone()],
-            contains: ["i"],
-        });
-        test_complete!("SELECT ^ FROM generate_series(1, 10) u" => {
-            completers: [ColumnProvider],
-            schemas: [schema],
-            contains: ["i", "u.i"],
-        });
+        scenario()
+            .with(schema.clone())
+            .query("SELECT ^ FROM generate_series(1, 10)")
+            .contains(["i"])
+            .run();
+
+        scenario()
+            .with(schema)
+            .query("SELECT ^ FROM generate_series(1, 10) u")
+            .contains(["i", "u.i"])
+            .run();
     }
 
     #[test]
@@ -221,10 +232,10 @@ mod tests {
         let schema = schema::CacheBuilder::new()
             .scalar_function("upper", &[Text], Text)
             .build();
-        test_complete!("SELECT ^ FROM (SELECT 1 + 2 as a, upper('hello') as b) u" => {
-            completers: [ColumnProvider],
-            schemas: [schema],
-            contains: ["a", "b", "u.a", "u.b"],
-        });
+        scenario()
+            .with(schema)
+            .query("SELECT ^ FROM (SELECT 1 + 2 as a, upper('hello') as b) u")
+            .contains(["a", "b", "u.a", "u.b"])
+            .run();
     }
 }

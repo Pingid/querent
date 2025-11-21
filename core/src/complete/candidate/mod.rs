@@ -24,14 +24,17 @@ impl<'a> CandidateSet<'a> {
         }
     }
     pub fn completions(mut self) -> Completions {
-        self.items
-            .sort_by_key(|c| (std::cmp::Reverse(c.score), c.completion.label.clone()));
+        self.sort();
         Completions {
             items: self.items.into_iter().map(|c| c.completion).collect(),
         }
     }
     pub fn empty(self) -> Completions {
         Completions { items: vec![] }
+    }
+    pub fn sort(&mut self) {
+        self.items
+            .sort_by_key(|c| (std::cmp::Reverse(c.score), c.completion.label.clone()));
     }
 }
 

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
-use crate::complete::candidate::{Candidate, CandidateKind};
+use crate::complete::candidate::Candidate;
+use crate::complete::candidate::CandidateKind;
 use crate::complete::context::Context;
 use crate::complete::rank::Ranker;
 
@@ -112,50 +113,66 @@ impl Ranker for ColumnQualifiedRank {
 mod tests {
     use super::*;
     use crate::complete::provider::DefaultProviders;
-    use crate::test_complete;
+    use crate::dialect::ansi;
+    use crate::test_utils::ScenarioComp;
     use crate::test_utils::posts_schema;
     use crate::test_utils::users_schema;
+
+    fn scenario() -> ScenarioComp {
+        ScenarioComp::default()
+            .completer(ColumnQualifiedRank)
+            .completer(DefaultProviders)
+            .spec(ansi::SPEC.clone())
+    }
 
     #[test]
     fn ranks_unqualified_columns_higher() {
         // No tables in the FROM clause
-        test_complete!("SELECT ^ " => {
-            completers: [DefaultProviders, ColumnQualifiedRank],
-            schemas: [users_schema(), posts_schema()],
-            in_order: ["name", "title", "posts.title", "users.name"],
-        });
-        // Single CTE
-        // test_complete!("WITH user_posts AS (SELECT * FROM users) SELECT ^ FROM user_posts" => {
-        //     completers: [DefaultProviders, ColumnQualifiedRank::default()],
-        //     schemas: [users_schema(), posts_schema()],
-        //     in_order: ["email", "name", "users.email", "users.name"],
-        // });
+        scenario()
+            .with((posts_schema(), users_schema()))
+            .query("SELECT ^")
+            .in_order(["name", "title", "posts.title", "users.name"])
+            .run();
+
+        // // Single CTE
+        // scenario()
+        //     .with((users_schema(), posts_schema()))
+        //     .query("WITH user_posts AS (SELECT * FROM users) SELECT ^ FROM user_posts")
+        //     .in_order(["email", "name", "users.email", "users.name"])
+        //     .run();
     }
 
     #[test]
     fn single_table_prioritizes_unqualified() {
         // When there's only one table, unqualified columns should rank higher
-        test_complete!("SELECT ^ FROM users" => {
-            completers: [DefaultProviders, ColumnQualifiedRank],
-            schemas: [users_schema()],
-            in_order: ["email", "id", "name", "users.email", "users.id", "users.name"],
-        });
+        scenario()
+            .with(users_schema())
+            .query("SELECT ^ FROM users")
+            .in_order([
+                "email",
+                "id",
+                "name",
+                "users.email",
+                "users.id",
+                "users.name",
+            ])
+            .run();
 
-        // // Unqualified columns should rank higher in WHERE clause with single table
-        // test_complete!("SELECT * FROM users WHERE ^ = 1" => {
-        //     completers: [Providers::default(), rank],
-        //     schemas: [users_schema()],
-        //     in_order: ["id", "name", "email", "users.id", "users.name", "users.email"],
-        // });
+        // Unqualified columns should rank higher in WHERE clause with single table
+        // scenario()
+        //     .with(users_schema())
+        //     .query("SELECT * FROM users WHERE ^ = 1")
+        //     .in_order(["id", "name", "email", "users.id", "users.name", "users.email"])
+        //     .run();
     }
 
     #[test]
     fn ambiguous_column_prioritizes_qualified() {
         // When column exists in multiple tables (like 'id'), qualified should rank higher
-        test_complete!("SELECT ^ FROM users, posts" => {
-            completers: [DefaultProviders, ColumnQualifiedRank],
-            schemas: [users_schema(), posts_schema()],
-            in_order: ["users.name", "name"],
-        });
+        scenario()
+            .with((posts_schema(), users_schema()))
+            .query("SELECT ^ FROM users, posts")
+            .in_order(["users.name", "name"])
+            .run();
     }
 }

@@ -263,7 +263,7 @@ dependencies = [
 [[package]]
 name = "docloom"
 version = "0.0.1"
-source = "git+https://github.com/pingid/docloom.git?rev=bde8952#bde8952248fd2c35deb6e9f003a808db11c44f80"
+source = "git+https://github.com/pingid/docloom.git?rev=e431ca#e431ca7fdf15ac8b524df8c53f73e0bf0c1b2a49"
 
 [[package]]
 name = "either"
@@ -748,6 +748,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "itemize"
+version = "0.1.0"
+source = "git+https://github.com/pingid/itemize.git?rev=8638009#86380095c817fe01194ca8e8679cda1ec314d798"
+dependencies = [
+ "itemize_derive",
+]
+
+[[package]]
+name = "itemize_derive"
+version = "0.1.0"
+source = "git+https://github.com/pingid/itemize.git?rev=8638009#86380095c817fe01194ca8e8679cda1ec314d798"
+dependencies = [
+ "itemize_derive_impl",
+]
+
+[[package]]
+name = "itemize_derive_impl"
+version = "0.1.0"
+source = "git+https://github.com/pingid/itemize.git?rev=8638009#86380095c817fe01194ca8e8679cda1ec314d798"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1088,6 +1114,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "docloom",
+ "itemize",
  "pat",
  "phf",
  "phf_codegen",

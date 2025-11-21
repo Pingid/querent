@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
-use crate::complete::candidate::{Candidate, CandidateKind};
+use crate::complete::candidate::Candidate;
+use crate::complete::candidate::CandidateKind;
 use crate::complete::context::Context;
 use crate::complete::rank::Ranker;
 
@@ -17,8 +18,7 @@ pub struct ColumnSourceRank;
 impl Ranker for ColumnSourceRank {
     type State<'ctx>
         = ColumnSourceRankState<'ctx>
-    where
-        Self: 'ctx;
+    where Self: 'ctx;
 
     fn init_state<'ctx>(&mut self, ctx: &Context<'ctx>) -> Self::State<'ctx> {
         let mut sources = HashSet::new();
@@ -97,7 +97,8 @@ impl Ranker for ColumnSourceRank {
 mod tests {
     use super::*;
     use crate::complete::provider::DefaultProviders;
-    use crate::test_complete;
+    use crate::dialect::ansi;
+    use crate::test_utils::ScenarioComp;
     use crate::test_utils::posts_schema;
     use crate::test_utils::users_schema;
 
@@ -106,14 +107,15 @@ mod tests {
         // When "title" is selected (which comes from posts table),
         // other posts columns should be ranked higher than users columns,
         // but "title" itself should be ranked low since it's already selected
-        test_complete!("SELECT title, ^" => {
-            completers: [DefaultProviders, ColumnSourceRank],
-            schemas: [users_schema(), posts_schema()],
-            // posts.id and posts.content should come before users columns
-            in_order: ["posts.id", "users.id"],
-            in_order: ["posts.content", "users.id"],
-            // posts.title should be ranked low since it's already selected
-            in_order: ["users.id", "posts.title"],
-        });
+        ScenarioComp::default()
+            .completer(DefaultProviders)
+            .completer(ColumnSourceRank)
+            .spec(ansi::SPEC.clone())
+            .with((posts_schema(), users_schema()))
+            .query("SELECT title, ^")
+            .in_order(["posts.id", "users.id"])
+            .in_order(["posts.content", "users.id"])
+            .in_order(["users.id", "posts.title"])
+            .run();
     }
 }
