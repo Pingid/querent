@@ -84,44 +84,44 @@ fn bench_tpcds(c: &mut Criterion) {
     group.sample_size(30);
 
     // Tokenize all queries as a single iteration
-    group.throughput(Throughput::Bytes(total_bytes as u64));
-    group.bench_function(BenchmarkId::new("tokenize_all", "pg"), |b| {
-        b.iter(|| {
-            let spec = &postgres::SPEC;
-            for q in &stmts {
-                let _ = lex(spec, q);
-            }
-        });
-    });
+    // group.throughput(Throughput::Bytes(total_bytes as u64));
+    // group.bench_function(BenchmarkId::new("tokenize_all", "pg"), |b| {
+    //     b.iter(|| {
+    //         let spec = &postgres::SPEC;
+    //         for q in &stmts {
+    //             let _ = lex(spec, q);
+    //         }
+    //     });
+    // });
 
     // Parse all queries as a single iteration
     group.throughput(Throughput::Elements(total_queries));
-    group.bench_function(BenchmarkId::new("parse_all", "pg"), |b| {
-        b.iter(|| {
-            let spec = &postgres::SPEC;
-            for q in &stmts {
-                let tokens = lex(spec, q);
-                let mut parser = Parser::new(&tokens);
-                let _ = parser.parse_statement();
-            }
-        });
-    });
+    // group.bench_function(BenchmarkId::new("parse_all", "pg"), |b| {
+    //     b.iter(|| {
+    //         let spec = &postgres::SPEC;
+    //         for q in &stmts {
+    //             let tokens = lex(spec, q);
+    //             let mut parser = Parser::new(&tokens);
+    //             let _ = parser.parse_statement();
+    //         }
+    //     });
+    // });
 
-    // Per-query parsing (batched) for distribution insight
-    group.bench_function(BenchmarkId::new("parse_each", "pg"), |b| {
-        b.iter_batched(
-            || stmts.clone(),
-            |cases| {
-                let spec = &postgres::SPEC;
-                for q in cases {
-                    let tokens = lex(spec, q);
-                    let mut parser = Parser::new(&tokens);
-                    let _ = parser.parse_statement();
-                }
-            },
-            BatchSize::SmallInput,
-        )
-    });
+    // // Per-query parsing (batched) for distribution insight
+    // group.bench_function(BenchmarkId::new("parse_each", "pg"), |b| {
+    //     b.iter_batched(
+    //         || stmts.clone(),
+    //         |cases| {
+    //             let spec = &postgres::SPEC;
+    //             for q in cases {
+    //                 let tokens = lex(spec, q);
+    //                 let mut parser = Parser::new(&tokens);
+    //                 let _ = parser.parse_statement();
+    //             }
+    //         },
+    //         BatchSize::SmallInput,
+    //     )
+    // });
 
     group.bench_function(BenchmarkId::new("parse_all_v2", "pg"), |b| {
         b.iter(|| {
@@ -134,21 +134,21 @@ fn bench_tpcds(c: &mut Criterion) {
         });
     });
 
-    // Per-query parsing (batched) for distribution insight
-    group.bench_function(BenchmarkId::new("parse_each_v2", "pg"), |b| {
-        b.iter_batched(
-            || stmts.clone(),
-            |cases| {
-                let spec = &postgres::SPEC;
-                for q in cases {
-                    let tokens = lex(spec, q);
-                    let mut parser = WinnowParser::new(&tokens, spec);
-                    let _ = parser.parse_statement();
-                }
-            },
-            BatchSize::SmallInput,
-        )
-    });
+    // // Per-query parsing (batched) for distribution insight
+    // group.bench_function(BenchmarkId::new("parse_each_v2", "pg"), |b| {
+    //     b.iter_batched(
+    //         || stmts.clone(),
+    //         |cases| {
+    //             let spec = &postgres::SPEC;
+    //             for q in cases {
+    //                 let tokens = lex(spec, q);
+    //                 let mut parser = WinnowParser::new(&tokens, spec);
+    //                 let _ = parser.parse_statement();
+    //             }
+    //         },
+    //         BatchSize::SmallInput,
+    //     )
+    // });
 
     group.finish();
 }

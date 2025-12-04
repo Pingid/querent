@@ -96,13 +96,13 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             break;
         }
 
-        Some(With { recursive, ctes })
+        Some(With { recursive, ctes: ctes.into() })
     }
 
     fn parse_query_expr(&mut self) -> Option<QueryExpr> {
         let left = self.node(|s| s.parse_query_primary())?;
         let set_ops = self.parse_many(|s| s.node(|s| s.parse_set_op_chain()));
-        Some(QueryExpr { left, set_ops })
+        Some(QueryExpr { left, set_ops: set_ops.into() })
     }
 
     fn parse_set_op_chain(&mut self) -> Option<SetOpTerm> {
@@ -265,7 +265,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
 
     fn parse_projection_item(&mut self) -> Option<ProjectionItem> {
         Some(ProjectionItem {
-            expr: self.parse_expr()?,
+            expr: self.node(|s| Some(s.parse_expr().map(|x| x.item).unwrap_or(Expr::Empty)))?,
             alias: self.parse_alias(),
         })
     }
@@ -335,7 +335,7 @@ impl<'txt, 'tok> Parser<'txt, 'tok> {
             }
             break;
         }
-        Some(Window { windows })
+        Some(Window { windows: windows.into() })
     }
 
     fn parse_table_ref(&mut self) -> Option<TableRef> {

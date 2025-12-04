@@ -138,6 +138,7 @@ impl<'a> From<&ParsedStatement<'a>> for Option<ClausePosition> {
         });
         if let Some(exp) = exp {
             return match &exp.item {
+                ast::Expr::Empty => Some(ClausePosition::ExprLeft),
                 ast::Expr::Name(_) => Some(ClausePosition::ExprLeft),
                 ast::Expr::Binary(bin) => match params.containing_cursor(bin.left.span) {
                     true => Some(ClausePosition::ExprLeft),

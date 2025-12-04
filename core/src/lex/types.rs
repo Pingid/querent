@@ -92,6 +92,7 @@ pub enum Keyword {
     Rollup,
     Cube,
     Grouping,
+    Sets,
     Set,
 
     // Null / boolean literals

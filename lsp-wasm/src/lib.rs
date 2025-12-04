@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use js_sys::Promise;
@@ -15,7 +16,7 @@ use engine::EngineProvider;
 
 #[wasm_bindgen]
 pub struct WasmLspServer {
-    server: Rc<LspServer<EngineProvider>>,
+    server: Rc<RefCell<LspServer<EngineProvider>>>,
     serializer: Rc<swb::Serializer>,
 }
 
@@ -24,7 +25,7 @@ impl WasmLspServer {
     #[wasm_bindgen(constructor)]
     pub fn new(engine_provider: &EngineProvider) -> Self {
         Self {
-            server: Rc::new(LspServer::new(engine_provider.clone())),
+            server: Rc::new(RefCell::new(LspServer::new(engine_provider.clone()))),
             serializer: Rc::new(swb::Serializer::json_compatible()),
         }
     }
@@ -43,7 +44,7 @@ impl WasmLspServer {
                     return Err(JsValue::from_str(&err));
                 }
             };
-            let response = server.handle_json_rpc(request).await;
+            let response = server.borrow_mut().handle_json_rpc(request).await;
             match response {
                 Some(response) => response
                     .serialize(&*serializer)

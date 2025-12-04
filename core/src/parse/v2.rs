@@ -38,6 +38,18 @@ impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
             Some(TK::Identifier) if matches!(self.peek_kind(), Some(TK::Eof) | None) => {
                 return Some(loc(start, Statement::Partial(loc(self.span(), ()))));
             }
+            Some(TK::Keyword(KW::Insert)) => {
+                let insert = self.spanned(Self::parse_insert)?;
+                return Some(loc((start, insert.span.end), Statement::Insert(insert)));
+            }
+            Some(TK::Keyword(KW::Update)) => {
+                let update = self.spanned(Self::parse_update)?;
+                return Some(loc((start, update.span.end), Statement::Update(update)));
+            }
+            Some(TK::Keyword(KW::Delete)) => {
+                let delete = self.spanned(Self::parse_delete)?;
+                return Some(loc((start, delete.span.end), Statement::Delete(delete)));
+            }
             _ => {}
         }
         let query = self.spanned(Self::parse_query)?;
@@ -82,13 +94,19 @@ impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
                 break;
             }
         }
-        Some(With { recursive, ctes })
+        Some(With {
+            recursive,
+            ctes: ctes.into(),
+        })
     }
 
     fn parse_query_expr(&mut self) -> R<QueryExpr> {
         let left = self.spanned(Self::parse_query_primary)?;
         let set_ops = self.many(|s| s.spanned(Self::parse_set_op_term));
-        Some(QueryExpr { left, set_ops })
+        Some(QueryExpr {
+            left,
+            set_ops: set_ops.into(),
+        })
     }
 
     fn parse_set_op_term(&mut self) -> R<SetOpTerm> {
@@ -100,15 +118,20 @@ impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
     }
 
     fn parse_set_op(&mut self) -> R<SetOp> {
-        let ctor: fn(bool) -> SetOp = match self.kind()? {
-            TK::Keyword(KW::Union) => |all| SetOp::Union { all },
-            TK::Keyword(KW::Intersect) => |all| SetOp::Intersect { all },
-            TK::Keyword(KW::Except) => |all| SetOp::Except { all },
-            TK::Keyword(KW::Minus) => |all| SetOp::Minus { all },
+        let kw = match self.kind()? {
+            TK::Keyword(kw @ (KW::Union | KW::Intersect | KW::Except | KW::Minus)) => kw,
             _ => return None,
         };
         self.advance();
-        Some(ctor(self.kw(KW::All).is_some()))
+        let all = self.kw(KW::All).is_some();
+        let op = match kw {
+            KW::Union => SetOp::Union { all },
+            KW::Intersect => SetOp::Intersect { all },
+            KW::Except => SetOp::Except { all },
+            KW::Minus => SetOp::Minus { all },
+            _ => unreachable!(),
+        };
+        Some(op)
     }
 
     fn parse_query_primary(&mut self) -> R<QueryPrimary> {
@@ -116,8 +139,109 @@ impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
             TK::Keyword(KW::Select) => {
                 Some(QueryPrimary::Select(self.spanned(Self::parse_select)?))
             }
+            TK::Keyword(KW::Values) => {
+                Some(QueryPrimary::Values(self.spanned(Self::parse_values)?))
+            }
             _ => None,
         }
+    }
+
+    // ========================================================================
+    // DML Statements
+    // ========================================================================
+
+    fn parse_insert(&mut self) -> R<Insert> {
+        self.kw(KW::Insert)?;
+        self.kw(KW::Into)?;
+        let table = self.spanned(Self::parse_qualified_name)?;
+        let columns = self.paren_list(|s| s.ident());
+
+        let source = if self.kw(KW::Default).is_some() {
+            self.kw(KW::Values);
+            InsertSource::Default
+        } else if self.kind() == Some(TK::Keyword(KW::Values)) {
+            InsertSource::Values(self.spanned(Self::parse_values)?)
+        } else {
+            InsertSource::Query(Box::new(self.spanned(Self::parse_query)?))
+        };
+
+        let returning = self.parse_returning();
+        Some(Insert {
+            table,
+            columns,
+            source,
+            returning,
+        })
+    }
+
+    fn parse_values(&mut self) -> R<Values> {
+        self.kw(KW::Values)?;
+        let mut rows = Vec::new();
+        loop {
+            let row = self.parenthesized(|s| Some(s.args_list(Self::parse_expr)))?;
+            rows.push(loc(self.span_from(self.pos()), row));
+            if self.eat(TK::Comma).is_none() {
+                break;
+            }
+        }
+        Some(Values { rows })
+    }
+
+    fn parse_update(&mut self) -> R<Update> {
+        self.kw(KW::Update)?;
+        let table = self.spanned(Self::parse_qualified_name)?;
+        let alias = self.alias();
+        self.kw(KW::Set)?;
+        let assignments = self.comma_list(Self::parse_assignment)?;
+        let from = self.try_spanned(Self::parse_from);
+        let where_clause = self.try_spanned(Self::parse_where);
+        let returning = self.parse_returning();
+        Some(Update {
+            table,
+            alias,
+            assignments,
+            from,
+            where_clause,
+            returning,
+        })
+    }
+
+    fn parse_assignment(&mut self) -> R<Assignment> {
+        let column = self.spanned(Self::ident)?;
+        self.op(OpTag::Eq)?;
+        let value = self.spanned(Self::parse_expr)?;
+        Some(Assignment { column, value })
+    }
+
+    fn parse_delete(&mut self) -> R<Delete> {
+        self.kw(KW::Delete)?;
+        self.kw(KW::From)?;
+        let table = self.spanned(Self::parse_qualified_name)?;
+        let alias = self.alias();
+        let using = if self.kw(KW::Using).is_some() {
+            Some(loc(
+                self.span_from(self.pos()),
+                From {
+                    sources: self.comma_list(|s| s.parse_table_ref()).unwrap_or_default(),
+                },
+            ))
+        } else {
+            None
+        };
+        let where_clause = self.try_spanned(Self::parse_where);
+        let returning = self.parse_returning();
+        Some(Delete {
+            table,
+            alias,
+            using,
+            where_clause,
+            returning,
+        })
+    }
+
+    fn parse_returning(&mut self) -> Option<Loc<Projection>> {
+        self.kw(KW::Returning)?;
+        self.spanned(Self::parse_projection)
     }
 
     fn parse_select(&mut self) -> R<Select> {
@@ -156,7 +280,7 @@ impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
 
     fn parse_projection_item(&mut self) -> R<ProjectionItem> {
         Some(ProjectionItem {
-            expr: self.spanned(Self::parse_expr)?,
+            expr: self.spanned(|s| Some(s.parse_expr().unwrap_or(Expr::Empty)))?,
             alias: self.alias(),
         })
     }
@@ -585,7 +709,10 @@ impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
                 }
             }
             self.eat(TK::RightParen);
-            Some(DataType::Parameterized { name, params })
+            Some(DataType::Parameterized {
+                name,
+                params: params.into(),
+            })
         } else {
             Some(DataType::Named(name))
         }
@@ -921,9 +1048,49 @@ impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
         self.kw_seq(&[KW::Group, KW::By])?;
         Some(GroupBy {
             items: self
-                .comma_list(|s| Some(GroupByItem::Expr(s.spanned(Self::parse_expr)?)))
+                .comma_list(Self::parse_group_by_item)
                 .unwrap_or_default(),
         })
+    }
+
+    fn parse_group_by_item(&mut self) -> R<GroupByItem> {
+        // ROLLUP(a, b, ...)
+        if self.kw(KW::Rollup).is_some() {
+            let exprs = self.parenthesized(|s| s.comma_list(Self::parse_expr))?;
+            return Some(GroupByItem::Rollup(exprs.items.into()));
+        }
+        // CUBE(a, b, ...)
+        if self.kw(KW::Cube).is_some() {
+            let exprs = self.parenthesized(|s| s.comma_list(Self::parse_expr))?;
+            return Some(GroupByItem::Cube(exprs.items.into()));
+        }
+        // GROUPING SETS((a, b), (a), ...)
+        if self.kw(KW::Grouping).is_some() && self.kw(KW::Sets).is_some() {
+            let sets = self.parenthesized(|s| s.comma_list(Self::parse_grouping_set))?;
+            return Some(GroupByItem::GroupingSets(sets.items.into()));
+        }
+        // Simple expression
+        Some(GroupByItem::Expr(self.spanned(Self::parse_expr)?))
+    }
+
+    fn parse_grouping_set(&mut self) -> R<GroupingSet> {
+        // Empty set: ()
+        if self
+            .try_parse(|s| {
+                s.eat(TK::LeftParen)?;
+                s.eat(TK::RightParen)
+            })
+            .is_some()
+        {
+            return Some(GroupingSet::Exprs(Vec::new().into()));
+        }
+        // Parenthesized list: (a, b)
+        if let Some(exprs) = self.try_parse(|s| s.parenthesized(|s| s.comma_list(Self::parse_expr)))
+        {
+            return Some(GroupingSet::Exprs(exprs.items.into()));
+        }
+        // Single expression
+        Some(GroupingSet::Expr(self.spanned(Self::parse_expr)?))
     }
 
     fn parse_having(&mut self) -> R<Loc<Expr>> {
@@ -943,7 +1110,9 @@ impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
                 break;
             }
         }
-        Some(Window { windows })
+        Some(Window {
+            windows: windows.into(),
+        })
     }
 
     fn parse_window_ref(&mut self) -> R<WindowRef> {
@@ -1457,5 +1626,172 @@ mod tests {
     #[test]
     fn overlaps() {
         assert!(parse("SELECT (a, b) OVERLAPS (c, d)").is_some());
+    }
+
+    // DML tests
+    #[test]
+    fn insert_values() {
+        assert!(matches!(
+            parse("INSERT INTO t (a, b) VALUES (1, 2)"),
+            Some(Loc {
+                item: Statement::Insert(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn insert_multiple_rows() {
+        assert!(matches!(
+            parse("INSERT INTO t VALUES (1), (2), (3)"),
+            Some(Loc {
+                item: Statement::Insert(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn insert_from_select() {
+        assert!(matches!(
+            parse("INSERT INTO t SELECT * FROM s"),
+            Some(Loc {
+                item: Statement::Insert(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn insert_default() {
+        assert!(matches!(
+            parse("INSERT INTO t DEFAULT VALUES"),
+            Some(Loc {
+                item: Statement::Insert(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn insert_returning() {
+        assert!(matches!(
+            parse("INSERT INTO t (a) VALUES (1) RETURNING *"),
+            Some(Loc {
+                item: Statement::Insert(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_simple() {
+        assert!(matches!(
+            parse("UPDATE t SET a = 1 WHERE id = 1"),
+            Some(Loc {
+                item: Statement::Update(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_multiple_cols() {
+        assert!(matches!(
+            parse("UPDATE t SET a = 1, b = 2, c = 3"),
+            Some(Loc {
+                item: Statement::Update(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_from() {
+        assert!(matches!(
+            parse("UPDATE t SET a = s.a FROM s WHERE t.id = s.id"),
+            Some(Loc {
+                item: Statement::Update(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn update_returning() {
+        assert!(matches!(
+            parse("UPDATE t SET a = 1 RETURNING *"),
+            Some(Loc {
+                item: Statement::Update(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn delete_simple() {
+        assert!(matches!(
+            parse("DELETE FROM t WHERE id = 1"),
+            Some(Loc {
+                item: Statement::Delete(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn delete_using() {
+        assert!(matches!(
+            parse("DELETE FROM t USING s WHERE t.id = s.id"),
+            Some(Loc {
+                item: Statement::Delete(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn delete_returning() {
+        assert!(matches!(
+            parse("DELETE FROM t WHERE id = 1 RETURNING *"),
+            Some(Loc {
+                item: Statement::Delete(_),
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn values_standalone() {
+        assert!(parse("VALUES (1, 2), (3, 4)").is_some());
+    }
+
+    #[test]
+    fn values_in_cte() {
+        assert!(parse("WITH v AS (VALUES (1), (2)) SELECT * FROM v").is_some());
+    }
+
+    #[test]
+    fn group_by_rollup() {
+        let stmt = parse("SELECT a, b, SUM(c) FROM t GROUP BY ROLLUP(a, b)");
+        assert!(stmt.is_some());
+    }
+
+    #[test]
+    fn group_by_cube() {
+        let stmt = parse("SELECT a, b, SUM(c) FROM t GROUP BY CUBE(a, b)");
+        assert!(stmt.is_some());
+    }
+
+    #[test]
+    fn group_by_grouping_sets() {
+        let stmt = parse("SELECT a, b, SUM(c) FROM t GROUP BY GROUPING SETS((a, b), (a), (b), ())");
+        assert!(stmt.is_some());
+    }
+
+    #[test]
+    fn group_by_mixed() {
+        let stmt = parse("SELECT a, b, c FROM t GROUP BY a, ROLLUP(b, c)");
+        assert!(stmt.is_some());
     }
 }

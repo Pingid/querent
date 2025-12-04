@@ -105,6 +105,8 @@ fn should_complete<'a>(ctx: &Context<'a>) -> bool {
         }
         // After comma and space - allow column completions
         (L::Space(inner), Some(CP::ExprLeft)) if matches!(**inner, L::Comma) => true,
+        // After dot - allow column completions (for qualified names like table.^)
+        (L::Dot, _) => true,
         // Other ExprLeft positions - allow column completions
         (_, Some(CP::ExprLeft)) => true,
         // Fallback: allow columns after clause keywords like WHERE/AND

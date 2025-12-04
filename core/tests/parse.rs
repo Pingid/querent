@@ -111,6 +111,26 @@ fn ans_complete() {
         "WITH cte AS (SELECT id FROM users) SELECT * FROM cte",
         "WITH RECURSIVE tree AS (SELECT id, parent_id FROM nodes WHERE parent_id IS NULL UNION ALL SELECT n.id, n.parent_id FROM nodes n INNER JOIN tree t ON n.parent_id = t.id) SELECT * FROM tree",
         "WITH a AS (SELECT 1 AS x), b AS (SELECT 2 AS y) SELECT * FROM a, b",
+        // Advanced GROUP BY
+        "SELECT a, b, SUM(c) FROM t GROUP BY ROLLUP(a, b)",
+        "SELECT a, b, SUM(c) FROM t GROUP BY CUBE(a, b)",
+        "SELECT a, b, SUM(c) FROM t GROUP BY GROUPING SETS((a, b), (a), (b), ())",
+        "SELECT a, b, c, SUM(d) FROM t GROUP BY a, ROLLUP(b, c)",
+        // DML: INSERT
+        "INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com')",
+        "INSERT INTO users (id, name) VALUES (1, 'Alice'), (2, 'Bob')",
+        "INSERT INTO logs SELECT * FROM temp_logs",
+        "INSERT INTO counts (n) SELECT COUNT(*) FROM items",
+        // DML: UPDATE
+        "UPDATE users SET name = 'Bob' WHERE id = 1",
+        "UPDATE users SET name = 'Bob', email = 'bob@example.com' WHERE id = 1",
+        "UPDATE users SET age = age + 1",
+        // DML: DELETE
+        "DELETE FROM users WHERE id = 1",
+        "DELETE FROM logs WHERE created_at < DATE '2020-01-01'",
+        // VALUES as statement / in CTEs
+        "VALUES (1, 'a'), (2, 'b'), (3, 'c')",
+        "WITH v AS (VALUES (1), (2), (3)) SELECT * FROM v",
     ];
     assert_display_match(&inputs, ANSI_COMPLIANT_SPECS);
 }

@@ -8,29 +8,32 @@ use crate::dialect::DialectSpec;
 use crate::doc::Content;
 use crate::schema;
 
-pub struct Engine {
+pub struct Engine<P, R> {
     pub spec: &'static DialectSpec,
     pub schema: schema::Cache,
+    pub providers: P,
+    pub ranker: R,
 }
 
-impl Engine {
+impl Engine<DefaultProviders, DefaultRanker> {
     pub fn new(spec: &'static DialectSpec, schema: schema::Cache) -> Self {
-        Self { spec, schema }
+        Self {
+            spec,
+            schema,
+            ranker: DefaultRanker::default(),
+            providers: DefaultProviders::default(),
+        }
     }
 
-    pub fn complete(&self, doc: &Content) -> Completions {
-        complete(&self.spec, &self.schema, doc)
+    pub fn complete(&mut self, doc: &Content) -> Completions {
+        let text = doc.to_string();
+        let cursor = doc.cursor().min(text.len());
+        let mut candidates = CandidateSet::default();
+        let Some(mut ctx) = Context::build(self.spec, &self.schema, &text, cursor) else {
+            return candidates.empty();
+        };
+        self.providers.complete(&mut ctx, &mut candidates);
+        self.ranker.complete(&mut ctx, &mut candidates);
+        candidates.completions()
     }
-}
-
-pub fn complete(spec: &DialectSpec, schema: &schema::Cache, doc: &Content) -> Completions {
-    let text = doc.to_string();
-    let cursor = doc.cursor().min(text.len());
-    let mut candidates = CandidateSet::default();
-    let Some(mut ctx) = Context::build(spec, schema, &text, cursor) else {
-        return candidates.empty();
-    };
-    DefaultProviders.complete(&mut ctx, &mut candidates);
-    DefaultRanker::default().complete(&mut ctx, &mut candidates);
-    candidates.completions()
 }

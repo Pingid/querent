@@ -2,10 +2,28 @@ use std::ops::Deref;
 use std::ops::Range;
 
 /// A span and an item
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Loc<T> {
     pub span: Span,
     pub item: T,
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Loc<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            write!(
+                f,
+                "Loc<{}.{}: {:#?}>",
+                self.span.start, self.span.end, &self.item,
+            )
+        } else {
+            write!(
+                f,
+                "Loc<{}.{}: {:?}>",
+                self.span.start, self.span.end, &self.item,
+            )
+        }
+    }
 }
 
 impl<T> Loc<T> {

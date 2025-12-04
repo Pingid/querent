@@ -34,6 +34,8 @@ impl Ranker for KeywordMatchRank {
             Keyword::Over | Keyword::Partition => 0.6,
             // Advanced operations - lower priority
             Keyword::Merge => 0.5,
+            // many style guides warn against NATURAL JOIN because it can break when schemas evolve
+            Keyword::Natural => 0.55,
             // Default for unmatched keywords
             _ => 0.4,
         }
