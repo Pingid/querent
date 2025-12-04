@@ -108,6 +108,7 @@ impl AstDisplay for ast::Expr {
                     Some(OpTag::Between) => " BETWEEN ",
                     Some(OpTag::In) => " IN ",
                     Some(OpTag::Overlap) => " && ",
+                    Some(OpTag::Overlaps) => " OVERLAPS ",
                     Some(OpTag::Contains) => " @> ",
                     Some(OpTag::ContainedBy) => " <@ ",
                     Some(OpTag::JsonGet) => "->",
@@ -119,6 +120,13 @@ impl AstDisplay for ast::Expr {
                     Some(OpTag::JsonAllKeys) => " ?& ",
                     Some(OpTag::JsonPathMatch) => " @? ",
                     Some(OpTag::JsonPathBool) => " @@ ",
+                    Some(OpTag::BitAnd) => " & ",
+                    Some(OpTag::BitOr) => " | ",
+                    Some(OpTag::BitXor) => " # ",
+                    Some(OpTag::Shl) => " << ",
+                    Some(OpTag::Shr) => " >> ",
+                    Some(OpTag::Exp) => " ^ ",
+                    Some(OpTag::TypeCast) => "::",
                     _ => " ",
                 };
                 format!(
@@ -138,8 +146,8 @@ impl AstDisplay for ast::Expr {
             ast::Expr::Unary(u) => {
                 let op_str = match u.op_tok.item {
                     OpTag::Not => "NOT ",
-                    OpTag::Sub => "-",
-                    OpTag::Add => "+",
+                    OpTag::Sub | OpTag::UnaryMinus => "-",
+                    OpTag::Add | OpTag::UnaryPlus => "+",
                     _ => "",
                 };
                 format!("{}{}", op_str, u.expr.item.display(input))
@@ -349,7 +357,72 @@ impl AstDisplay for ast::Expr {
                     }
                 }
             }
+            ast::Expr::Cast(cast) => {
+                format!(
+                    "CAST({} AS {})",
+                    cast.expr.item.display(input),
+                    cast.data_type.item.display(input)
+                )
+            }
+            ast::Expr::Subscript(sub) => {
+                if let Some(upper) = &sub.upper {
+                    format!(
+                        "{}[{}:{}]",
+                        sub.expr.item.display(input),
+                        sub.index.item.display(input),
+                        upper.item.display(input)
+                    )
+                } else {
+                    format!(
+                        "{}[{}]",
+                        sub.expr.item.display(input),
+                        sub.index.item.display(input)
+                    )
+                }
+            }
+            ast::Expr::Row(row) => {
+                let exprs = row
+                    .exprs
+                    .items
+                    .iter()
+                    .map(|e| e.item.display(input))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("ROW({})", exprs)
+            }
+            ast::Expr::AtTimeZone(atz) => {
+                format!(
+                    "{} AT TIME ZONE {}",
+                    atz.expr.item.display(input),
+                    atz.timezone.item.display(input)
+                )
+            }
             ast::Expr::Empty => String::new(),
+        }
+    }
+}
+
+impl AstDisplay for ast::DataType {
+    fn display(&self, input: &str) -> String {
+        match self {
+            ast::DataType::Named(name) => name.item.display(input),
+            ast::DataType::Parameterized { name, params } => {
+                let params_str = params
+                    .iter()
+                    .map(|p| p.item.display(input))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{}({})", name.item.display(input), params_str)
+            }
+        }
+    }
+}
+
+impl AstDisplay for ast::TypeParam {
+    fn display(&self, input: &str) -> String {
+        match self {
+            ast::TypeParam::Number(n) => n.to_string(),
+            ast::TypeParam::Ident(id) => id.as_str(input).to_string(),
         }
     }
 }
@@ -374,6 +447,7 @@ impl AstDisplay for ast::Literal {
                     ast::TypedLiteralKind::Date => "DATE",
                     ast::TypedLiteralKind::Time => "TIME",
                     ast::TypedLiteralKind::Timestamp => "TIMESTAMP",
+                    ast::TypedLiteralKind::Interval => "INTERVAL",
                 };
                 format!("{} {}", type_str, value.as_str(input))
             }
@@ -505,8 +579,15 @@ impl AstDisplay for ast::TableRef {
                 let mut result = join.left.item.display(input);
 
                 // Add join type
+                let natural_prefix = if join.kind.natural { "NATURAL " } else { "" };
                 let join_str = match join.kind.base {
-                    ast::JoinBase::Inner => "INNER JOIN",
+                    ast::JoinBase::Inner => {
+                        if join.kind.natural {
+                            "JOIN"
+                        } else {
+                            "INNER JOIN"
+                        }
+                    }
                     ast::JoinBase::Left => {
                         if join.kind.outer {
                             "LEFT OUTER JOIN"
@@ -531,7 +612,7 @@ impl AstDisplay for ast::TableRef {
                     ast::JoinBase::Cross => "CROSS JOIN",
                 };
 
-                result.push_str(&format!(" {} {}", join_str, join.right.item.display(input)));
+                result.push_str(&format!(" {}{} {}", natural_prefix, join_str, join.right.item.display(input)));
 
                 // Add join constraint
                 if let Some(constraint) = &join.constraint {
@@ -720,6 +801,12 @@ impl AstDisplay for ast::OrderByItem {
             match direction {
                 ast::SortDirection::Asc => result.push_str(" ASC"),
                 ast::SortDirection::Desc => result.push_str(" DESC"),
+            }
+        }
+        if let Some(nulls) = &self.nulls {
+            match nulls {
+                ast::NullsOrder::First => result.push_str(" NULLS FIRST"),
+                ast::NullsOrder::Last => result.push_str(" NULLS LAST"),
             }
         }
         result

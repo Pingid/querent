@@ -25,6 +25,7 @@ pub enum TokenKind {
     // Punctuation / delimiters
     Dot,
     Comma,
+    Colon,
     Semicolon,
     LeftParen,
     RightParen,
@@ -92,9 +93,6 @@ pub enum Keyword {
     Cube,
     Grouping,
     Set,
-
-    // Predicates & logic
-    Overlaps,
 
     // Null / boolean literals
     Null,
@@ -164,6 +162,7 @@ pub enum Keyword {
     // Misc
     Recursive,
     As,
+    At,
     Escape,
     To,
     Array,
@@ -298,6 +297,9 @@ pub enum OpTag {
     Contains,    // @>
     ContainedBy, // <@
     Overlap,     // &&
+
+    // Type cast
+    TypeCast, // ::
 }
 
 // ---------------- Helper functions ----------------

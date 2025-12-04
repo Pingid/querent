@@ -356,7 +356,50 @@ pub enum Expr {
     In(Loc<In>),
     Over(Loc<Over>),
     Exists(Box<Loc<Query>>),
+    Cast(Loc<Cast>),
+    Subscript(Loc<Subscript>),
+    Row(Loc<Row>),
+    AtTimeZone(Loc<AtTimeZone>),
     Empty,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cast {
+    pub expr: Box<Loc<Expr>>,
+    pub data_type: Loc<DataType>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DataType {
+    Named(Loc<QualifiedName>),
+    Parameterized {
+        name: Loc<QualifiedName>,
+        params: Vec<Loc<TypeParam>>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeParam {
+    Number(i64),
+    Ident(Identifier),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Subscript {
+    pub expr: Box<Loc<Expr>>,
+    pub index: Box<Loc<Expr>>,
+    pub upper: Option<Box<Loc<Expr>>>, // for slice: arr[1:3]
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Row {
+    pub exprs: DelimitedList<Loc<Expr>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AtTimeZone {
+    pub expr: Box<Loc<Expr>>,
+    pub timezone: Box<Loc<Expr>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -497,6 +540,7 @@ pub enum TypedLiteralKind {
     Date,
     Time,
     Timestamp,
+    Interval,
 }
 
 // ------------- Names and identifiers -------------

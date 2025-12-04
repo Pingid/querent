@@ -57,6 +57,9 @@ impl<'txt, 'spec> Lexer<'txt, 'spec> {
                 Some(self.make_token_single_char(TokenKind::Dot))
             }
             Some(',') => Some(self.make_token_single_char(TokenKind::Comma)),
+            Some(':') if self.peek_nth(1) != Some(':') => {
+                Some(self.make_token_single_char(TokenKind::Colon))
+            }
             Some('(') => Some(self.make_token_single_char(TokenKind::LeftParen)),
             Some(')') => Some(self.make_token_single_char(TokenKind::RightParen)),
             Some('[') => Some(self.make_token_single_char(TokenKind::LeftBracket)),

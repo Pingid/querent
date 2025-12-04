@@ -42,7 +42,6 @@ pub fn keywords() -> Vec<String> {
         "TO",
         "ANY",
         "SOME",
-        "OVERLAPS",
         "DISTINCT",
         "OVER",
         "PARTITION",
@@ -95,6 +94,7 @@ pub fn keywords() -> Vec<String> {
         "TIMESTAMP",
         "WITHOUT",
         "ZONE",
+        "AT",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -129,6 +129,7 @@ pub fn operators() -> Vec<(&'static str, u8, &'static str, &'static str, &'stati
         ("IN", 4, "In", "None", "Infix"),
         ("LIKE", 4, "Like", "None", "Infix"),
         ("SIMILAR", 4, "Similar", "None", "Infix"),
+        ("OVERLAPS", 4, "Overlaps", "None", "Infix"),
         // Logical
         ("NOT", 3, "Not", "Right", "Prefix"),
         ("EXISTS", 3, "Exists", "Right", "Prefix"),

@@ -134,7 +134,7 @@ ast_node_impls!(
     QuerySuffix, OrderBy, OrderByItem, Limit, Offset,
     Values,
     Expr, Binary, Unary, Paren, IsNull, Between, Like, ILike, Similar,
-    FunctionCall, Quantified, Case, In, Over,
+    FunctionCall, Quantified, Case, In, Over, Cast, Subscript, Row, AtTimeZone,
     Literal, QualifiedName, Identifier
 );
 
@@ -612,8 +612,31 @@ impl<'a> Node<'a> {
                 ast::Expr::In(i) => f(Node::In(i)),
                 ast::Expr::Over(o) => f(Node::Over(o)),
                 ast::Expr::Exists(q) => f(Node::Query(q)),
+                ast::Expr::Cast(c) => f(Node::Cast(c)),
+                ast::Expr::Subscript(s) => f(Node::Subscript(s)),
+                ast::Expr::Row(r) => f(Node::Row(r)),
+                ast::Expr::AtTimeZone(atz) => f(Node::AtTimeZone(atz)),
                 ast::Expr::Empty => ControlFlow::Continue(()),
             },
+            Node::Cast(c) => f(Node::Expr(&c.expr)),
+            Node::Subscript(s) => {
+                f(Node::Expr(&s.expr))?;
+                f(Node::Expr(&s.index))?;
+                if let Some(upper) = &s.upper {
+                    f(Node::Expr(upper))?;
+                }
+                ControlFlow::Continue(())
+            }
+            Node::Row(r) => {
+                for e in &r.exprs.items {
+                    f(Node::Expr(e))?;
+                }
+                ControlFlow::Continue(())
+            }
+            Node::AtTimeZone(atz) => {
+                f(Node::Expr(&atz.expr))?;
+                f(Node::Expr(&atz.timezone))
+            }
             Node::Binary(b) => {
                 f(Node::Expr(&b.left))?;
                 if let Some(right) = &b.right {

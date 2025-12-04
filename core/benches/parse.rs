@@ -10,6 +10,7 @@ use querent_core::dialect::postgres;
 use querent_core::lex::TokenKind;
 use querent_core::lex::lex;
 use querent_core::parse::Parser;
+use querent_core::parse::v2::WinnowParser;
 
 const DEFAULT_URL: &str =
     "https://raw.githubusercontent.com/memsql/benchmarks-tpc/refs/heads/master/tpcds/queries.sql";
@@ -115,6 +116,33 @@ fn bench_tpcds(c: &mut Criterion) {
                 for q in cases {
                     let tokens = lex(spec, q);
                     let mut parser = Parser::new(&tokens);
+                    let _ = parser.parse_statement();
+                }
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_function(BenchmarkId::new("parse_all_v2", "pg"), |b| {
+        b.iter(|| {
+            let spec = &postgres::SPEC;
+            for q in &stmts {
+                let tokens = lex(spec, q);
+                let mut parser = WinnowParser::new(&tokens, spec);
+                let _ = parser.parse_statement();
+            }
+        });
+    });
+
+    // Per-query parsing (batched) for distribution insight
+    group.bench_function(BenchmarkId::new("parse_each_v2", "pg"), |b| {
+        b.iter_batched(
+            || stmts.clone(),
+            |cases| {
+                let spec = &postgres::SPEC;
+                for q in cases {
+                    let tokens = lex(spec, q);
+                    let mut parser = WinnowParser::new(&tokens, spec);
                     let _ = parser.parse_statement();
                 }
             },

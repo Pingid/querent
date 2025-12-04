@@ -6,6 +6,7 @@ use crate::span::Loc;
 mod expr;
 
 mod parser;
+pub mod v2;
 pub use parser::*;
 
 pub fn parse_statement<'txt, 'tok>(

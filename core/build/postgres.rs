@@ -60,6 +60,8 @@ pub fn operators() -> Vec<(&'static str, u8, &'static str, &'static str, &'stati
         ("@@", 8, "JsonPathBool", "Left", "Infix"),
         // Predicates (PG-only)
         ("ILIKE", 7, "Ilike", "None", "Infix"),
+        // Type cast (postfix in spirit, but parsed as infix with type RHS)
+        ("::", 12, "TypeCast", "Left", "Infix"),
     ]);
     operators
 }

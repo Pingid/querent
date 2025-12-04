@@ -82,11 +82,8 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
             for item in group_by.items.items.iter() {
                 if let ast::GroupByItem::Expr(expr) = &item.item {
                     if let ast::Expr::Name(name) = &expr.item {
-                        let ident = QualifiedIdent::from_qualified_name(
-                            IdentKind::Column,
-                            self.text,
-                            name,
-                        );
+                        let ident =
+                            QualifiedIdent::from_qualified_name(IdentKind::Column, self.text, name);
                         if !self
                             .graph
                             .group_by
@@ -126,9 +123,7 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
 
         let mut ranked: Vec<(&'a str, usize)> = alias_counts.into_iter().collect();
         ranked.sort_by(|(alias_a, count_a), (alias_b, count_b)| {
-            count_b
-                .cmp(count_a)
-                .then_with(|| alias_a.cmp(alias_b))
+            count_b.cmp(count_a).then_with(|| alias_a.cmp(alias_b))
         });
 
         self.graph.where_focus = ranked.into_iter().map(|(alias, _)| alias).collect();
@@ -171,9 +166,7 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
         }
     }
 
-    fn collect_expr_aliases(
-        &self, expr: &Loc<ast::Expr>, counts: &mut HashMap<&'a str, usize>,
-    ) {
+    fn collect_expr_aliases(&self, expr: &Loc<ast::Expr>, counts: &mut HashMap<&'a str, usize>) {
         use ast::Expr::*;
 
         match &expr.item {
@@ -252,14 +245,29 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
                     self.collect_expr_aliases(filter, counts);
                 }
             }
+            Cast(cast) => self.collect_expr_aliases(&cast.expr, counts),
+            Subscript(sub) => {
+                self.collect_expr_aliases(&sub.expr, counts);
+                self.collect_expr_aliases(&sub.index, counts);
+                if let Some(upper) = &sub.upper {
+                    self.collect_expr_aliases(upper, counts);
+                }
+            }
+            Row(row) => {
+                for e in &row.exprs.items {
+                    self.collect_expr_aliases(e, counts);
+                }
+            }
+            AtTimeZone(atz) => {
+                self.collect_expr_aliases(&atz.expr, counts);
+                self.collect_expr_aliases(&atz.timezone, counts);
+            }
             Subquery(_) | Exists(_) => {}
             Literal(_) | Empty => {}
         }
     }
 
-    fn register_alias(
-        &self, name: &Loc<ast::QualifiedName>, counts: &mut HashMap<&'a str, usize>,
-    ) {
+    fn register_alias(&self, name: &Loc<ast::QualifiedName>, counts: &mut HashMap<&'a str, usize>) {
         let ident = self.column_name(name);
         if ident.is_wildcard() {
             return;
