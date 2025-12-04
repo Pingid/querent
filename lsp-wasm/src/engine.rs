@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use querent_core::complete::engine::Engine;
+use querent_core::complete::provider::DefaultProviders;
+use querent_core::complete::rank::DefaultRanker;
 use querent_core::complete::types::Completion;
 use querent_core::dialect::DialectKind;
 use querent_core::schema;
@@ -29,7 +31,7 @@ const TS: &str = r#"
 #[wasm_bindgen]
 #[derive(Clone, Default)]
 pub struct EngineProvider {
-    engines: Rc<RefCell<HashMap<String, Engine>>>,
+    engines: Rc<RefCell<HashMap<String, Engine<DefaultProviders, DefaultRanker>>>>,
 }
 
 #[wasm_bindgen]
@@ -82,8 +84,8 @@ impl EngineProvider {
 }
 
 impl CompletionProvider for EngineProvider {
-    fn complete(&self, uri: String, doc: &querent_core::doc::Content) -> Vec<Completion> {
-        if let Some(engine) = self.engines.borrow().get(&uri) {
+    fn complete(&mut self, uri: String, doc: &querent_core::doc::Content) -> Vec<Completion> {
+        if let Some(engine) = self.engines.borrow_mut().get_mut(&uri) {
             engine.complete(doc).items
         } else {
             vec![]

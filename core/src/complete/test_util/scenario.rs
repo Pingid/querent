@@ -183,7 +183,7 @@ impl ScenarioComp {
                 let mut context =
                     Context::build(&dialect_spec, &schema_cache, &sql_query, *cursor_position)
                         .unwrap();
-                let mut candidate_set = CandidateSet::default();
+                let mut candidate_set = CandidateSet::new();
                 for completer in completers.iter_mut() {
                     if completer.should_complete(&context) {
                         completer.complete(&mut context, &mut candidate_set);
@@ -376,20 +376,20 @@ impl Assert {
                 .iter()
                 .map(|matcher| matcher.to_string())
                 .collect::<Vec<_>>()
-                .join(", ")
+                .join("\n  ")
         };
         match self {
             Assert::Starts(m) => {
-                format!("Expected completions to start with: {}", show(m))
+                format!("Expected completions to start with:\n  {}", show(m))
             }
             Assert::Contains(m) => {
-                format!("Expected completions to contain: {}", show(m))
+                format!("Expected completions to contain:\n  {}", show(m))
             }
             Assert::InOrder(m) => {
-                format!("Expected order to match: {}", show(m))
+                format!("Expected order to match:\n  {}", show(m))
             }
             Assert::NoneOf(m) => {
-                format!("Expected completions to not contain: {}", show(m))
+                format!("Expected completions to not contain:\n  {}", show(m))
             }
             Assert::Combined(assertions) => {
                 format!("Expected {:?}", assertions)

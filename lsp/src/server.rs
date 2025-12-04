@@ -13,7 +13,7 @@ use crate::LspResponse;
 use crate::response::LspResponseCompletions;
 
 pub trait CompletionProvider {
-    fn complete(&self, uri: String, doc: &Content) -> Vec<Completion>;
+    fn complete(&mut self, uri: String, doc: &Content) -> Vec<Completion>;
 }
 
 #[derive(Clone)]
@@ -50,7 +50,7 @@ impl<E: CompletionProvider> LspServer<E> {
         }
     }
 
-    pub async fn handle_json_rpc(&self, req: LspRequest) -> Option<LspResponse> {
+    pub async fn handle_json_rpc(&mut self, req: LspRequest) -> Option<LspResponse> {
         match req {
             LspRequest::Initialize(req) => Some(LspResponse::result(
                 req.id,

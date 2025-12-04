@@ -424,6 +424,7 @@ impl<'a, 'ast> ScopeGraphBuilder<'a, 'ast> {
         &mut self, item: &Loc<ast::ProjectionItem>, alias: Option<&'a str>,
     ) -> Vec<Projection<'a>> {
         match &item.expr.item {
+            ast::Expr::Empty => vec![], // Skip empty expressions (cursor placeholders)
             ast::Expr::Name(name) => self.resolve_name_projection(name, alias),
             ast::Expr::Literal(lit) => vec![self.resolve_literal_projection(lit, alias)],
             ast::Expr::FunctionCall(func) => {

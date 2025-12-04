@@ -11,18 +11,35 @@ use crate::lex::Keyword;
 use crate::schema;
 use crate::span::Span;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CandidateSet<'a> {
     pub items: Vec<Candidate<'a>>,
     pub seen: HashSet<SmolStr>,
+    pub replace: Option<Span>,
 }
 
 impl<'a> CandidateSet<'a> {
-    pub fn push(&mut self, candidate: Candidate<'a>) {
+    pub fn new() -> Self {
+        Self {
+            items: vec![],
+            seen: HashSet::new(),
+            replace: None,
+        }
+    }
+
+    pub fn push(&mut self, mut candidate: Candidate<'a>) {
+        if let Some(replace) = self.replace {
+            candidate.completion.replace = replace;
+        }
         if self.seen.insert(candidate.completion.insert_text.clone()) {
             self.items.push(candidate);
         }
     }
+
+    pub fn replace(&mut self, span: Span) {
+        self.replace = Some(span);
+    }
+
     pub fn completions(mut self) -> Completions {
         self.sort();
         Completions {

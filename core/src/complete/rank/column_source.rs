@@ -1,8 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::complete::candidate::Candidate;
 use crate::complete::candidate::CandidateKind;
-use crate::complete::context::{ClauseKind, Context, QualifiedIdent};
+use crate::complete::context::ClauseKind;
+use crate::complete::context::Context;
+use crate::complete::context::QualifiedIdent;
 use crate::complete::rank::Ranker;
 
 /// Prioritize columns from the same source as other projected columns.
@@ -130,6 +133,18 @@ impl Ranker for ColumnSourceRank {
 
         if matches!(ctx.clause().kind, ClauseKind::Select) && matches_group_key {
             score += 0.4;
+        }
+
+        // In GROUP BY clause, prioritize columns from SELECT list and de-prioritize already grouped
+        if matches!(ctx.clause().kind, ClauseKind::GroupBy) {
+            // Boost columns that are in the SELECT list (need to be grouped)
+            if is_name_projected {
+                score += 0.5;
+            }
+            // De-prioritize columns already in GROUP BY
+            if matches_group_key {
+                score -= 0.4;
+            }
         }
 
         score

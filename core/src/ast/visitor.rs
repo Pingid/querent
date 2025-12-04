@@ -127,6 +127,7 @@ macro_rules! ast_node_impls {
 ast_node_impls!(
     Statement, Query, With, Cte, SetOpTerm, QueryPrimary,
     Select, Projection, ProjectionItem,
+    Insert, Update, Delete, Assignment,
     From, TableRef, TableFactor, NamedTableFactor, FunctionTableFactor, SubqueryTableFactor, Join, JoinConstraint,
     Where,
     GroupBy, GroupByItem, GroupingSet,
@@ -359,6 +360,9 @@ impl<'a> Node<'a> {
             // Top-level
             Node::Statement(stmt) => match &stmt.item {
                 ast::Statement::Query(n) => f(Node::Query(n)),
+                ast::Statement::Insert(n) => f(Node::Insert(n)),
+                ast::Statement::Update(n) => f(Node::Update(n)),
+                ast::Statement::Delete(n) => f(Node::Delete(n)),
                 ast::Statement::Partial(_) => ControlFlow::Continue(()),
             },
 
@@ -435,6 +439,50 @@ impl<'a> Node<'a> {
                 ControlFlow::Continue(())
             }
             Node::ProjectionItem(n) => f(Node::Expr(&n.expr)),
+
+            // DML statements
+            Node::Insert(n) => {
+                f(Node::QualifiedName(&n.table))?;
+                match &n.source {
+                    ast::InsertSource::Values(v) => f(Node::Values(v))?,
+                    ast::InsertSource::Query(q) => f(Node::Query(q))?,
+                    ast::InsertSource::Default => {}
+                }
+                if let Some(ret) = &n.returning {
+                    f(Node::Projection(ret))?;
+                }
+                ControlFlow::Continue(())
+            }
+            Node::Update(n) => {
+                f(Node::QualifiedName(&n.table))?;
+                for assignment in &n.assignments.items {
+                    f(Node::Assignment(assignment))?;
+                }
+                if let Some(from) = &n.from {
+                    f(Node::From(from))?;
+                }
+                if let Some(where_clause) = &n.where_clause {
+                    f(Node::Where(where_clause))?;
+                }
+                if let Some(ret) = &n.returning {
+                    f(Node::Projection(ret))?;
+                }
+                ControlFlow::Continue(())
+            }
+            Node::Delete(n) => {
+                f(Node::QualifiedName(&n.table))?;
+                if let Some(using) = &n.using {
+                    f(Node::From(using))?;
+                }
+                if let Some(where_clause) = &n.where_clause {
+                    f(Node::Where(where_clause))?;
+                }
+                if let Some(ret) = &n.returning {
+                    f(Node::Projection(ret))?;
+                }
+                ControlFlow::Continue(())
+            }
+            Node::Assignment(n) => f(Node::Expr(&n.value)),
 
             // FROM clause
             Node::From(n) => {

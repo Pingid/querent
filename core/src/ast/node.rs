@@ -6,13 +6,67 @@ use crate::span::Span;
 /// Identifier is a zero-copy string slice tracked by Span
 pub type Identifier = Span;
 
+/// Vector type for AST nodes (kept as Vec - SmallVec proved slower due to
+/// struct size bloat hurting cache performance during parsing)
+pub type AstVec<T> = Vec<T>;
+
 // ------------- Top-level statement -------------
 
 /// SQL Statement types
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Query(Loc<Query>),
+    Insert(Loc<Insert>),
+    Update(Loc<Update>),
+    Delete(Loc<Delete>),
     Partial(Loc<()>),
+}
+
+// ------------- DML Statements -------------
+
+/// INSERT statement
+#[derive(Debug, Clone, PartialEq)]
+pub struct Insert {
+    pub table: Loc<QualifiedName>,
+    pub columns: Option<DelimitedList<Loc<Identifier>>>,
+    pub source: InsertSource,
+    pub returning: Option<Loc<Projection>>,
+}
+
+/// Source of data for INSERT
+#[derive(Debug, Clone, PartialEq)]
+pub enum InsertSource {
+    Values(Loc<Values>),
+    Query(Box<Loc<Query>>),
+    Default,
+}
+
+/// UPDATE statement
+#[derive(Debug, Clone, PartialEq)]
+pub struct Update {
+    pub table: Loc<QualifiedName>,
+    pub alias: Option<Loc<Identifier>>,
+    pub assignments: DelimitedList<Loc<Assignment>>,
+    pub from: Option<Loc<From>>,
+    pub where_clause: Option<Loc<Where>>,
+    pub returning: Option<Loc<Projection>>,
+}
+
+/// Column assignment in UPDATE SET clause
+#[derive(Debug, Clone, PartialEq)]
+pub struct Assignment {
+    pub column: Loc<Identifier>,
+    pub value: Loc<Expr>,
+}
+
+/// DELETE statement
+#[derive(Debug, Clone, PartialEq)]
+pub struct Delete {
+    pub table: Loc<QualifiedName>,
+    pub alias: Option<Loc<Identifier>>,
+    pub using: Option<Loc<From>>,
+    pub where_clause: Option<Loc<Where>>,
+    pub returning: Option<Loc<Projection>>,
 }
 
 // ------------- Query structure -------------
@@ -30,7 +84,7 @@ pub struct Query {
 #[derive(Debug, Clone, PartialEq)]
 pub struct With {
     pub recursive: bool,
-    pub ctes: Vec<Loc<Cte>>,
+    pub ctes: AstVec<Loc<Cte>>,
 }
 
 /// Common Table Expression (CTE)
@@ -53,7 +107,7 @@ pub enum CteMaterialization {
 #[derive(Debug, Clone, PartialEq)]
 pub struct QueryExpr {
     pub left: Loc<QueryPrimary>,
-    pub set_ops: Vec<Loc<SetOpTerm>>,
+    pub set_ops: AstVec<Loc<SetOpTerm>>,
 }
 
 /// A single set operation in the chain
@@ -213,22 +267,22 @@ pub struct GroupBy {
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroupByItem {
     Expr(Loc<Expr>),
-    Rollup(Vec<Loc<Expr>>),
-    Cube(Vec<Loc<Expr>>),
-    GroupingSets(Vec<Loc<GroupingSet>>),
+    Rollup(AstVec<Loc<Expr>>),
+    Cube(AstVec<Loc<Expr>>),
+    GroupingSets(AstVec<Loc<GroupingSet>>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroupingSet {
     Expr(Loc<Expr>),
-    Exprs(Vec<Loc<Expr>>),
+    Exprs(AstVec<Loc<Expr>>),
 }
 
 // ------------- WINDOW clause -------------
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Window {
-    pub windows: Vec<Loc<WindowDef>>,
+    pub windows: AstVec<Loc<WindowDef>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -374,7 +428,7 @@ pub enum DataType {
     Named(Loc<QualifiedName>),
     Parameterized {
         name: Loc<QualifiedName>,
-        params: Vec<Loc<TypeParam>>,
+        params: AstVec<Loc<TypeParam>>,
     },
 }
 
@@ -481,7 +535,7 @@ pub enum Quantifier {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Case {
     pub operand: Option<Box<Loc<Expr>>>,
-    pub when_clauses: Vec<WhenClause>,
+    pub when_clauses: Vec<WhenClause>, // Vec for recursive Expr
     pub else_clause: Option<Box<Loc<Expr>>>,
 }
 
@@ -560,6 +614,7 @@ pub enum NamePart {
 // ------------- Utility containers -------------
 
 /// A list of items separated by a separator
+/// Uses Vec instead of SmallVec because it's used in recursive Expr types
 #[derive(Debug, Clone, PartialEq)]
 pub struct DelimitedList<T> {
     pub items: Vec<T>,

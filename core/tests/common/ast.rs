@@ -11,8 +11,74 @@ impl AstDisplay for ast::Statement {
     fn display(&self, input: &str) -> String {
         match self {
             ast::Statement::Query(query) => query.item.display(input),
+            ast::Statement::Insert(insert) => insert.item.display(input),
+            ast::Statement::Update(update) => update.item.display(input),
+            ast::Statement::Delete(delete) => delete.item.display(input),
             ast::Statement::Partial(_) => String::new(),
         }
+    }
+}
+
+impl AstDisplay for ast::Insert {
+    fn display(&self, input: &str) -> String {
+        let mut result = format!("INSERT INTO {}", self.table.item.display(input));
+        if let Some(cols) = &self.columns {
+            let col_names: Vec<_> = cols.items.iter().map(|c| c.span.as_str(input)).collect();
+            result.push_str(&format!(" ({})", col_names.join(", ")));
+        }
+        match &self.source {
+            ast::InsertSource::Values(v) => result.push_str(&format!(" {}", v.item.display(input))),
+            ast::InsertSource::Query(q) => result.push_str(&format!(" {}", q.item.display(input))),
+            ast::InsertSource::Default => result.push_str(" DEFAULT VALUES"),
+        }
+        result
+    }
+}
+
+impl AstDisplay for ast::Update {
+    fn display(&self, input: &str) -> String {
+        let mut result = format!("UPDATE {} SET ", self.table.item.display(input));
+        let assignments: Vec<_> = self
+            .assignments
+            .items
+            .iter()
+            .map(|a| {
+                format!(
+                    "{} = {}",
+                    a.column.span.as_str(input),
+                    a.value.item.display(input)
+                )
+            })
+            .collect();
+        result.push_str(&assignments.join(", "));
+        if let Some(w) = &self.where_clause {
+            result.push_str(&format!(" WHERE {}", w.expr.item.display(input)));
+        }
+        result
+    }
+}
+
+impl AstDisplay for ast::Delete {
+    fn display(&self, input: &str) -> String {
+        let mut result = format!("DELETE FROM {}", self.table.item.display(input));
+        if let Some(w) = &self.where_clause {
+            result.push_str(&format!(" WHERE {}", w.expr.item.display(input)));
+        }
+        result
+    }
+}
+
+impl AstDisplay for ast::Values {
+    fn display(&self, input: &str) -> String {
+        let rows: Vec<_> = self
+            .rows
+            .iter()
+            .map(|row| {
+                let exprs: Vec<_> = row.items.iter().map(|e| e.item.display(input)).collect();
+                format!("({})", exprs.join(", "))
+            })
+            .collect();
+        format!("VALUES {}", rows.join(", "))
     }
 }
 
@@ -61,6 +127,7 @@ impl AstDisplay for ast::Projection {
             .items
             .iter()
             .map(|item| item.item.display(input))
+            .filter(|s| !s.is_empty()) // Skip empty expressions (cursor placeholders)
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -612,7 +679,12 @@ impl AstDisplay for ast::TableRef {
                     ast::JoinBase::Cross => "CROSS JOIN",
                 };
 
-                result.push_str(&format!(" {}{} {}", natural_prefix, join_str, join.right.item.display(input)));
+                result.push_str(&format!(
+                    " {}{} {}",
+                    natural_prefix,
+                    join_str,
+                    join.right.item.display(input)
+                ));
 
                 // Add join constraint
                 if let Some(constraint) = &join.constraint {
@@ -881,8 +953,8 @@ impl AstDisplay for ast::QueryPrimary {
     fn display(&self, input: &str) -> String {
         match self {
             ast::QueryPrimary::Select(stmt) => stmt.display(input),
-            ast::QueryPrimary::Values(_) => String::new(),
-            ast::QueryPrimary::Parenthesized(_) => String::new(),
+            ast::QueryPrimary::Values(v) => v.item.display(input),
+            ast::QueryPrimary::Parenthesized(q) => format!("({})", q.item.display(input)),
         }
     }
 }
@@ -902,9 +974,30 @@ impl AstDisplay for ast::GroupByItem {
     fn display(&self, input: &str) -> String {
         match self {
             ast::GroupByItem::Expr(expr) => expr.item.display(input),
-            ast::GroupByItem::Rollup(_) => String::new(),
-            ast::GroupByItem::Cube(_) => String::new(),
-            ast::GroupByItem::GroupingSets(_) => String::new(),
+            ast::GroupByItem::Rollup(exprs) => {
+                let items: Vec<_> = exprs.iter().map(|e| e.item.display(input)).collect();
+                format!("ROLLUP({})", items.join(", "))
+            }
+            ast::GroupByItem::Cube(exprs) => {
+                let items: Vec<_> = exprs.iter().map(|e| e.item.display(input)).collect();
+                format!("CUBE({})", items.join(", "))
+            }
+            ast::GroupByItem::GroupingSets(sets) => {
+                let items: Vec<_> = sets.iter().map(|s| s.item.display(input)).collect();
+                format!("GROUPING SETS({})", items.join(", "))
+            }
+        }
+    }
+}
+
+impl AstDisplay for ast::GroupingSet {
+    fn display(&self, input: &str) -> String {
+        match self {
+            ast::GroupingSet::Expr(expr) => expr.item.display(input),
+            ast::GroupingSet::Exprs(exprs) => {
+                let items: Vec<_> = exprs.iter().map(|e| e.item.display(input)).collect();
+                format!("({})", items.join(", "))
+            }
         }
     }
 }
