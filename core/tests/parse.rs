@@ -4,7 +4,7 @@ use querent_core::dialect::ansi;
 use querent_core::dialect::postgres;
 use querent_core::dialect::sqlite;
 use querent_core::lex::lex;
-use querent_core::parse::v2::WinnowParser;
+use querent_core::parse::v2::ParserV2;
 
 mod common;
 use common::ast::AstDisplay;
@@ -221,7 +221,7 @@ fn pg_complete() {
 // ---------------- Test utils ----------------
 fn statement(sql: &str, s: &DialectSpec) -> ast::Statement {
     let tokens = lex(s, sql);
-    let mut parser = WinnowParser::new(&tokens, s);
+    let mut parser = ParserV2::new(&tokens, s);
     parser.parse_statement().unwrap().item
 }
 

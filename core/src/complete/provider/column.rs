@@ -18,6 +18,7 @@ impl Completer for ColumnProvider {
         let detailer = DefaultDetailRenderer;
         let qualifier = ctx.cursor().qualifier.as_ref();
         let order_by_used = ctx.scope().order_by();
+        let ambiguous = ambiguous_names(&cols, ctx);
 
         for col in cols {
             if order_by_used.iter().any(|ident| col.ident.matches(ident)) {
@@ -55,8 +56,12 @@ impl Completer for ColumnProvider {
                 continue;
             }
 
-            // No qualifier - suggest all variants
+            // No qualifier - suggest all variants, but drop the bare unqualified
+            // variant for ambiguous names so the user must qualify the reference.
             for label in col.ident.variants() {
+                if label.parent.is_none() && ambiguous.contains(col.ident.name()) {
+                    continue;
+                }
                 b.push(
                     CandidateBuilder::column(label, col.ident, col.dt)
                         .detail(detailer.detail(ctx, &col))
@@ -79,30 +84,25 @@ fn should_complete<'a>(ctx: &Context<'a>) -> bool {
         // Keywords or identifiers in-progress
         (L::Keyword(_), _) => false,
         (L::Ident, _) => false,
-        // Operators and literals shouldn't trigger column completion
-        (L::Operator(tag), _) if !matches!(tag, OpTag::And | OpTag::Or) => false,
+        // Literals shouldn't trigger column completion
         (L::Literal, _) => false,
-        // After a space and an ident/operator/literal - block column completions
+        // Operators that don't expect a value on their right
+        (L::Operator(tag), _) if !operator_expects_value(*tag) => false,
+        // After a space following an ident/literal/non-value operator
         (L::Space(inner), _)
             if matches!(**inner, L::Ident | L::Literal)
                 || matches!(
                     **inner,
-                    L::Operator(tag) if !matches!(tag, OpTag::And | OpTag::Or)
+                    L::Operator(tag) if !operator_expects_value(tag)
                 ) =>
         {
             false
         }
         // After comma without space - block column completions
         (L::Comma, Some(CP::ExprLeft)) => false,
-        // Allow completing after logical operators (AND/OR)
-        (L::Space(inner), Some(CP::ExprRight))
-            if matches!(
-                **inner,
-                L::Operator(tag) if matches!(tag, OpTag::And | OpTag::Or)
-            ) =>
-        {
-            true
-        }
+        // After a value-expecting operator (e.g. `=`, `>`, AND, `+`) allow columns
+        (L::Operator(_), _) => true,
+        (L::Space(inner), _) if matches!(**inner, L::Operator(_)) => true,
         // After comma and space - allow column completions
         (L::Space(inner), Some(CP::ExprLeft)) if matches!(**inner, L::Comma) => true,
         // After dot - allow column completions (for qualified names like table.^)
@@ -129,6 +129,46 @@ fn should_complete<'a>(ctx: &Context<'a>) -> bool {
                 )
         }
     }
+}
+
+/// Column names that resolve to more than one in-scope source.
+///
+/// Only meaningful when the cursor sits inside a query with explicit FROM
+/// bindings; without a FROM clause we fall back to the whole catalog and keep
+/// bare names so the user can still type freely before adding sources.
+fn ambiguous_names<'a>(
+    cols: &[LogicalColumn<'a>], ctx: &Context<'a>,
+) -> std::collections::HashSet<&'a str> {
+    use std::collections::HashMap;
+    use std::collections::HashSet;
+    if ctx.scope().bindings.is_empty() {
+        return HashSet::new();
+    }
+    let mut sources: HashMap<&str, HashSet<Option<&str>>> = HashMap::new();
+    for col in cols {
+        sources
+            .entry(col.ident.name())
+            .or_default()
+            .insert(col.ident.table());
+    }
+    sources
+        .into_iter()
+        .filter(|(_, tables)| tables.len() > 1)
+        .map(|(name, _)| name)
+        .collect()
+}
+
+/// Binary operators that expect a value/expression on their right-hand side,
+/// where suggesting a column makes sense (comparisons, logical, arithmetic).
+fn operator_expects_value(tag: OpTag) -> bool {
+    use OpTag::*;
+    matches!(
+        tag,
+        And | Or
+            | Eq | Neq | Lt | Lte | Gt | Gte
+            | Like | Ilike | In | Between | Similar
+            | Add | Sub | Mul | Div | Mod | Exp | Concat
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -219,7 +259,6 @@ mod tests {
         assert_not_complete("SELECT a FROM a t,^");
         assert_not_complete("SELECT a FROM a t, ^");
         assert_not_complete("SELECT a FROM b WHERE a ^");
-        assert_not_complete("SELECT a FROM b WHERE a =^");
         assert_not_complete("SELECT a FROM b WHERE a = b^");
     }
 

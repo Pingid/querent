@@ -1,4 +1,5 @@
 use crate::ast;
+use crate::dialect::DialectSpec;
 use crate::lex::TokenKind;
 use crate::lex::TokenTape;
 use crate::span::Loc;
@@ -7,23 +8,28 @@ mod expr;
 
 mod parser;
 pub mod v2;
+pub mod v3;
 pub use parser::*;
 
 pub fn parse_statement<'txt, 'tok>(
-    tape: impl Into<TokenTape<'txt, 'tok>>,
+    tape: impl Into<TokenTape<'txt, 'tok>>, spec: &'tok DialectSpec,
 ) -> Option<Loc<ast::Statement>>
-where 'txt: 'tok {
-    let mut parser = Parser::new(tape);
-    parser.parse_statement()
+where
+    'txt: 'tok,
+{
+    let tape = tape.into();
+    v3::parse_statement(&tape.tokens[tape.pos..], spec)
 }
 
 pub fn parse_statement_at_cursor<'txt, 'tok>(
-    tape: impl Into<TokenTape<'txt, 'tok>>, cursor: usize,
+    tape: impl Into<TokenTape<'txt, 'tok>>, cursor: usize, spec: &'tok DialectSpec,
 ) -> Option<Loc<ast::Statement>>
-where 'txt: 'tok {
+where
+    'txt: 'tok,
+{
     let mut tape = tape.into();
     advance_to_statement_start(&mut tape, cursor);
-    parse_statement(tape)
+    parse_statement(tape, spec)
 }
 
 fn advance_to_statement_start<'txt, 'tok>(tape: &mut TokenTape<'txt, 'tok>, cursor: usize) {

@@ -4,6 +4,7 @@ use crate::complete::rank::Ranker;
 use crate::complete::rank::basic::*;
 use crate::complete::rank::column_qualifier::*;
 use crate::complete::rank::column_source::*;
+use crate::complete::rank::join_key::*;
 use crate::complete::rank::keyword::KeywordMatchRank;
 use crate::complete::rank::table_qualifier::*;
 
@@ -64,6 +65,8 @@ any_ranker_impls!(
     ColumnSource(ColumnSourceRank),
     ColumnQualified(ColumnQualifiedRank),
     TableQualified(TableQualifiedRank),
+    TableColumnMatch(TableColumnMatchRank),
+    JoinKeyMatch(JoinKeyMatchRank),
     KindMatch(KindMatchRank),
     KeywordMatch(KeywordMatchRank),
     TypeCompat(TypeCompatRank),

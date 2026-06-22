@@ -124,6 +124,10 @@ impl<'a> CandidateBuilder<'a> {
         Self::new(CandidateKind::Keyword(keyword), label.into())
     }
 
+    pub fn operator(label: impl Into<SmolStr>) -> Self {
+        Self::new(CandidateKind::Operator, label.into())
+    }
+
     pub fn table(label: QualifiedIdent<'a>, ident: QualifiedIdent<'a>) -> Self {
         Self::new(
             CandidateKind::Table(TableCandidate { label, ident }),

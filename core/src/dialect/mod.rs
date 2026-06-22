@@ -82,11 +82,47 @@ pub struct DialectSpec {
     pub keywords: &'static phf::Map<&'static str, Keyword>,
     pub operators: &'static phf::Map<&'static str, Operator>,
     pub functions: &'static phf::Map<&'static str, SpecFunction>,
+    /// Keywords that may not be used as bare (unquoted) identifiers.
+    pub reserved: &'static [Keyword],
     pub style_rules: StyleRules,
     pub follow_rules: &'static [rule::Rules],
 }
 
+/// Default reserved-keyword set: words that cannot appear as bare identifiers.
+/// Shared by the built-in dialects; a dialect may point at a narrower/wider set.
+pub const RESERVED: &[Keyword] = &[
+    Keyword::Select,
+    Keyword::From,
+    Keyword::Where,
+    Keyword::Group,
+    Keyword::Having,
+    Keyword::Order,
+    Keyword::Limit,
+    Keyword::Offset,
+    Keyword::Join,
+    Keyword::Inner,
+    Keyword::Left,
+    Keyword::Right,
+    Keyword::Full,
+    Keyword::Cross,
+    Keyword::On,
+    Keyword::Using,
+    Keyword::Union,
+    Keyword::Intersect,
+    Keyword::Except,
+    Keyword::With,
+    Keyword::As,
+    Keyword::By,
+    Keyword::Distinct,
+    Keyword::All,
+];
+
 impl DialectSpec {
+    /// Is `keyword` reserved (disallowed as a bare identifier) in this dialect?
+    pub fn is_reserved(&self, keyword: Keyword) -> bool {
+        self.reserved.contains(&keyword)
+    }
+
     pub fn match_keyword(&self, keyword: &str) -> Option<Keyword> {
         let kw_lookup = match self.style_rules.keywords_case_insensitive {
             true => std::borrow::Cow::Owned(keyword.to_ascii_uppercase()),

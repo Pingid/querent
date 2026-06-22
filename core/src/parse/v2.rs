@@ -13,13 +13,13 @@ use crate::span::Span;
 
 type R<T> = Option<T>;
 
-pub struct WinnowParser<'txt, 'tok> {
+pub struct ParserV2<'txt, 'tok> {
     tokens: &'tok [Token<'txt>],
     pos: usize,
     spec: &'tok DialectSpec,
 }
 
-impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
+impl<'txt, 'tok> ParserV2<'txt, 'tok> {
     pub fn new(tokens: &'tok [Token<'txt>], spec: &'tok DialectSpec) -> Self {
         Self {
             tokens,
@@ -1485,7 +1485,7 @@ impl<'txt, 'tok> WinnowParser<'txt, 'tok> {
     }
 }
 
-impl<'txt, 'tok> Iterator for WinnowParser<'txt, 'tok> {
+impl<'txt, 'tok> Iterator for ParserV2<'txt, 'tok> {
     type Item = Loc<Statement>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_eof() {
@@ -1538,7 +1538,7 @@ mod tests {
     use crate::lex;
 
     fn parse(sql: &str) -> R<Loc<Statement>> {
-        WinnowParser::new(
+        ParserV2::new(
             &lex::lex(DialectKind::Postgres.spec(), sql),
             DialectKind::Postgres.spec(),
         )

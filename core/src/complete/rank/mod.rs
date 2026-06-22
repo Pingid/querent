@@ -10,6 +10,7 @@ mod basic;
 mod column_qualifier;
 mod column_source;
 mod composite;
+mod join_key;
 mod keyword;
 mod table_qualifier;
 
@@ -44,6 +45,8 @@ impl Default for DefaultRanker {
                 .with(column_qualifier::ColumnQualifiedRank::default(), 2.0)
                 .with(column_source::ColumnSourceRank::default(), 2.5)
                 .with(table_qualifier::TableQualifiedRank::default(), 2.0)
+                .with(table_qualifier::TableColumnMatchRank::default(), 2.5)
+                .with(join_key::JoinKeyMatchRank::default(), 2.0)
                 .with(keyword::KeywordMatchRank, 1.5)
                 .with(basic::KindMatchRank, 2.0)
                 .with(basic::TypeCompatRank, 3.0) // Strong type safety signal

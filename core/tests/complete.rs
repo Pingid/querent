@@ -2,6 +2,8 @@ use querent_core::complete::DefaultCompleter;
 use querent_core::complete::types::CompletionKind;
 use querent_core::dialect::ansi;
 use querent_core::test_utils::ScenarioComp;
+use querent_core::test_utils::comments_schema;
+use querent_core::test_utils::funcs_schema;
 use querent_core::test_utils::posts_schema;
 use querent_core::test_utils::users_schema;
 
@@ -31,6 +33,26 @@ fn keyword_includes_natural_join() {
 #[test]
 fn with_suggests_recursive_after_with() {
     scenario().query("WITH ^").starts(["RECURSIVE"]).run();
+}
+
+#[test]
+fn keyword_suggests_from_after_select_list() {
+    // After a complete projection, FROM is the natural next clause
+    scenario()
+        .query("SELECT id ^")
+        .with(users_schema())
+        .contains(["FROM"])
+        .run();
+}
+
+#[test]
+fn keyword_suggests_clauses_after_where_predicate() {
+    // After a complete WHERE predicate, suggest logical and trailing clauses
+    scenario()
+        .query("SELECT * FROM users WHERE id = 1 ^")
+        .with(users_schema())
+        .contains(["AND", "OR", "ORDER BY", "GROUP BY", "LIMIT"])
+        .run();
 }
 
 // ============================================================================
@@ -87,6 +109,28 @@ fn column_qualified_deprioritizes_already_selected_for_same_alias() {
         .query("SELECT u.name, u.^ FROM users u JOIN posts p ON p.id = u.id")
         .with((users_schema(), posts_schema()))
         .starts(["email", "id"])
+        .run();
+}
+
+#[test]
+fn column_ambiguous_forces_qualification() {
+    // `id` exists in both tables, so the bare name is dropped in favor of qualified forms.
+    // Unique names (name, title, ...) remain available unqualified.
+    scenario()
+        .query("SELECT ^ FROM users, posts")
+        .with((users_schema(), posts_schema()))
+        .contains(["users.id", "posts.id", "name", "title"])
+        .none_of(["id"])
+        .run();
+}
+
+#[test]
+fn column_resolves_self_join_aliases_independently() {
+    // Two aliases of the same table should each expose their own qualified columns
+    scenario()
+        .query("SELECT ^ FROM users u1 JOIN users u2 ON u1.id = u2.id")
+        .with(users_schema())
+        .starts(["u1.email", "u1.id", "u1.name", "u2.email"])
         .run();
 }
 
@@ -336,6 +380,26 @@ fn table_suggests_after_schema_qualifier() {
         .run();
 }
 
+#[test]
+fn table_prioritizes_tables_containing_selected_columns() {
+    // FROM completions should prefer tables that contain the already-selected columns
+    scenario()
+        .query("SELECT title, content FROM ^")
+        .with((posts_schema(), users_schema()))
+        .starts(["posts"])
+        .run();
+}
+
+#[test]
+fn table_prioritizes_table_for_single_selected_column() {
+    // `email` only exists in users, so users ranks first despite posts sorting earlier
+    scenario()
+        .query("SELECT email FROM ^")
+        .with((posts_schema(), users_schema()))
+        .starts(["users"])
+        .run();
+}
+
 // ============================================================================
 // Join Completions
 // ============================================================================
@@ -370,6 +434,16 @@ fn join_completes_with_table_aliases() {
         .run();
 }
 
+#[test]
+fn join_prioritizes_matching_key_column() {
+    // ON c.user_id = u.^ should prefer the column that matches by name (users.id)
+    scenario()
+        .query("SELECT * FROM users u JOIN comments c ON c.user_id = u.^")
+        .with((users_schema(), comments_schema()))
+        .starts(["id"])
+        .run();
+}
+
 // ============================================================================
 // WHERE Clause Completions
 // ============================================================================
@@ -395,14 +469,32 @@ fn where_suggests_columns_after_logical_operator() {
 }
 
 #[test]
-fn where_deprioritizes_after_comparison_operator() {
-    // No column suggestions immediately after comparison operators or values
+fn where_prioritizes_type_compatible_columns() {
+    // Comparing against an integer column should rank integer-typed columns first
     scenario()
-        .query("SELECT * FROM users WHERE name =^")
-        .query("SELECT * FROM users WHERE name = ^")
+        .query("SELECT * FROM users WHERE id > ^")
+        .with(users_schema())
+        .starts(["id"])
+        .run();
+}
+
+#[test]
+fn where_deprioritizes_after_value() {
+    // No column suggestions immediately after a literal value
+    scenario()
         .query("SELECT * FROM users WHERE name = 'John'^")
         .with(users_schema())
         .none_of(CompletionKind::Column)
+        .run();
+}
+
+#[test]
+fn where_suggests_columns_after_comparison_operator() {
+    // Columns are offered on the right-hand side of a comparison
+    scenario()
+        .query("SELECT * FROM users WHERE name = ^")
+        .with(users_schema())
+        .contains(["email", "id", "name"])
         .run();
 }
 
@@ -455,6 +547,73 @@ fn group_by_deprioritizes_already_grouped() {
 }
 
 // ============================================================================
+// HAVING Completions
+// ============================================================================
+
+#[test]
+fn having_suggests_grouped_columns() {
+    // HAVING should surface grouping keys for predicates
+    scenario()
+        .query("SELECT name, COUNT(*) FROM users GROUP BY name HAVING ^")
+        .with((users_schema(), funcs_schema()))
+        .contains(["name"])
+        .run();
+}
+
+// ============================================================================
+// Function Completions
+// ============================================================================
+
+#[test]
+fn function_completes_partial_name() {
+    // Scalar functions are suggested in the SELECT projection; typing `up`
+    // surfaces UPPER/upper. The dialect built-in `UPPER` leads, the schema
+    // function `upper` is also offered.
+    scenario()
+        .query("SELECT up^")
+        .with(funcs_schema())
+        .starts([CompletionKind::Function])
+        .contains(["upper"])
+        .run();
+}
+
+#[test]
+fn function_arguments_suggest_columns() {
+    // Inside an aggregate call, suggest columns from the in-scope table
+    scenario()
+        .query("SELECT COUNT(^) FROM users")
+        .with((users_schema(), funcs_schema()))
+        .contains(["email", "id", "name"])
+        .run();
+}
+
+// ============================================================================
+// DML Completions
+// ============================================================================
+
+#[test]
+#[ignore = "not yet supported: INSERT INTO column-list completions"]
+fn insert_suggests_target_columns() {
+    // INSERT column list should suggest the target table's columns
+    scenario()
+        .query("INSERT INTO users (^)")
+        .with(users_schema())
+        .starts(["email", "id", "name"])
+        .run();
+}
+
+#[test]
+#[ignore = "not yet supported: UPDATE ... SET column completions"]
+fn update_set_suggests_columns() {
+    // SET clause should suggest the target table's columns
+    scenario()
+        .query("UPDATE users SET ^")
+        .with(users_schema())
+        .starts(["email", "id", "name"])
+        .run();
+}
+
+// ============================================================================
 // Subqueries & Correlation
 // ============================================================================
 
@@ -470,11 +629,13 @@ fn subquery_isolates_scope() {
 
 #[test]
 fn subquery_completes_qualified_columns() {
-    // Qualified columns in correlated subquery work correctly
+    // Qualified columns in correlated subquery work correctly. `id` leads because
+    // it matches the `u.id` on the other side of the comparison.
     scenario()
         .with((users_schema(), posts_schema()))
         .query("SELECT * FROM users u WHERE EXISTS (SELECT 1 FROM posts p WHERE p.^ = u.id)")
-        .starts(["content", "id", "title"])
+        .starts(["id"])
+        .contains(["content", "title"])
         .run();
 }
 

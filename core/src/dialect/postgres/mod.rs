@@ -31,6 +31,7 @@ pub static SPEC: DialectSpec = DialectSpec {
     keywords: &KEYWORDS,
     operators: &OPERATORS,
     functions: &ansi::FUNCTIONS,
+    reserved: crate::dialect::RESERVED,
     style_rules: StyleRules {
         keywords_case_insensitive: true,
         word_ops_case_insensitive: true,
