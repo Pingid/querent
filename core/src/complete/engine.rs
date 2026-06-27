@@ -30,6 +30,7 @@ impl Engine<DefaultProviders, DefaultRanker> {
         let cursor = doc.cursor().min(text.len());
         let mut candidates = CandidateSet::new();
         let Some(mut ctx) = Context::build(self.spec, &self.schema, &text, cursor) else {
+            #[cfg(feature = "tracing")]
             tracing::error!("Failed to build context");
             return candidates.empty();
         };

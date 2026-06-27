@@ -1,3 +1,11 @@
+//! Introspection queries over Postgres' `pg_catalog`.
+//!
+//! `relkind` covers ordinary tables (`r`), views (`v`), materialized views
+//! (`m`), partitioned tables (`p`), and foreign tables (`f`). Column types use
+//! `format_type(atttypid, NULL)` so the result is the base type name
+//! (`numeric`, `character varying`) without precision/length modifiers — the
+//! shape [`crate::schema::DataType`] knows how to parse.
+
 pub static QUERY_TABLES: &str = r#"
 SELECT
     c.relname AS table_name,
@@ -11,7 +19,7 @@ SELECT
     END AS table_type
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-WHERE c.relkind IN ('r', 'v', 'm')
+WHERE c.relkind IN ('r', 'v', 'm', 'p', 'f')
     AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
 ORDER BY n.nspname, c.relname
 "#;
@@ -21,14 +29,14 @@ SELECT
     a.attname AS column_name,
     c.relname AS table_name,
     n.nspname AS schema_name,
-    format_type(a.atttypid, a.atttypmod) AS data_type,
+    format_type(a.atttypid, NULL) AS data_type,
     NOT a.attnotnull AS is_nullable
 FROM pg_catalog.pg_attribute a
 JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE a.attnum > 0
     AND NOT a.attisdropped
-    AND c.relkind IN ('r', 'v', 'm')
+    AND c.relkind IN ('r', 'v', 'm', 'p', 'f')
     AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
 ORDER BY n.nspname, c.relname, a.attnum
 "#;

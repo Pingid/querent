@@ -23,30 +23,23 @@ pub struct LspServer<E> {
     capabilities: serde_json::Value,
 }
 
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "typescript", derive(ts_rs::TS))]
+pub struct LspServerConfig {
+    #[cfg_attr(feature = "typescript", ts(type = "Record<string, unknown>"))]
+    pub capabilities: Option<serde_json::Value>,
+}
+
 impl<E: CompletionProvider> LspServer<E> {
-    pub fn new(engines: E) -> Self {
-        let mut trigger_characters = vec![];
-        trigger_characters.extend(
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,("
-                .chars()
-                .map(|c| c.to_string()),
-        );
-        trigger_characters.push(" ".to_string());
+    pub fn new(engines: E, config: LspServerConfig) -> Self {
+        let mut capabilities = Self::default_capabilities();
+        if let Some(c) = config.capabilities {
+            deep_merge(&mut capabilities, &c);
+        }
         Self {
             engines,
             documents: Arc::new(Mutex::new(HashMap::new())),
-            capabilities: json!({
-                "completionProvider": {
-                    "triggerCharacters": trigger_characters,
-                },
-                "textDocumentSync": {
-                    "openClose": true,
-                    "change": 2
-                },
-                "general": {
-                    "positionEncodings": ["utf-16"]
-                }
-            }),
+            capabilities,
         }
     }
 
@@ -124,6 +117,20 @@ impl<E: CompletionProvider> LspServer<E> {
             .map(|(k, v)| (k.clone(), v.content().to_string(), v.cursor()))
             .collect()
     }
+
+    fn default_capabilities() -> serde_json::Value {
+        let mut trigger = vec![];
+        trigger.extend(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,( "
+                .chars()
+                .map(|c| c.to_string()),
+        );
+        json!({
+            "completionProvider": { "triggerCharacters": trigger },
+            "textDocumentSync": { "openClose": true, "change": 2 },
+            "general": { "positionEncodings": ["utf-16"] }
+        })
+    }
 }
 
 fn completion_from_engine(
@@ -172,4 +179,18 @@ fn completion_from_engine(
         }
     }
     edit
+}
+
+fn deep_merge(a: &mut serde_json::Value, b: &serde_json::Value) {
+    match (a, b) {
+        (serde_json::Value::Object(a_map), serde_json::Value::Object(b_map)) => {
+            for (k, v) in b_map {
+                deep_merge(a_map.entry(k.clone()).or_insert(serde_json::Value::Null), v);
+            }
+        }
+        (_, serde_json::Value::Null) => {}
+        (a, b) => {
+            *a = b.clone();
+        }
+    }
 }

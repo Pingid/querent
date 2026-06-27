@@ -10,3 +10,4 @@ pub use response::LspResponse;
 pub use response::LspResponseEnvelope;
 pub use server::CompletionProvider;
 pub use server::LspServer;
+pub use server::LspServerConfig;

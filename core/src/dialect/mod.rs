@@ -11,6 +11,16 @@ pub mod rule;
 pub mod sqlite;
 
 #[derive(Debug, Default, Clone, Copy)]
+#[cfg_attr(
+    feature = "typescript",
+    derive(ts_rs::TS),
+    ts(rename_all = "lowercase")
+)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "lowercase")
+)]
 pub enum DialectKind {
     #[default]
     Ansi,
@@ -35,7 +45,7 @@ impl DialectKind {
         }
     }
 
-    pub fn functions_query(&self) -> Option<&'static str> {
+    pub fn introspect_functions(&self) -> Option<&'static str> {
         match self {
             DialectKind::Ansi => None,
             DialectKind::Postgres => Some(&postgres::QUERY_FUNCTIONS),
@@ -43,7 +53,7 @@ impl DialectKind {
         }
     }
 
-    pub fn tables_query(&self) -> Option<&'static str> {
+    pub fn introspect_tables(&self) -> Option<&'static str> {
         match self {
             DialectKind::Ansi => None,
             DialectKind::Postgres => Some(&postgres::QUERY_TABLES),
@@ -51,7 +61,7 @@ impl DialectKind {
         }
     }
 
-    pub fn columns_query(&self) -> Option<&'static str> {
+    pub fn introspect_columns(&self) -> Option<&'static str> {
         match self {
             DialectKind::Ansi => None,
             DialectKind::Postgres => Some(&postgres::QUERY_COLUMNS),

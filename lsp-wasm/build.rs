@@ -4,39 +4,86 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::path::PathBuf;
 
-use querent_core::schema;
 use ts_rs::TS;
 
-// Define Queries here so we can use TS::decl() on it
-#[derive(ts_rs::TS)]
-#[ts(optional_fields)]
-#[allow(dead_code)]
-struct Queries {
-    pub functions: Option<String>,
-    pub tables: Option<String>,
-    pub columns: Option<String>,
-}
+#[path = "src/types/internal.rs"]
+mod internal;
 
 fn main() {
+    struct Info {
+        rs_name_qualified: String,
+        ts_name: String,
+        js_name: String,
+        ts_expr: String,
+    }
+    impl Info {
+        fn new<T: TS>(config: &ts_rs::Config, rs_name_qualified: &str) -> Self {
+            Self {
+                rs_name_qualified: rs_name_qualified.to_string(),
+                ts_name: T::name(config),
+                js_name: format!("Js{}", T::name(config)),
+                ts_expr: T::decl(config),
+            }
+        }
+    }
+
+    macro_rules! info {
+        ($config:expr, $tp:ty) => {
+            Info::new::<$tp>($config, stringify!($tp))
+        };
+        ($config:expr, $tp:ty, $qualifier:expr) => {
+            Info::new::<$tp>($config, $qualifier)
+        };
+    }
+
+    let c = ts_rs::Config::default();
     let to_export = [
-        schema::Cache::decl(),
-        schema::DataType::decl(),
-        schema::Table::decl(),
-        schema::Column::decl(),
-        schema::Function::decl(),
-        schema::FuncReturnType::decl(),
-        Queries::decl(),
+        info!(&c, querent_core::schema::Cache),
+        info!(&c, querent_core::schema::DataType),
+        info!(&c, querent_core::schema::Table),
+        info!(&c, querent_core::schema::Column),
+        info!(&c, querent_core::schema::Function),
+        info!(&c, querent_core::schema::FuncReturnType),
+        info!(&c, querent_core::dialect::DialectKind),
+        info!(&c, querent_lsp::LspServerConfig),
+        info!(
+            &c,
+            internal::IntrospectionQueries,
+            "super::IntrospectionQueries"
+        ),
     ];
 
-    let all = to_export
-        .into_iter()
-        .map(|x| format!("export {}", x))
+    let ts = to_export
+        .iter()
+        .map(|i| i.ts_expr.to_string())
+        .collect::<Vec<String>>()
+        .join("\n");
+
+    let rs_extern_inner = to_export
+        .iter()
+        .map(|i| {
+            format!(
+                "    #[wasm_bindgen(typescript_type = \"{}\")]\n    pub type {};",
+                i.ts_name, i.js_name
+            )
+        })
+        .collect::<Vec<String>>()
+        .join("\n");
+    let rs_extern = format!("#[wasm_bindgen]\nextern \"C\" {{\n{rs_extern_inner}\n}}",);
+
+    let rs_impl_inner = to_export
+        .iter()
+        .map(|i| generate_impl_from(&i.rs_name_qualified, &i.js_name))
         .collect::<Vec<String>>()
         .join("\n");
 
     write_file(
-        format!("src/types.rs"),
-        &[generate_ts_export_section("CATALOG_TYPES", all)],
+        format!("src/types/generated.rs"),
+        &[
+            generate_ts_export_section("CATALOG_TYPES", ts),
+            rs_extern,
+            rs_impl_inner,
+        ],
     );
 }
 
@@ -53,12 +100,34 @@ fn generate_ts_export_section(name: &str, inner: String) -> String {
     content
 }
 
+fn generate_impl_from(name: &str, js_name: &str) -> String {
+    let content = [
+        format!("impl {js_name} {{"),
+        format!("    pub fn try_into_rs(self) -> Result<{name}, JsValue> {{"),
+        format!("        let value: JsValue = self.into();"),
+        format!(
+            "        serde_wasm_bindgen::from_value(value).map_err(|e| JsValue::from_str(&format!(\"Failed to deserialize {name}: {{:?}}\", e)))",
+        ),
+        format!("    }}"),
+        format!(""),
+        format!("    pub fn try_from_rs(tp: &{name}) -> Result<Self, JsValue> {{"),
+        format!("        serde_wasm_bindgen::to_value(tp)",),
+        format!("            .map(|value| value.unchecked_into::<Self>())",),
+        format!(
+            "            .map_err(|e| JsValue::from_str(&format!(\"Failed to serialize {name}: {{:?}}\", e)))",
+        ),
+        format!("    }}"),
+        format!("}}"),
+    ];
+
+    content.join("\n")
+}
 fn write_file(pth: impl Into<PathBuf>, contents: &[String]) {
     let path = pth.into();
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     let mut file = BufWriter::new(File::create(&path).unwrap());
     for line in contents {
-        writeln!(&mut file, "{}", line).unwrap();
+        writeln!(&mut file, "{}\n", line).unwrap();
     }
     drop(file);
 }
