@@ -1,15 +1,14 @@
 [workspace]
-members = ["core", "lsp", "lsp-wasm", "pat"]
+members = ["core", "lsp", "lsp-wasm", "pat", "demo"]
 resolver = "2"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 tracing = { version = "0.1.44" }
-serde_json = "1.0.5"
+serde_json = "1.0.1"
 
-# [profile.dev]
+[profile.dev]
+split-debuginfo = "unpacked"
 # codegen-units = 256
 # codegen-backend = "cranelift"
 # incremental = true
-[profile.dev]
-split-debuginfo = "unpacked"
